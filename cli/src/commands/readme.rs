@@ -318,8 +318,11 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         let pending_definition_title = definition_title_pending.take();
         let pending_definition_destination = definition_destination_pending.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
-        let (block_content, container) =
+        let (block_content, container, exited_container) =
             container_state.project(line, opening_container, paragraph_open);
+        if exited_container {
+            paragraph_open = false;
+        }
         let definition_title_continuation =
             pending_definition_title
                 .as_ref()
@@ -694,13 +697,13 @@ fn starts_block_html_tag(line: &str) -> bool {
     let candidate = line.strip_prefix("</").or_else(|| line.strip_prefix('<'));
     candidate.is_some_and(|candidate| {
         TAGS.iter().any(|tag| {
-            candidate.starts_with(tag)
-                && candidate[tag.len()..]
-                    .chars()
-                    .next()
-                    .map_or(true, |character| {
-                        character.is_ascii_whitespace() || matches!(character, '>' | '/')
+            candidate.strip_prefix(tag).is_some_and(|suffix| {
+                suffix.is_empty()
+                    || suffix.starts_with("/>")
+                    || suffix.chars().next().is_some_and(|character| {
+                        character.is_ascii_whitespace() || character == '>'
                     })
+            })
         })
     })
 }
@@ -915,18 +918,18 @@ impl MarkdownContainerState {
         line: &'a str,
         opening: Option<&MarkdownContainer>,
         paragraph_open: bool,
-    ) -> (&'a str, MarkdownContainer) {
+    ) -> (&'a str, MarkdownContainer, bool) {
         let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
         if let Some(opening) = opening {
             if let Some(content) = project_container_path(line, opening) {
-                return (content, opening.clone());
+                return (content, opening.clone(), false);
             }
             if blank
                 && opening
                     .iter()
                     .any(|segment| matches!(segment, MarkdownContainerSegment::List(_)))
             {
-                return ("", opening.clone());
+                return ("", opening.clone(), false);
             }
         }
 
@@ -936,11 +939,13 @@ impl MarkdownContainerState {
                 self.active.clear();
                 self.blank_lines = 0;
             }
-            return ("", self.active.clone());
+            return ("", self.active.clone(), false);
         }
         self.blank_lines = 0;
 
         let mut container = self.active.clone();
+        let exited_container =
+            !container.is_empty() && project_container_path(line, &container).is_none();
         let content = if container.is_empty() {
             line
         } else if let Some(content) = project_container_path(line, &container) {
@@ -949,9 +954,13 @@ impl MarkdownContainerState {
             container.clear();
             line
         };
-        let content = parse_new_container_prefixes(content, &mut container, paragraph_open);
+        let content = parse_new_container_prefixes(
+            content,
+            &mut container,
+            paragraph_open && !exited_container,
+        );
         self.active = container.clone();
-        (content, container)
+        (content, container, exited_container)
     }
 }
 
@@ -1155,8 +1164,11 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
         let pending_definition_title = definition_title_pending.take();
         let pending_definition_destination = definition_destination_pending.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
-        let (block_content, container) =
+        let (block_content, container, exited_container) =
             container_state.project(line, opening_container, paragraph_open);
+        if exited_container {
+            paragraph_open = false;
+        }
         let definition_title_continuation =
             pending_definition_title
                 .as_ref()
@@ -1953,6 +1965,13 @@ Inline `inline-code` must be ignored.
         );
         assert_eq!(
             inline_code_tokens(
+                "> quoted paragraph\n2. ```markdown\n   `cards/exited-paragraph-hidden.yaml`\n   ```\nRoot `cards/exited-paragraph-visible.yaml`.\n"
+            ),
+            vec!["cards/exited-paragraph-visible.yaml"],
+            "leaving a container clears its paragraph before parsing a root list"
+        );
+        assert_eq!(
+            inline_code_tokens(
                 "Paragraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n"
             ),
             vec!["cards/non-one-ordered-visible.yaml"],
@@ -2127,6 +2146,11 @@ Inline `inline-code` must be ignored.
             inline_code_tokens("<x:y>\n`cards/unseparated-attribute-visible.yaml`\n"),
             vec!["cards/unseparated-attribute-visible.yaml"],
             "HTML attributes require separating whitespace"
+        );
+        assert_eq!(
+            inline_code_tokens("<div/x\n`cards/invalid-slash-visible.yaml`\n"),
+            vec!["cards/invalid-slash-visible.yaml"],
+            "a slash is a block-tag boundary only as part of />"
         );
     }
 
@@ -2321,36 +2345,43 @@ Inline `inline-code` must be ignored.
     }
 
     #[test]
-    fn unseparated_html_attribute_does_not_hide_owned_regions() {
-        let root = std::env::temp_dir().join(format!("mdp-readme-invalid-html-{}", nonce()));
-        init_pack(&root, "Invalid HTML Pack", "gtm", true, false).expect("pack should initialize");
-        let readme_path = root.join(".mdp/README.md");
-        let readme = std::fs::read_to_string(&readme_path).expect("README");
-        let invalid_html = readme.replacen(
-            crate::pack_readme::README_OWNERSHIP_BEGIN,
-            &format!("<x:y>\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
-            1,
-        );
-        std::fs::write(&readme_path, &invalid_html).expect("write README");
+    fn invalid_html_tag_shapes_do_not_hide_owned_regions() {
+        for invalid in ["<x:y>", "<div/x"] {
+            let root = std::env::temp_dir().join(format!(
+                "mdp-readme-invalid-html-{}-{}",
+                invalid.len(),
+                nonce()
+            ));
+            init_pack(&root, "Invalid HTML Pack", "gtm", true, false)
+                .expect("pack should initialize");
+            let readme_path = root.join(".mdp/README.md");
+            let readme = std::fs::read_to_string(&readme_path).expect("README");
+            let invalid_html = readme.replacen(
+                crate::pack_readme::README_OWNERSHIP_BEGIN,
+                &format!("{invalid}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+                1,
+            );
+            std::fs::write(&readme_path, &invalid_html).expect("write README");
 
-        let checked = check_readme(&root).expect("check README");
-        assert_eq!(checked["status"], "fresh", "{checked}");
-        refresh_readme(&root, None, false).expect("refresh README");
-        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
-        assert_eq!(
-            refreshed
-                .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
-                .count(),
-            1
-        );
-        assert_eq!(
-            refreshed
-                .matches(crate::pack_readme::README_INVENTORY_BEGIN)
-                .count(),
-            1
-        );
-        assert!(refreshed.contains("<x:y>\n"));
-        let _ = std::fs::remove_dir_all(root);
+            let checked = check_readme(&root).expect("check README");
+            assert_eq!(checked["status"], "fresh", "{invalid}: {checked}");
+            refresh_readme(&root, None, false).expect("refresh README");
+            let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+            assert_eq!(
+                refreshed
+                    .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                refreshed
+                    .matches(crate::pack_readme::README_INVENTORY_BEGIN)
+                    .count(),
+                1
+            );
+            assert!(refreshed.contains(&format!("{invalid}\n")));
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]

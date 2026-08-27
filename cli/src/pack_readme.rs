@@ -463,6 +463,8 @@ impl MarkdownFenceScanner {
         } else {
             self.blank_lines = 0;
             let mut container = self.container.clone();
+            let exited_container =
+                !container.is_empty() && project_container_path(line, &container).is_none();
             let content = if container.is_empty() {
                 line
             } else if let Some(content) = project_container_path(line, &container) {
@@ -471,6 +473,9 @@ impl MarkdownFenceScanner {
                 container.clear();
                 line
             };
+            if exited_container {
+                self.paragraph_open = false;
+            }
             let content =
                 parse_new_container_prefixes(content, &mut container, self.paragraph_open);
             self.container = container.clone();
@@ -797,13 +802,13 @@ fn starts_block_html_tag(line: &str) -> bool {
     let candidate = line.strip_prefix("</").or_else(|| line.strip_prefix('<'));
     candidate.is_some_and(|candidate| {
         TAGS.iter().any(|tag| {
-            candidate.starts_with(tag)
-                && candidate[tag.len()..]
-                    .chars()
-                    .next()
-                    .map_or(true, |character| {
-                        character.is_ascii_whitespace() || matches!(character, '>' | '/')
+            candidate.strip_prefix(tag).is_some_and(|suffix| {
+                suffix.is_empty()
+                    || suffix.starts_with("/>")
+                    || suffix.chars().next().is_some_and(|character| {
+                        character.is_ascii_whitespace() || character == '>'
                     })
+            })
         })
     })
 }
@@ -1828,6 +1833,27 @@ mod tests {
             extract_inventory_block(&invalid_unseparated_attribute),
             Some(inventory)
         );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let invalid_slash_boundary = format!("<div/x\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&invalid_slash_boundary).is_ok());
+        assert_eq!(
+            extract_ownership_block(&invalid_slash_boundary),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&invalid_slash_boundary),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let exited_paragraph = format!(
+            "> quoted paragraph\n2. ```markdown\n   human fence body\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&exited_paragraph).is_ok());
+        assert!(open_fence_at_eof(&exited_paragraph).is_none());
+        assert_eq!(extract_ownership_block(&exited_paragraph), Some(ownership));
+        assert_eq!(extract_inventory_block(&exited_paragraph), Some(inventory));
         for opener in ["> <div>", "- <div>"] {
             let ownership = render_ownership_block();
             let inventory =
