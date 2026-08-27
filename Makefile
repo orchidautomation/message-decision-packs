@@ -5,24 +5,33 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity install-cli demo
+.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity install-cli demo
 
-validate: validate-cli validate-authority-conformance validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget
+VALIDATION_TARGETS := validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity
+
+ifneq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
+$(VALIDATION_TARGETS):
+	node scripts/with-temp-workspace.mjs --purpose validation -- $(MAKE) $@
+endif
+
+ifeq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
+
+validate: validate-cli validate-authority-conformance validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget
 
 validate-route-budget:
 	node scripts/build-route-budget-fixtures.mjs
-	cd cli && $(CARGO) run -- --json route-budget --dir ../examples/route-budget/overflow >/tmp/mdp-route-budget-overflow.json || true
-	cd cli && $(CARGO) run -- --json --summary route-budget --dir ../examples/route-budget/overflow >/tmp/mdp-route-budget-overflow-summary.json || true
-	cd cli && $(CARGO) run -- --json route-budget --dir ../examples/route-budget/overflow --job outbound-copy-brief --persona Buyer >/tmp/mdp-route-budget-overflow-filter.json || true
-	cd cli && $(CARGO) run -- --json route-budget --strict --dir ../examples/route-budget/ready >/tmp/mdp-route-budget-ready.json
-	cd cli && $(CARGO) run -- --json route --entries --dir ../examples/route-budget/overflow --persona Buyer --job outbound-copy-brief >/tmp/mdp-route-budget-overflow-route.json
-	cd cli && $(CARGO) run -- --json brief --context --dry-run --dir ../examples/route-budget/ready --prospect ../examples/route-budget/ready/synthetic-prospect.json --job outbound-copy-brief >/tmp/mdp-route-budget-ready-brief.json || true
-	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow.json'))['data']; assert d['valid'] is False and d['overflow_count']>0, 'overflow fixture should fail preflight'"
-	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-summary.json'))['summary']; assert d['contract']=='mdp.route-budget-summary.v1' and 'routes' not in d and d['route_count']==12 and d['tightest_headroom']['utilization_percent']>100 and d['excluded_count'] >= d['optional_excluded_count'] >= 0 and d['next_safe_action']['kind'] in ('narrow_applicability','review_required_authority'), 'summary should be bounded and actionable'"
-	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-filter.json'))['data']; assert d['route_count']==1 and d['query']['job_id']=='outbound-copy-brief' and d['query']['persona']=='Buyer' and d['routes'][0]['job_id']==d['routes'][0]['job'], 'exact filter projection should preserve job_id alias'"
-	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready.json'))['data']; assert d['valid'] is True and d['overflow_count']==0, 'ready fixture should pass strict preflight'"
-	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-route.json'))['data']; assert d['draft_status']=='blocked'; m=d['entry_route']['minimality']; assert 'context_entry_budget_exceeded' in m['diagnostics']"
-	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready-brief.json'))['data']; assert d['context']['minimality']['status']=='ready', 'ready fixture minimality should be ready; draft_status may be no-draft under the MDP-215 DIC boundary for a detached prospect'"
+	cd cli && $(CARGO) run -- --json route-budget --dir ../examples/route-budget/overflow >$(MDP_TEMP_ROOT)/mdp-route-budget-overflow.json || true
+	cd cli && $(CARGO) run -- --json --summary route-budget --dir ../examples/route-budget/overflow >$(MDP_TEMP_ROOT)/mdp-route-budget-overflow-summary.json || true
+	cd cli && $(CARGO) run -- --json route-budget --dir ../examples/route-budget/overflow --job outbound-copy-brief --persona Buyer >$(MDP_TEMP_ROOT)/mdp-route-budget-overflow-filter.json || true
+	cd cli && $(CARGO) run -- --json route-budget --strict --dir ../examples/route-budget/ready >$(MDP_TEMP_ROOT)/mdp-route-budget-ready.json
+	cd cli && $(CARGO) run -- --json route --entries --dir ../examples/route-budget/overflow --persona Buyer --job outbound-copy-brief >$(MDP_TEMP_ROOT)/mdp-route-budget-overflow-route.json
+	cd cli && $(CARGO) run -- --json brief --context --dry-run --dir ../examples/route-budget/ready --prospect ../examples/route-budget/ready/synthetic-prospect.json --job outbound-copy-brief >$(MDP_TEMP_ROOT)/mdp-route-budget-ready-brief.json || true
+	$(PYTHON) -c "import json; d=json.load(open('$(MDP_TEMP_ROOT)/mdp-route-budget-overflow.json'))['data']; assert d['valid'] is False and d['overflow_count']>0, 'overflow fixture should fail preflight'"
+	$(PYTHON) -c "import json; d=json.load(open('$(MDP_TEMP_ROOT)/mdp-route-budget-overflow-summary.json'))['summary']; assert d['contract']=='mdp.route-budget-summary.v1' and 'routes' not in d and d['route_count']==12 and d['tightest_headroom']['utilization_percent']>100 and d['excluded_count'] >= d['optional_excluded_count'] >= 0 and d['next_safe_action']['kind'] in ('narrow_applicability','review_required_authority'), 'summary should be bounded and actionable'"
+	$(PYTHON) -c "import json; d=json.load(open('$(MDP_TEMP_ROOT)/mdp-route-budget-overflow-filter.json'))['data']; assert d['route_count']==1 and d['query']['job_id']=='outbound-copy-brief' and d['query']['persona']=='Buyer' and d['routes'][0]['job_id']==d['routes'][0]['job'], 'exact filter projection should preserve job_id alias'"
+	$(PYTHON) -c "import json; d=json.load(open('$(MDP_TEMP_ROOT)/mdp-route-budget-ready.json'))['data']; assert d['valid'] is True and d['overflow_count']==0, 'ready fixture should pass strict preflight'"
+	$(PYTHON) -c "import json; d=json.load(open('$(MDP_TEMP_ROOT)/mdp-route-budget-overflow-route.json'))['data']; assert d['draft_status']=='blocked'; m=d['entry_route']['minimality']; assert 'context_entry_budget_exceeded' in m['diagnostics']"
+	$(PYTHON) -c "import json; d=json.load(open('$(MDP_TEMP_ROOT)/mdp-route-budget-ready-brief.json'))['data']; assert d['context']['minimality']['status']=='ready', 'ready fixture minimality should be ready; draft_status may be no-draft under the MDP-215 DIC boundary for a detached prospect'"
 
 validate-route-budget-installed-parity:
 	node scripts/build-route-budget-fixtures.mjs
@@ -62,19 +71,25 @@ validate-cold-model-conformance:
 
 validate-run-mcp:
 	node --check scripts/lib/process-supervisor.mjs
+	node --check scripts/lib/temp-workspace.mjs
 	node --check scripts/mdp-run-mcp-server.mjs
 	node --test scripts/test-run-mcp-server.mjs
 
+validate-temp-workspace:
+	node --check scripts/lib/temp-workspace.mjs
+	node --check scripts/with-temp-workspace.mjs
+	node --test scripts/test-temp-workspace.mjs
+
 validate-template:
-	cd cli && $(CARGO) run -- --json validate --strict --dir ../plugin/assets/templates/basic >/tmp/mdp-template-validate.json
-	cd cli && $(CARGO) run -- --json eval --strict --dir ../plugin/assets/templates/basic >/tmp/mdp-template-eval.json
-	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job prospect-fit-or-brief >/tmp/mdp-template-fit-requirements.json
-	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job outbound-copy-brief >/tmp/mdp-template-brief-requirements.json
-	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job outbound-copy-review >/tmp/mdp-template-review-requirements.json
-	cd cli && $(CARGO) run -- --json validate --dir ../plugin/assets/templates/proposal >/tmp/mdp-proposal-template-validate.json
-	cd cli && $(CARGO) run -- --json eval --dir ../plugin/assets/templates/proposal >/tmp/mdp-proposal-template-eval.json
-	cd cli && $(CARGO) run -- init --template proposal --dir /tmp/mdp-proposal-init-smoke --force >/tmp/mdp-proposal-init-smoke.json
-	cd cli && $(CARGO) run -- --json validate --dir /tmp/mdp-proposal-init-smoke >/tmp/mdp-proposal-init-smoke-validate.json
+	cd cli && $(CARGO) run -- --json validate --strict --dir ../plugin/assets/templates/basic >$(MDP_TEMP_ROOT)/mdp-template-validate.json
+	cd cli && $(CARGO) run -- --json eval --strict --dir ../plugin/assets/templates/basic >$(MDP_TEMP_ROOT)/mdp-template-eval.json
+	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job prospect-fit-or-brief >$(MDP_TEMP_ROOT)/mdp-template-fit-requirements.json
+	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job outbound-copy-brief >$(MDP_TEMP_ROOT)/mdp-template-brief-requirements.json
+	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job outbound-copy-review >$(MDP_TEMP_ROOT)/mdp-template-review-requirements.json
+	cd cli && $(CARGO) run -- --json validate --dir ../plugin/assets/templates/proposal >$(MDP_TEMP_ROOT)/mdp-proposal-template-validate.json
+	cd cli && $(CARGO) run -- --json eval --dir ../plugin/assets/templates/proposal >$(MDP_TEMP_ROOT)/mdp-proposal-template-eval.json
+	cd cli && $(CARGO) run -- init --template proposal --dir $(MDP_TEMP_ROOT)/mdp-proposal-init-smoke --force >$(MDP_TEMP_ROOT)/mdp-proposal-init-smoke.json
+	cd cli && $(CARGO) run -- --json validate --dir $(MDP_TEMP_ROOT)/mdp-proposal-init-smoke >$(MDP_TEMP_ROOT)/mdp-proposal-init-smoke-validate.json
 
 validate-skills:
 	@if [ -f "$(SKILL_VALIDATOR)" ]; then 		for skill in plugin/skills/*; do 			$(PYTHON) "$(SKILL_VALIDATOR)" "$$skill" || exit 1; 		done; 	else 		echo "Skipping skill validation; missing $(SKILL_VALIDATOR)"; 	fi
@@ -85,7 +100,7 @@ validate-skill-contracts:
 
 validate-skill-evals:
 	$(PYTHON) -m unittest scripts/test_skill_eval_harness.py
-	$(PYTHON) scripts/skill-eval-harness.py --plugin-skills plugin/skills --output /tmp/mdp-skill-evals
+	$(PYTHON) scripts/skill-eval-harness.py --plugin-skills plugin/skills --output $(MDP_TEMP_ROOT)/mdp-skill-evals
 
 validate-skill-packaging:
 	$(PYTHON) -m unittest scripts/test_skill_packaging.py
@@ -131,7 +146,7 @@ validate-proposal-runner:
 validate-proposal-evidence-harness:
 	cd cli && $(CARGO) build
 	node --check scripts/mdp-proposal-evidence-harness.mjs
-	node scripts/mdp-proposal-evidence-harness.mjs --mdp-bin cli/target/debug/mdp --out-dir /tmp/mdp-proposal-evidence-harness >/tmp/mdp-proposal-evidence-harness.json
+	node scripts/mdp-proposal-evidence-harness.mjs --mdp-bin cli/target/debug/mdp --out-dir $(MDP_TEMP_ROOT)/mdp-proposal-evidence-harness >$(MDP_TEMP_ROOT)/mdp-proposal-evidence-harness.json
 
 validate-proposal-mcp:
 	node --check scripts/mdp-proposal-mcp-server.mjs
@@ -169,6 +184,8 @@ validate-installers:
 	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	scripts/test-install.sh
 	scripts/test-release-install-smoke.sh
+
+endif
 
 install-cli:
 	$(MAKE) -C cli install-local

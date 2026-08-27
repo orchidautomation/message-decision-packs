@@ -4,6 +4,33 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
+cleanup_artifact_root=0
+if [ -n "${MDP_TEMP_ROOT:-}" ]; then
+  artifact_root="$MDP_TEMP_ROOT"
+else
+  artifact_root="$(mktemp -d)"
+  cleanup_artifact_root=1
+fi
+lint_json="$artifact_root/mdp-pluxx-lint.json"
+build_json="$artifact_root/mdp-pluxx-build.json"
+packaging_json="$artifact_root/mdp-skill-packaging.json"
+export MDP_PLUXX_LINT_JSON="$lint_json"
+workspace_fixture=""
+plugin_fixture=""
+proposal_fixture=""
+root_fallback_fixture=""
+cleanup() {
+  for fixture in "${workspace_fixture:-}" "${plugin_fixture:-}" "${proposal_fixture:-}" "${root_fallback_fixture:-}"; do
+    if [ -n "$fixture" ]; then
+      rm -rf "$fixture"
+    fi
+  done
+  if [ "$cleanup_artifact_root" = "1" ]; then
+    rm -rf "$artifact_root"
+  fi
+}
+trap cleanup EXIT
+
 PLUXX_VERSION="${PLUXX_VERSION:-0.1.40}"
 if command -v pluxx >/dev/null 2>&1 && [ "$(pluxx --version)" = "$PLUXX_VERSION" ]; then
   PLUXX_CMD=(pluxx)
@@ -14,21 +41,20 @@ else
   exit 0
 fi
 
-"${PLUXX_CMD[@]}" lint --json >/tmp/mdp-pluxx-lint.json
+"${PLUXX_CMD[@]}" lint --json >"$lint_json"
 find "$ROOT/scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$ROOT/dist" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
-"${PLUXX_CMD[@]}" build --json >/tmp/mdp-pluxx-build.json
+"${PLUXX_CMD[@]}" build --json >"$build_json"
 if find "$ROOT/dist" -type d -name __pycache__ | grep -q .; then
   echo "Generated Pluxx bundles must not include Python __pycache__ directories." >&2
   find "$ROOT/dist" -type d -name __pycache__ >&2
   exit 1
 fi
-python3 scripts/validate-skill-packaging.py --require-bundles >/tmp/mdp-skill-packaging.json
+python3 scripts/validate-skill-packaging.py --require-bundles >"$packaging_json"
 
-workspace_fixture="$(mktemp -d)"
-plugin_fixture="$(mktemp -d)"
-proposal_fixture="$(mktemp -d)"
-trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$proposal_fixture"' EXIT
+workspace_fixture="$(mktemp -d "$artifact_root/workspace.XXXXXX")"
+plugin_fixture="$(mktemp -d "$artifact_root/plugin.XXXXXX")"
+proposal_fixture="$(mktemp -d "$artifact_root/proposal.XXXXXX")"
 mkdir -p "$workspace_fixture/.mdp" "$plugin_fixture/.mdp" "$proposal_fixture/.mdp/prompts"
 printf 'name: hook-workspace-fixture\nversion: 0.1.0\n' >"$workspace_fixture/.mdp/manifest.yaml"
 printf 'name: plugin-root-should-not-activate\nversion: 0.1.0\n' >"$plugin_fixture/.mdp/manifest.yaml"
@@ -123,8 +149,7 @@ if printf '%s\n' "$key_output" | grep -F "sk-test-do-not-print" >/dev/null; then
 fi
 
 if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-  root_fallback_fixture="$(mktemp -d)"
-  trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$proposal_fixture" "$root_fallback_fixture"' EXIT
+  root_fallback_fixture="$(mktemp -d "$artifact_root/root-fallback.XXXXXX")"
   cp -R "$ROOT/plugin/assets/templates/basic/.mdp" "$root_fallback_fixture/.mdp"
   ln -s "$ROOT/cli" "$root_fallback_fixture/cli"
   ln -s "$ROOT/rust-toolchain.toml" "$root_fallback_fixture/rust-toolchain.toml"
@@ -170,7 +195,7 @@ const claudeHooks = readJson('dist/claude-code/hooks/hooks.json')
 const codexManifest = readJson('dist/codex/.codex-plugin/plugin.json')
 const codexHooks = readJson('dist/codex/hooks/hooks.json')
 const codexCompanion = readJson('dist/codex/.codex/hooks.generated.json')
-const lintResult = readJson('/tmp/mdp-pluxx-lint.json')
+const lintResult = readJson(process.env.MDP_PLUXX_LINT_JSON)
 
 const truncationIssues = lintResult.issues.filter((issue) => issue.code === 'skill-description-truncation')
 assert(truncationIssues.length === 0, 'Pluxx lint must not truncate skill descriptions on supported hosts.')

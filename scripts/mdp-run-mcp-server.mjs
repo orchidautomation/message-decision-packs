@@ -7,21 +7,23 @@ import {
   existsSync,
   fstatSync,
   lstatSync,
-  mkdtempSync,
   openSync,
   readFileSync,
   readSync,
   realpathSync,
-  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
+import {
+  cleanupOwnedTempWorkspace,
+  cleanupStaleOwnedTempWorkspaces,
+  createOwnedTempWorkspace,
+} from './lib/temp-workspace.mjs'
 
 import { superviseProcess } from './lib/process-supervisor.mjs'
 import {
@@ -60,6 +62,12 @@ const providerCapabilityAvailable = () => process.env.MDP_ALLOW_NATIVE_MODEL_CAL
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
+try {
+  cleanupStaleOwnedTempWorkspaces({ purpose: 'run-mcp-freeze' })
+  cleanupStaleOwnedTempWorkspaces({ purpose: 'run-mcp-prepare' })
+} catch {
+  // Stale cleanup is conservative maintenance and never changes CLI authority.
+}
 let pathPolicy = null
 try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'work', 'output', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
 const requirePolicy = () => {
@@ -210,7 +218,7 @@ const freezeRequestFile = (value) => {
     } catch {
       // The CLI remains the authority for rejecting malformed run requests.
     }
-    privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-request-'))
+    privateDir = createOwnedTempWorkspace({ purpose: 'run-mcp-freeze' })
     const frozenPath = join(privateDir, 'request.json')
     writeFileSync(frozenPath, bytes, { flag: 'wx', mode: 0o400 })
     return {
@@ -223,7 +231,7 @@ const freezeRequestFile = (value) => {
       usesNativeModel: parsed?.contract === 'mdp.run-request.v1' && parsed?.mode === 'generative',
     }
   } catch (error) {
-    if (privateDir) rmSync(privateDir, { recursive: true, force: true })
+    if (privateDir) cleanupOwnedTempWorkspace(privateDir, { purpose: 'run-mcp-freeze' })
     if (error?.code === 'ENOENT') throw new Error('request_path does not exist')
     if (error?.code === 'ELOOP') throw new Error('request_path must not be a symlink')
     throw error
@@ -639,7 +647,7 @@ const callPrepareRunValidated = async (args, signal = null) => {
   const cleanupReserveMs = Math.min(MAX_PREPARE_CLEANUP_RESERVE_MS, Math.max(25, Math.floor(timeoutMs / 4)))
   const terminationGraceMs = Math.min(MAX_PREPARE_TERMINATION_GRACE_MS, Math.max(5, Math.floor(cleanupReserveMs / 4)))
   const workDeadline = deadline - cleanupReserveMs
-  const privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-'))
+  const privateDir = createOwnedTempWorkspace({ purpose: 'run-mcp-prepare' })
   let published = false
   try {
     pinnedOutputs.push({ ...pinOutputParent(requestOutput, join(privateDir, 'request.receipt')), cliPath: join(privateDir, 'request.json'), installedIdentity: null })
@@ -714,7 +722,7 @@ const callPrepareRunValidated = async (args, signal = null) => {
         closeSync(output.fd)
         closeSync(output.receiptFd)
       }
-      rmSync(privateDir, { recursive: true, force: true })
+      cleanupOwnedTempWorkspace(privateDir, { purpose: 'run-mcp-prepare' })
     }
     if (!cleanupComplete) throw Object.assign(new Error('secure output cleanup incomplete; inspect required output paths before retry'), { code: 'mcp-cleanup-incomplete' })
   }
@@ -740,31 +748,29 @@ const callRun = async (args, signal = null) => {
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
   const frozenRequest = freezeRequestFile(policy.existing('work', requestPath, 'file').path)
-  if (frozenRequest.sha256 !== requestSha256) {
-    rmSync(frozenRequest.privateDir, { recursive: true, force: true })
-    throw new Error('request_sha256 does not match the prepared request')
-  }
-  const approvedPack = frozenRequest.packDir
-    ? policy.existing('pack', frozenRequest.packDir, 'directory')
-    : null
-  const providerCapable = frozenRequest.usesNativeModel && providerCapabilityAvailable()
-  const frozenInputs = Array.isArray(frozenRequest.parsed?.inputs)
-    ? frozenRequest.parsed.inputs.map((mapping) => {
-        const sourcePath = typeof mapping === 'string'
-          ? mapping.slice(mapping.indexOf('=') + 1)
-          : mapping && typeof mapping.source_path === 'string' ? mapping.source_path : null
-        if (!sourcePath || (typeof mapping === 'string' && mapping.indexOf('=') <= 0)) throw new Error('request inputs must declare source paths')
-        return policy.freeze('input', sourcePath)
-      })
-    : []
-
   let invocation
   let plan = null
-  const finalCheckInputs = () => {
-    if (approvedPack) policy.finalCheck('pack', approvedPack.path, approvedPack, 'directory')
-    for (const input of frozenInputs) policy.finalCheck('input', input.path, input)
-  }
   try {
+    if (frozenRequest.sha256 !== requestSha256) {
+      throw new Error('request_sha256 does not match the prepared request')
+    }
+    const approvedPack = frozenRequest.packDir
+      ? policy.existing('pack', frozenRequest.packDir, 'directory')
+      : null
+    const providerCapable = frozenRequest.usesNativeModel && providerCapabilityAvailable()
+    const frozenInputs = Array.isArray(frozenRequest.parsed?.inputs)
+      ? frozenRequest.parsed.inputs.map((mapping) => {
+          const sourcePath = typeof mapping === 'string'
+            ? mapping.slice(mapping.indexOf('=') + 1)
+            : mapping && typeof mapping.source_path === 'string' ? mapping.source_path : null
+          if (!sourcePath || (typeof mapping === 'string' && mapping.indexOf('=') <= 0)) throw new Error('request inputs must declare source paths')
+          return policy.freeze('input', sourcePath)
+        })
+      : []
+    const finalCheckInputs = () => {
+      if (approvedPack) policy.finalCheck('pack', approvedPack.path, approvedPack, 'directory')
+      for (const input of frozenInputs) policy.finalCheck('input', input.path, input)
+    }
     assertOutputOutsidePack(frozenRequest.packDir, outputRequest)
     const outputParent = policy.existing('output', dirname(resolve(outputRequest)), 'directory')
     if (providerCapable) {
@@ -832,7 +838,7 @@ const callRun = async (args, signal = null) => {
       signal,
     )
   } finally {
-    rmSync(frozenRequest.privateDir, { recursive: true, force: true })
+    cleanupOwnedTempWorkspace(frozenRequest.privateDir, { purpose: 'run-mcp-freeze' })
   }
   if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.cancelled
