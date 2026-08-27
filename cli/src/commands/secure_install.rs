@@ -562,7 +562,7 @@ fn remove_directory_tree_if_identity_with_hooks<
             libc::openat(
                 target_fd,
                 marker_name.as_ptr(),
-                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
             )
         };
         if marker_fd < 0 {
@@ -646,7 +646,7 @@ fn remove_directory_tree_if_identity_with_hooks<
                 libc::openat(
                     target_fd,
                     marker_name.as_ptr(),
-                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                    libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
                 )
             };
             if marker_fd < 0 {
@@ -809,7 +809,7 @@ fn inspect_owned_marker_with_hook<F: FnOnce()>(
         libc::openat(
             dir_fd,
             name.as_ptr(),
-            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
         )
     };
     if marker_fd < 0 {
@@ -822,7 +822,7 @@ fn inspect_owned_marker_with_hook<F: FnOnce()>(
             libc::openat(
                 dir_fd,
                 recovery_name.as_ptr(),
-                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
             )
         };
         if marker_fd < 0 {
@@ -1557,6 +1557,44 @@ mod tests {
         );
         assert!(record_path.exists());
         std::fs::remove_file(record_path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn owned_marker_fifos_are_rejected_without_blocking() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-marker-fifo-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let directory = File::open(&root).unwrap();
+        let canonical = CString::new(OWNED_MARKER_NAME).unwrap();
+        let canonical_path = root.join(canonical.to_str().unwrap());
+        let canonical_fifo = CString::new(canonical_path.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(canonical_fifo.as_ptr(), 0o600) }, 0);
+        let started = std::time::Instant::now();
+        assert!(inspect_owned_marker(directory.as_raw_fd(), &canonical).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(canonical_path.exists());
+        std::fs::remove_file(&canonical_path).unwrap();
+
+        let fallback = CString::new(format!(
+            "{OWNED_MARKER_QUARANTINE_PREFIX}{}",
+            "3".repeat(32)
+        ))
+        .unwrap();
+        let fallback_path = root.join(fallback.to_str().unwrap());
+        let fallback_fifo = CString::new(fallback_path.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fallback_fifo.as_ptr(), 0o600) }, 0);
+        let started = std::time::Instant::now();
+        assert!(inspect_owned_marker(directory.as_raw_fd(), &canonical).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(fallback_path.exists());
+        std::fs::remove_file(fallback_path).unwrap();
         std::fs::remove_dir(root).unwrap();
     }
 
