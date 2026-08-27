@@ -38,5 +38,12 @@ recovery is a hard error and retains its recovery backup for operator action.
 An interrupted apply leaves identity-bound recovery state; the next apply
 reconciles that state before accepting another transaction.
 
+Because another process can keep a writable descriptor to a file after it is
+moved, apply never unlinks committed backups or rollback-quarantined installs.
+It archives those bounded, identity- and hash-sealed files beside the pack as
+`.mdp.author.evidence.*` with a matching evidence-state record and reports the
+content-free `recovery-evidence-retained` reason code. This evidence is not
+live pack authority and is not automatically deleted.
+
 Neither command requires Git, creates a commit, or promotes generated content
 to reviewed authority.

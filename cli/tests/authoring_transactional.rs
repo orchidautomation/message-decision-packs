@@ -614,7 +614,7 @@ fn final_backup_revalidation_retains_late_open_fd_rewrite() {
     let (root, live, candidate, plan) = fixture("late-backup-open-fd-rewrite");
     assert!(preview(&live, &candidate, &plan).status.success());
     let publication_marker = root.join("publication-ready");
-    let cleanup_marker = root.join("backup-cleanup-ready");
+    let cleanup_marker = root.join("backup-cleanup-validated");
     let readme = live.join(".mdp/README.md");
     let mut original = OpenOptions::new()
         .read(true)
@@ -629,7 +629,7 @@ fn final_backup_revalidation_retains_late_open_fd_rewrite() {
         .args(apply_args(&live, &candidate, &plan))
         .env("MDP_TEST_AUTHOR_PUBLICATION_MARKER", &publication_marker)
         .env(
-            "MDP_TEST_AUTHOR_BEFORE_BACKUP_CLEANUP_MARKER",
+            "MDP_TEST_AUTHOR_AFTER_BACKUP_VALIDATION_MARKER",
             &cleanup_marker,
         )
         .stdout(Stdio::piped());
@@ -656,8 +656,16 @@ fn final_backup_revalidation_retains_late_open_fd_rewrite() {
     fs::write(cleanup_marker.with_extension("go"), "go\n").unwrap();
 
     let output = child.wait_with_output().expect("author child should exit");
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("durable recovery state retained"));
+    assert!(output.status.success());
+    assert!(
+        data(&output)["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "recovery-evidence-retained"),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     assert_eq!(snapshot(&live), snapshot(&candidate));
     let backup = fs::read_dir(&root)
         .unwrap()
@@ -666,7 +674,7 @@ fn final_backup_revalidation_retains_late_open_fd_rewrite() {
             path.file_name()
                 .unwrap()
                 .to_string_lossy()
-                .starts_with(".mdp.author.backup.")
+                .starts_with(".mdp.author.evidence.commit.")
         })
         .expect("drifted backup recovery evidence should remain");
     assert_eq!(fs::read(backup.join("README.md")).unwrap(), concurrent);
@@ -675,7 +683,7 @@ fn final_backup_revalidation_retains_late_open_fd_rewrite() {
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".mdp.author.state.")
+            .starts_with(".mdp.author.evidence-state.")
     }));
     let _ = fs::remove_dir_all(root);
 }
@@ -687,6 +695,7 @@ fn rollback_preserves_in_place_edit_of_newly_installed_inode() {
     assert!(preview(&live, &candidate, &plan).status.success());
     let publication_marker = root.join("publication-ready");
     let validation_marker = root.join("published-validation-ready");
+    let staging_marker = root.join("staging-validation-ready");
     let concurrent = b"operator edited newly installed authority\n";
 
     let mut command = Command::new(binary());
@@ -698,6 +707,11 @@ fn rollback_preserves_in_place_edit_of_newly_installed_inode() {
             "MDP_TEST_AUTHOR_BEFORE_PUBLISHED_VALIDATION_MARKER",
             &validation_marker,
         )
+        .env(
+            "MDP_TEST_AUTHOR_AFTER_STAGING_VALIDATION_MARKER",
+            &staging_marker,
+        )
+        .env("MDP_TEST_AUTHOR_FAIL_BEFORE_COMMIT", "1")
         .stdout(Stdio::piped());
     let child = command.spawn().expect("author child should spawn");
     for _ in 0..500 {
@@ -721,23 +735,75 @@ fn rollback_preserves_in_place_edit_of_newly_installed_inode() {
         .write(true)
         .open(&readme)
         .unwrap();
+    fs::write(validation_marker.with_extension("go"), "go\n").unwrap();
+    for _ in 0..500 {
+        if staging_marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(staging_marker.exists());
     installed.set_len(0).unwrap();
     installed.seek(SeekFrom::Start(0)).unwrap();
     installed.write_all(concurrent).unwrap();
     installed.sync_all().unwrap();
-    fs::write(validation_marker.with_extension("go"), "go\n").unwrap();
+    fs::write(staging_marker.with_extension("go"), "go\n").unwrap();
 
     let output = child.wait_with_output().expect("author child should exit");
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("durable recovery state retained"));
-    assert_eq!(fs::read(&readme).unwrap(), concurrent);
+    assert_eq!(data(&output)["status"], "rolled-back");
+    assert_ne!(fs::read(&readme).unwrap(), concurrent);
+    let evidence = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".mdp.author.evidence.rollback.")
+        })
+        .expect("rollback evidence should remain");
+    assert_eq!(fs::read(evidence.join("README.md")).unwrap(), concurrent);
     assert!(fs::read_dir(&root).unwrap().any(|entry| {
         entry
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".mdp.author.state.")
+            .starts_with(".mdp.author.evidence-state.")
     }));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn rollback_does_not_remove_concurrently_created_parent_directory() {
+    let (root, live, candidate, plan) = fixture("concurrent-parent-create");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let marker = root.join("parent-mkdir-ready");
+    let parent = live.join(".mdp/authoring");
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_BEFORE_PARENT_MKDIR_MARKER", &marker)
+        .env("MDP_TEST_AUTHOR_FAIL_BEFORE_COMMIT", "1")
+        .stdout(Stdio::piped());
+    let child = command.spawn().expect("author child should spawn");
+    for _ in 0..500 {
+        if marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists());
+    fs::create_dir(&parent).unwrap();
+    fs::write(marker.with_extension("go"), "go\n").unwrap();
+
+    let output = child.wait_with_output().expect("author child should exit");
+    assert!(!output.status.success());
+    assert_eq!(data(&output)["status"], "rolled-back");
+    assert!(parent.is_dir());
+    assert!(fs::read_dir(&parent).unwrap().next().is_none());
     let _ = fs::remove_dir_all(root);
 }
 
@@ -751,7 +817,14 @@ fn cleanup_failure_is_indeterminate_and_recoverable() {
         &[("MDP_TEST_AUTHOR_CLEANUP_FAIL", "staging".to_string())],
     );
     assert!(!failed.status.success());
-    assert!(String::from_utf8_lossy(&failed.stdout).contains("durable recovery state retained"));
+    assert_eq!(data(&failed)["status"], "rolled-back");
+    assert!(
+        data(&failed)["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "recovery-evidence-retained")
+    );
     let recovered = apply(&live, &candidate, &plan, None);
     assert!(recovered.status.success());
     assert_eq!(data(&recovered)["status"], "applied");
