@@ -418,6 +418,7 @@ struct MarkdownFenceScanner {
     definition_title_pending: Option<MarkdownContainer>,
     definition_destination_pending: Option<MarkdownContainer>,
     raw_html_end: Option<RawHtmlEnd>,
+    raw_html_container: Option<MarkdownContainer>,
 }
 
 impl MarkdownFenceScanner {
@@ -466,6 +467,10 @@ impl MarkdownFenceScanner {
             self.container = container.clone();
             (content, container)
         };
+        if self.raw_html_end.is_some() && self.raw_html_container.as_ref() != Some(&container) {
+            self.raw_html_end = None;
+            self.raw_html_container = None;
+        }
         let canonical_owned_marker = self.raw_html_end.is_none()
             && container.is_empty()
             && matches!(
@@ -475,10 +480,16 @@ impl MarkdownFenceScanner {
                     | README_INVENTORY_BEGIN
                     | README_INVENTORY_END
             );
+        let continuing_raw_html = self.raw_html_end.is_some();
         if !canonical_owned_marker
             && (self.raw_html_end.is_some() || self.fence.is_none())
             && line_is_raw_html(block_content, &mut self.raw_html_end, !self.paragraph_open)
         {
+            if !continuing_raw_html && self.raw_html_end.is_some() {
+                self.raw_html_container = Some(container);
+            } else if self.raw_html_end.is_none() {
+                self.raw_html_container = None;
+            }
             self.paragraph_open = false;
             return true;
         }
@@ -1759,6 +1770,15 @@ mod tests {
         assert!(validate_readme_regions(&indented_script).is_ok());
         assert_eq!(extract_ownership_block(&indented_script), Some(ownership));
         assert_eq!(extract_inventory_block(&indented_script), Some(inventory));
+        for opener in ["> <div>", "- <div>"] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let contained_html = format!("{opener}\n{ownership}{inventory}");
+            assert!(validate_readme_regions(&contained_html).is_ok());
+            assert_eq!(extract_ownership_block(&contained_html), Some(ownership));
+            assert_eq!(extract_inventory_block(&contained_html), Some(inventory));
+        }
         for (open, close) in [
             ("<?php", "?>"),
             ("<![CDATA[", "]]>"),

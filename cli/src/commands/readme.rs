@@ -311,6 +311,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut definition_destination_pending: Option<MarkdownContainer> = None;
     let mut raw_html_end_tag = None;
+    let mut raw_html_container: Option<MarkdownContainer> = None;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
@@ -334,9 +335,19 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
                     && project_container_path(line, opening_container).is_some()
             })
             .and_then(|_| link_definition_continuation_title_state(block_content));
+        if raw_html_end_tag.is_some() && raw_html_container.as_ref() != Some(&container) {
+            raw_html_end_tag = None;
+            raw_html_container = None;
+        }
+        let continuing_raw_html = raw_html_end_tag.is_some();
         if (raw_html_end_tag.is_some() || fence.is_none())
             && line_is_raw_html(block_content, &mut raw_html_end_tag, !paragraph_open)
         {
+            if !continuing_raw_html && raw_html_end_tag.is_some() {
+                raw_html_container = Some(container);
+            } else if raw_html_end_tag.is_none() {
+                raw_html_container = None;
+            }
             visible.push('\n');
             paragraph_open = false;
             continue;
@@ -1118,6 +1129,7 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut definition_destination_pending: Option<MarkdownContainer> = None;
     let mut raw_html_end_tag = None;
+    let mut raw_html_container: Option<MarkdownContainer> = None;
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
@@ -1141,9 +1153,19 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
                     && project_container_path(line, opening_container).is_some()
             })
             .and_then(|_| link_definition_continuation_title_state(block_content));
+        if raw_html_end_tag.is_some() && raw_html_container.as_ref() != Some(&container) {
+            raw_html_end_tag = None;
+            raw_html_container = None;
+        }
+        let continuing_raw_html = raw_html_end_tag.is_some();
         if (raw_html_end_tag.is_some() || fence.is_none())
             && line_is_raw_html(block_content, &mut raw_html_end_tag, !paragraph_open)
         {
+            if !continuing_raw_html && raw_html_end_tag.is_some() {
+                raw_html_container = Some(container);
+            } else if raw_html_end_tag.is_none() {
+                raw_html_container = None;
+            }
             paragraph_open = false;
             continue;
         }
@@ -2060,6 +2082,13 @@ Inline `inline-code` must be ignored.
             vec!["cards/custom-root.yaml"],
             "complete custom-tag raw HTML is not inline-parsed"
         );
+        assert_eq!(
+            inline_code_tokens(
+                "> <div>\nRoot `cards/after-quoted-html.yaml`.\n- <div>\nRoot `cards/after-list-html.yaml`.\n"
+            ),
+            vec!["cards/after-quoted-html.yaml", "cards/after-list-html.yaml"],
+            "raw HTML state ends when its quote or list container exits"
+        );
     }
 
     #[test]
@@ -2214,6 +2243,46 @@ Inline `inline-code` must be ignored.
         assert!(refreshed.contains("    <script>\n"));
         assert!(refreshed.ends_with("</script>\n"));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn contained_html_opener_does_not_hide_root_owned_regions() {
+        for opener in ["> <div>", "- <div>"] {
+            let root = std::env::temp_dir().join(format!(
+                "mdp-readme-contained-html-{}-{}",
+                opener.as_bytes()[0],
+                nonce()
+            ));
+            init_pack(&root, "Contained HTML Pack", "gtm", true, false)
+                .expect("pack should initialize");
+            let readme_path = root.join(".mdp/README.md");
+            let readme = std::fs::read_to_string(&readme_path).expect("README");
+            let with_contained_opener = readme.replacen(
+                crate::pack_readme::README_OWNERSHIP_BEGIN,
+                &format!("{opener}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+                1,
+            );
+            std::fs::write(&readme_path, &with_contained_opener).expect("write README");
+
+            let checked = check_readme(&root).expect("check README");
+            assert_eq!(checked["status"], "fresh", "{opener}: {checked}");
+            refresh_readme(&root, None, false).expect("refresh README");
+            let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+            assert_eq!(
+                refreshed
+                    .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                refreshed
+                    .matches(crate::pack_readme::README_INVENTORY_BEGIN)
+                    .count(),
+                1
+            );
+            assert!(refreshed.contains(&format!("{opener}\n")));
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]
