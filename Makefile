@@ -11,7 +11,8 @@ VALIDATION_TARGETS := validate validate-cli validate-authority-conformance valid
 
 ifneq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
 MAKE_OPTION_WORD := $(firstword $(MAKEFLAGS))
-NON_EXECUTING_MAKE_MODE := $(or $(findstring n,$(MAKE_OPTION_WORD)),$(findstring q,$(MAKE_OPTION_WORD)),$(findstring t,$(MAKE_OPTION_WORD)))
+MAKE_SHORT_OPTION_WORD := $(if $(filter --%,$(MAKE_OPTION_WORD)),,$(MAKE_OPTION_WORD))
+NON_EXECUTING_MAKE_MODE := $(or $(findstring n,$(MAKE_SHORT_OPTION_WORD)),$(findstring q,$(MAKE_SHORT_OPTION_WORD)),$(findstring t,$(MAKE_SHORT_OPTION_WORD)))
 ifneq ($(NON_EXECUTING_MAKE_MODE),)
 $(VALIDATION_TARGETS):
 	@:

@@ -133,7 +133,11 @@ exit 0
   delete environment.MDP_SECURE_INSTALL_BIN
   delete environment.MDP_TEMP_WORKSPACE_ACTIVE
   delete environment.NODE_TEST_CONTEXT
-  const result = spawnSync('make', ['validate-cold-model-conformance'], {
+  const result = spawnSync('make', [
+    '--no-print-directory',
+    '--warn-undefined-variables',
+    'validate-cold-model-conformance',
+  ], {
     cwd: repositoryRoot,
     encoding: 'utf8',
     env: environment,
