@@ -128,6 +128,13 @@ function filterStepBlock(workflow) {
     ),
     'filter step must use dorny/paths-filter@v4',
   )
+  assert.deepEqual(
+    step
+      .filter((line) => line.trim() && line.match(/^\s*/u)[0].length === 10)
+      .map((line) => line.trim()),
+    ['filters: |'],
+    'paths-filter must use only the default-some filters input',
+  )
   assert.equal(
     step.find(
       (line) =>
@@ -518,6 +525,13 @@ for (const [name, mutation] of [
   [
     'replaced paths filter action',
     ciWorkflow.replace('        uses: dorny/paths-filter@v4', '        uses: actions/checkout@v4'),
+  ],
+  [
+    'every-pattern paths filter',
+    ciWorkflow.replace(
+      '          filters: |\n',
+      '          predicate-quantifier: every\n          filters: |\n',
+    ),
   ],
   [
     'disabled paths filter step',
