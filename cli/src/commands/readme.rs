@@ -307,17 +307,20 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut container_state = MarkdownContainerState::default();
     let mut previous_container = None;
     let mut paragraph_open = false;
-    let mut definition_title_pending = false;
+    let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let pending_definition_title = definition_title_pending;
-        definition_title_pending = false;
+        let pending_definition_title = definition_title_pending.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
         let definition_title_continuation =
-            pending_definition_title && is_link_title_continuation(block_content);
+            pending_definition_title
+                .as_ref()
+                .is_some_and(|opening_container| {
+                    *opening_container == container && is_link_title_continuation(block_content)
+                });
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
             indented_code_can_start = true;
@@ -382,7 +385,8 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
         indented_code_can_start = blank;
-        definition_title_pending = link_reference_title_state(block_content) == Some(false);
+        definition_title_pending =
+            (link_reference_title_state(block_content) == Some(false)).then_some(container.clone());
         paragraph_open = !definition_title_continuation && line_continues_paragraph(block_content);
     }
     code_span_tokens(&visible)
@@ -799,17 +803,20 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut fence: Option<(char, usize, MarkdownContainer)> = None;
     let mut container_state = MarkdownContainerState::default();
     let mut paragraph_open = false;
-    let mut definition_title_pending = false;
+    let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let pending_definition_title = definition_title_pending;
-        definition_title_pending = false;
+        let pending_definition_title = definition_title_pending.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
         let definition_title_continuation =
-            pending_definition_title && is_link_title_continuation(block_content);
+            pending_definition_title
+                .as_ref()
+                .is_some_and(|opening_container| {
+                    *opening_container == container && is_link_title_continuation(block_content)
+                });
         if fence
             .as_ref()
             .is_some_and(|(_, _, opening_container)| *opening_container != container)
@@ -837,7 +844,8 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        definition_title_pending = link_reference_title_state(block_content) == Some(false);
+        definition_title_pending =
+            (link_reference_title_state(block_content) == Some(false)).then_some(container.clone());
         paragraph_open = !definition_title_continuation && line_continues_paragraph(block_content);
         if !in_sources {
             continue;
@@ -1462,6 +1470,13 @@ Inline `inline-code` must be ignored.
             source_reference_ids(list_fence),
             vec!["visible-after-list-fence"]
         );
+        assert!(
+            source_reference_ids(
+                "> [ref]: /url\n\"title\"\n2. ```markdown\n   body\n   ```\n## Sources\n- `hidden-after-container-exit`: ignored\n"
+            )
+            .is_empty(),
+            "a pending definition title cannot escape its quote and open the wrong fence"
+        );
     }
 
     #[test]
@@ -1590,6 +1605,13 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/quoted-definition-visible.yaml"],
             "definition title continuations are projected through their container"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "> [ref]: /url\n\"title\"\n2. ```markdown\n   `cards/exited-definition-visible.yaml`\n   ```\nRoot `cards/exited-definition-hidden.yaml`.\n"
+            ),
+            vec!["cards/exited-definition-visible.yaml"],
+            "a definition title continuation cannot escape its opening container"
         );
     }
 

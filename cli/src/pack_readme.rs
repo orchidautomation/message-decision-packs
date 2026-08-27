@@ -415,13 +415,12 @@ struct MarkdownFenceScanner {
     container: MarkdownContainer,
     blank_lines: usize,
     paragraph_open: bool,
-    definition_title_pending: bool,
+    definition_title_pending: Option<MarkdownContainer>,
 }
 
 impl MarkdownFenceScanner {
     fn line_is_fenced(&mut self, line: &str) -> bool {
-        let pending_definition_title = self.definition_title_pending;
-        self.definition_title_pending = false;
+        let pending_definition_title = self.definition_title_pending.take();
         let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
         let opening = self
             .fence
@@ -465,7 +464,11 @@ impl MarkdownFenceScanner {
             (content, container)
         };
         let definition_title_continuation =
-            pending_definition_title && is_link_title_continuation(block_content);
+            pending_definition_title
+                .as_ref()
+                .is_some_and(|opening_container| {
+                    *opening_container == container && is_link_title_continuation(block_content)
+                });
         if self
             .fence
             .as_ref()
@@ -493,7 +496,7 @@ impl MarkdownFenceScanner {
             true
         } else {
             self.definition_title_pending =
-                link_reference_title_state(block_content) == Some(false);
+                (link_reference_title_state(block_content) == Some(false)).then_some(container);
             self.paragraph_open =
                 !definition_title_continuation && line_continues_paragraph(block_content);
             false
@@ -1349,6 +1352,15 @@ mod tests {
         assert!(open_fence_at_eof(&quoted_definition).is_none());
         assert_eq!(extract_ownership_block(&quoted_definition), Some(ownership));
         assert_eq!(extract_inventory_block(&quoted_definition), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let escaped_definition = format!(
+            "> [ref]: /url\n\"title\"\n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&escaped_definition).is_ok());
+        assert!(open_fence_at_eof(&escaped_definition).is_some());
+        assert_eq!(extract_ownership_block(&escaped_definition), None);
+        assert_eq!(extract_inventory_block(&escaped_definition), None);
     }
 
     #[test]
