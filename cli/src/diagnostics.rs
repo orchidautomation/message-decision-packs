@@ -60,8 +60,25 @@ struct ActionableDiagnostic {
 /// Add the versioned diagnostic projection to public command results without
 /// replacing their established low-level issue and authority fields.
 pub(crate) fn enrich_result(command: &str, data: &mut Value) {
-    if !TARGET_COMMANDS.contains(&command) || !data.is_object() {
+    let Some(diagnostics) = diagnostics_for_result(command, data) else {
         return;
+    };
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "diagnostic_contract".to_string(),
+            json!(ACTIONABLE_DIAGNOSTIC_CONTRACT),
+        );
+        object.insert(ACTIONABLE_DIAGNOSTICS_FIELD.to_string(), diagnostics);
+    }
+}
+
+/// Project diagnostics without mutating the command's domain data contract.
+/// Normal command envelopes use this form so additive transport metadata does
+/// not change closed or hash-bound authority objects such as requirements,
+/// skills, routing decisions, and run evidence.
+pub(crate) fn diagnostics_for_result(command: &str, data: &Value) -> Option<Value> {
+    if !TARGET_COMMANDS.contains(&command) || !data.is_object() {
+        return None;
     }
     let mut raw = Vec::new();
     collect_legacy_diagnostics(data, &mut raw, 0);
@@ -69,16 +86,7 @@ pub(crate) fn enrich_result(command: &str, data: &mut Value) {
         raw.push(fallback_code(command).to_string());
     }
     let diagnostics = project_codes(command, raw);
-    if let Some(object) = data.as_object_mut() {
-        object.insert(
-            "diagnostic_contract".to_string(),
-            json!(ACTIONABLE_DIAGNOSTIC_CONTRACT),
-        );
-        object.insert(
-            ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
-            serde_json::to_value(diagnostics).unwrap_or_else(|_| json!([])),
-        );
-    }
+    Some(serde_json::to_value(diagnostics).unwrap_or_else(|_| json!([])))
 }
 
 pub(crate) fn error_diagnostic(code: &str) -> Value {

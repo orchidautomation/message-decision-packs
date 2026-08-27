@@ -205,9 +205,13 @@ fn successful_target_command_advertises_empty_versioned_diagnostics() {
     let (code, _, stderr, value) = run(&["--json", "init", "--dir", root_arg.as_str()], Case::Ok);
     assert_eq!(code, 0);
     assert!(stderr.is_empty());
-    let data = &value.expect("init envelope")["data"];
-    assert_eq!(data["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
-    assert_eq!(data["actionable_diagnostics"], serde_json::json!([]));
+    let value = value.expect("init envelope");
+    assert_eq!(value["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    assert_eq!(value["actionable_diagnostics"], serde_json::json!([]));
+    assert!(
+        value["data"].get("diagnostic_contract").is_none(),
+        "transport diagnostics must not mutate the init domain contract"
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 
