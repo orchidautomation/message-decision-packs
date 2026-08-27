@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::{FromRawFd, RawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
@@ -147,6 +147,7 @@ fn secure_install_with_hook<F: FnOnce()>(
     source: &Path,
     name: &CString,
     dir_fd: RawFd,
+    receipt_fd: RawFd,
     before_path_check: F,
 ) -> Result<Value> {
     let metadata = std::fs::symlink_metadata(source)?;
@@ -157,6 +158,7 @@ fn secure_install_with_hook<F: FnOnce()>(
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(source)?;
+    let mut receipt = unsafe { File::from_raw_fd(receipt_fd) };
     let staging_name = quarantine_name()?;
     let target_fd = unsafe {
         libc::openat(
@@ -181,6 +183,18 @@ fn secure_install_with_hook<F: FnOnce()>(
         if source_sha256 != target_sha256 {
             bail!("secure install content mismatch");
         }
+        receipt.set_len(0)?;
+        receipt.seek(SeekFrom::Start(0))?;
+        serde_json::to_writer(
+            &mut receipt,
+            &json!({
+                "contract": "mdp.secure-install-receipt.v1",
+                "dev": identity.0.to_string(),
+                "ino": identity.1.to_string()
+            }),
+        )?;
+        receipt.write_all(b"\n")?;
+        receipt.sync_all()?;
         rename_no_replace(dir_fd, &staging_name, name)?;
         published = true;
         before_path_check();
@@ -215,13 +229,16 @@ pub(crate) fn secure_install(
     expected_ino: u64,
     expected_file_dev: Option<u64>,
     expected_file_ino: Option<u64>,
+    receipt_fd: Option<RawFd>,
 ) -> Result<Value> {
     checked_directory(dir_fd, expected_dev, expected_ino)?;
     let name = checked_name(name)?;
     match action {
         "install" => {
             let source = source.ok_or_else(|| anyhow!("secure install source is required"))?;
-            secure_install_with_hook(source, &name, dir_fd, || {})
+            let receipt_fd =
+                receipt_fd.ok_or_else(|| anyhow!("secure install receipt fd is required"))?;
+            secure_install_with_hook(source, &name, dir_fd, receipt_fd, || {})
         }
         "remove" => {
             let expected_file_dev =
@@ -229,33 +246,6 @@ pub(crate) fn secure_install(
             let expected_file_ino =
                 expected_file_ino.ok_or_else(|| anyhow!("expected file ino is required"))?;
             remove_if_identity(dir_fd, &name, expected_file_dev, expected_file_ino)?;
-            Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
-        }
-        "remove-matching" => {
-            let source = source.ok_or_else(|| anyhow!("secure remove source is required"))?;
-            let mut input = OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-                .open(source)?;
-            let target_fd = unsafe {
-                libc::openat(
-                    dir_fd,
-                    name.as_ptr(),
-                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-                )
-            };
-            if target_fd < 0 {
-                return Err(io::Error::last_os_error()).map_err(Into::into);
-            }
-            let mut target = unsafe { File::from_raw_fd(target_fd) };
-            let identity = opened_identity(target_fd)?;
-            if named_identity(dir_fd, &name)? != identity
-                || file_sha256(&mut input)? != file_sha256(&mut target)?
-                || named_identity(dir_fd, &name)? != identity
-            {
-                bail!("secure remove source or identity mismatch");
-            }
-            remove_if_identity(dir_fd, &name, identity.0, identity.1)?;
             Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
         }
         "verify" => {
@@ -301,7 +291,7 @@ pub(crate) fn secure_install(
                 "sha256": target_sha256
             }))
         }
-        _ => bail!("secure install action must be install, verify, remove, or remove-matching"),
+        _ => bail!("secure install action must be install, verify, or remove"),
     }
 }
 
@@ -309,7 +299,7 @@ pub(crate) fn secure_install(
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::os::fd::AsRawFd;
+    use std::os::fd::{AsRawFd, IntoRawFd};
     use std::os::unix::fs::{MetadataExt, symlink};
 
     #[test]
@@ -333,6 +323,9 @@ mod tests {
             .write_all(b"fixture")
             .unwrap();
         let directory = File::open(&parent).unwrap();
+        let receipt_fd = File::create(root.join("receipt.json"))
+            .unwrap()
+            .into_raw_fd();
         let identity = directory.metadata().unwrap();
         std::fs::rename(&parent, &renamed).unwrap();
         symlink(&escaped, &parent).unwrap();
@@ -346,8 +339,14 @@ mod tests {
             identity.ino(),
             None,
             None,
+            Some(receipt_fd),
         )
         .unwrap();
+        let receipt: Value =
+            serde_json::from_slice(&std::fs::read(root.join("receipt.json")).unwrap()).unwrap();
+        assert_eq!(receipt["contract"], "mdp.secure-install-receipt.v1");
+        assert_eq!(receipt["dev"], installed["dev"]);
+        assert_eq!(receipt["ino"], installed["ino"]);
         assert_eq!(
             std::fs::read(renamed.join("request.json")).unwrap(),
             b"fixture"
@@ -363,6 +362,7 @@ mod tests {
             identity.ino(),
             Some(installed["dev"].as_str().unwrap().parse().unwrap()),
             Some(installed["ino"].as_str().unwrap().parse().unwrap()),
+            None,
         )
         .unwrap();
         assert!(!renamed.join("request.json").exists());
@@ -395,6 +395,7 @@ mod tests {
                 identity.ino(),
                 None,
                 None,
+                None,
             )
             .is_err()
         );
@@ -408,6 +409,7 @@ mod tests {
                 identity.ino().wrapping_add(1),
                 None,
                 None,
+                None,
             )
             .is_err()
         );
@@ -421,6 +423,21 @@ mod tests {
                 identity.ino(),
                 None,
                 None,
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            secure_install(
+                "install",
+                Some(&source),
+                "request.json",
+                directory.as_raw_fd(),
+                identity.dev(),
+                identity.ino(),
+                None,
+                None,
+                None,
             )
             .is_err()
         );
@@ -432,6 +449,7 @@ mod tests {
                 directory.as_raw_fd(),
                 identity.dev(),
                 identity.ino(),
+                None,
                 None,
                 None,
             )
@@ -457,12 +475,16 @@ mod tests {
         std::fs::write(&source, b"expected").unwrap();
         let directory = File::open(&root).unwrap();
         let name = CString::new("request.json").unwrap();
+        let receipt_fd = File::create(root.join("receipt.json"))
+            .unwrap()
+            .into_raw_fd();
         let displaced = root.join("displaced.json");
 
-        let result = secure_install_with_hook(&source, &name, directory.as_raw_fd(), || {
-            std::fs::rename(root.join("request.json"), &displaced).unwrap();
-            std::fs::write(root.join("request.json"), b"concurrent replacement").unwrap();
-        });
+        let result =
+            secure_install_with_hook(&source, &name, directory.as_raw_fd(), receipt_fd, || {
+                std::fs::rename(root.join("request.json"), &displaced).unwrap();
+                std::fs::write(root.join("request.json"), b"concurrent replacement").unwrap();
+            });
 
         assert!(result.is_err());
         assert_eq!(
@@ -507,6 +529,7 @@ mod tests {
             directory.metadata().unwrap().ino(),
             Some(owned.dev()),
             Some(owned.ino()),
+            None,
         );
 
         assert!(result.is_err());

@@ -14,6 +14,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -36,7 +37,8 @@ const MAX_JSON_RPC_LINE_BYTES = 1_000_000
 const MAX_REQUEST_FILE_BYTES = 1_048_576
 const MAX_CHILD_BUFFER_BYTES = 1_000_000
 const DEFAULT_TIMEOUT_MS = RECOMMENDED_TIMEOUT_MS
-const SECURE_CLEANUP_GRACE_MS = 250
+const MAX_PREPARE_CLEANUP_RESERVE_MS = 100
+const MAX_PREPARE_TERMINATION_GRACE_MS = 25
 const JSON_RPC_PARSE_ERROR = -32700
 const JSON_RPC_INVALID_REQUEST = -32600
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -285,7 +287,7 @@ const childEnvironment = (includeNativeModel = false) =>
       .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
@@ -296,6 +298,7 @@ const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = f
     recovery,
     deadlineMetadata,
     signal,
+    ...(terminationGraceMs === undefined ? {} : { terminationGraceMs }),
   })
 
 const tools = [
@@ -439,28 +442,32 @@ const blockedPrepareRun = (code, message, nextCommand = 'mdp prepare-run --help'
   next_command: nextCommand,
 })
 
-const pinOutputParent = (reservation) => {
+const pinOutputParent = (reservation, receiptPath) => {
   let fd
+  let receiptFd
   try {
     fd = openSync(reservation.parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
     const opened = fstatSync(fd, { bigint: true })
     if (!opened.isDirectory() || opened.dev !== BigInt(reservation.parentIdentity.dev) || opened.ino !== BigInt(reservation.parentIdentity.ino)) {
       throw Object.assign(new Error('work output parent changed while being pinned'), { code: 'mcp-output-denied' })
     }
-    return { ...reservation, fd }
+    receiptFd = openSync(receiptPath, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL, 0o600)
+    unlinkSync(receiptPath)
+    return { ...reservation, fd, receiptFd }
   } catch (error) {
     if (fd !== undefined) closeSync(fd)
+    if (receiptFd !== undefined) closeSync(receiptFd)
     throw error
   }
 }
 
-const remainingPrepareTimeout = (deadline) => {
-  const remaining = deadline - Date.now()
+const remainingPrepareTimeout = (deadline, terminationGraceMs = 0) => {
+  const remaining = deadline - Date.now() - terminationGraceMs
   if (remaining <= 0) throw new Error('prepare deadline exhausted')
   return remaining
 }
 
-const invokeSecureInstaller = (output, action, timeoutMs) => {
+const invokeSecureInstaller = (output, action, deadline, terminationGraceMs) => {
   const args = [
     '--json', '__secure-install',
     '--action', action,
@@ -469,7 +476,7 @@ const invokeSecureInstaller = (output, action, timeoutMs) => {
     '--expected-dev', output.parentIdentity.dev.toString(),
     '--expected-ino', output.parentIdentity.ino.toString(),
   ]
-  if (action === 'install' || action === 'remove-matching') args.push('--source', output.cliPath)
+  if (action === 'install') args.push('--source', output.cliPath, '--receipt-fd', '4')
   else if (action === 'verify') args.push(
     '--source', output.cliPath,
     '--expected-file-dev', output.installedIdentity.dev.toString(),
@@ -484,25 +491,40 @@ const invokeSecureInstaller = (output, action, timeoutMs) => {
     args,
     cwd: output.parent,
     environment: childEnvironment(false),
-    timeoutMs,
+    timeoutMs: remainingPrepareTimeout(deadline, terminationGraceMs),
+    terminationGraceMs,
     maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
-    inheritedFds: [output.fd],
+    inheritedFds: [output.fd, output.receiptFd],
   })
 }
 
-const publishPinnedOutput = async (output, deadline) => {
-  const invocation = await invokeSecureInstaller(output, 'install', remainingPrepareTimeout(deadline))
+const readInstallReceipt = (output) => {
+  const buffer = Buffer.alloc(512)
+  const bytes = readSync(output.receiptFd, buffer, 0, buffer.length, 0)
+  if (bytes <= 0 || bytes === buffer.length) return null
+  let receipt
+  try { receipt = JSON.parse(buffer.subarray(0, bytes).toString('utf8')) } catch { return null }
+  if (receipt?.contract !== 'mdp.secure-install-receipt.v1' || !/^\d+$/.test(receipt.dev || '') || !/^\d+$/.test(receipt.ino || '')) return null
+  return { dev: BigInt(receipt.dev), ino: BigInt(receipt.ino) }
+}
+
+const publishPinnedOutput = async (output, deadline, terminationGraceMs) => {
+  const invocation = await invokeSecureInstaller(output, 'install', deadline, terminationGraceMs)
+  output.installedIdentity = readInstallReceipt(output)
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output installer returned invalid data') }
   const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
   if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1' || envelope.data?.status !== 'installed' || envelope.data?.sha256 !== stagedSha256) {
     throw new Error('secure output installer refused publication')
   }
-  return { dev: BigInt(envelope.data.dev), ino: BigInt(envelope.data.ino) }
+  const stdoutIdentity = { dev: BigInt(envelope.data.dev), ino: BigInt(envelope.data.ino) }
+  if (!output.installedIdentity || output.installedIdentity.dev !== stdoutIdentity.dev || output.installedIdentity.ino !== stdoutIdentity.ino) {
+    throw new Error('secure output installer receipt mismatch')
+  }
 }
 
-const verifyPinnedOutput = async (output, deadline) => {
-  const invocation = await invokeSecureInstaller(output, 'verify', remainingPrepareTimeout(deadline))
+const verifyPinnedOutput = async (output, deadline, terminationGraceMs) => {
+  const invocation = await invokeSecureInstaller(output, 'verify', deadline, terminationGraceMs)
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output verifier returned invalid data') }
   const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
@@ -511,9 +533,9 @@ const verifyPinnedOutput = async (output, deadline) => {
   }
 }
 
-const removePinnedOutput = async (output, deadline) => {
-  const action = output.installedIdentity ? 'remove' : 'remove-matching'
-  try { await invokeSecureInstaller(output, action, remainingPrepareTimeout(deadline)) } catch { /* preserve unknown or concurrently replaced nodes */ }
+const removePinnedOutput = async (output, deadline, terminationGraceMs) => {
+  if (!output.installedIdentity) return
+  try { await invokeSecureInstaller(output, 'remove', deadline, terminationGraceMs) } catch { /* preserve missing or concurrently replaced nodes */ }
 }
 
 const normalizePreparedOutputPaths = (data, outputs) => {
@@ -557,11 +579,14 @@ const callPrepareRunValidated = async (args) => {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
   const pinnedOutputs = []
   const deadline = Date.now() + timeoutMs
+  const cleanupReserveMs = Math.min(MAX_PREPARE_CLEANUP_RESERVE_MS, Math.max(25, Math.floor(timeoutMs / 4)))
+  const terminationGraceMs = Math.min(MAX_PREPARE_TERMINATION_GRACE_MS, Math.max(5, Math.floor(cleanupReserveMs / 4)))
+  const workDeadline = deadline - cleanupReserveMs
   const privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-'))
   let published = false
   try {
-    pinnedOutputs.push({ ...pinOutputParent(requestOutput), cliPath: join(privateDir, 'request.json'), installedIdentity: null })
-    if (manifestOutput) pinnedOutputs.push({ ...pinOutputParent(manifestOutput), cliPath: join(privateDir, 'manifest.json'), installedIdentity: null })
+    pinnedOutputs.push({ ...pinOutputParent(requestOutput, join(privateDir, 'request.receipt')), cliPath: join(privateDir, 'request.json'), installedIdentity: null })
+    if (manifestOutput) pinnedOutputs.push({ ...pinOutputParent(manifestOutput, join(privateDir, 'manifest.receipt')), cliPath: join(privateDir, 'manifest.json'), installedIdentity: null })
     const requestParent = { path: requestOutput.parent, root: requestOutput.root, identity: requestOutput.parentIdentity }
     const manifestParent = manifestOutput && { path: manifestOutput.parent, root: manifestOutput.root, identity: manifestOutput.parentIdentity }
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
@@ -574,7 +599,7 @@ const callPrepareRunValidated = async (args) => {
     cliArgs.push('--out', pinnedOutputs[0].cliPath)
     if (manifestOut) cliArgs.push('--manifest-out', pinnedOutputs[1].cliPath)
     if (parsed.full === true) cliArgs.push('--full')
-    const invocation = await invokeCli(cliArgs, dir, remainingPrepareTimeout(deadline))
+    const invocation = await invokeCli(cliArgs, dir, remainingPrepareTimeout(workDeadline, terminationGraceMs), null, false, null, null, terminationGraceMs)
     if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
       return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
     }
@@ -596,7 +621,7 @@ const callPrepareRunValidated = async (args) => {
       }
     }
     for (const output of pinnedOutputs) {
-      output.installedIdentity = await publishPinnedOutput(output, deadline)
+      await publishPinnedOutput(output, workDeadline, terminationGraceMs)
     }
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
     if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
@@ -604,15 +629,17 @@ const callPrepareRunValidated = async (args) => {
     if (manifestOut) policy.existing('work', manifestOut, 'file')
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
     if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
-    for (const output of pinnedOutputs) await verifyPinnedOutput(output, deadline)
+    for (const output of pinnedOutputs) await verifyPinnedOutput(output, workDeadline, terminationGraceMs)
     published = true
     return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
   } finally {
     if (!published) {
-      const cleanupDeadline = Math.max(deadline, Date.now() + SECURE_CLEANUP_GRACE_MS)
-      await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, cleanupDeadline)))
+      await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, terminationGraceMs)))
     }
-    for (const output of pinnedOutputs) closeSync(output.fd)
+    for (const output of pinnedOutputs) {
+      closeSync(output.fd)
+      closeSync(output.receiptFd)
+    }
     rmSync(privateDir, { recursive: true, force: true })
   }
 }

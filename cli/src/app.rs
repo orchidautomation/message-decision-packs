@@ -242,6 +242,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             expected_ino,
             expected_file_dev,
             expected_file_ino,
+            receipt_fd,
         } => print_output(
             json_mode,
             summary_mode,
@@ -255,6 +256,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 expected_ino,
                 expected_file_dev,
                 expected_file_ino,
+                receipt_fd,
             )?,
         ),
         Commands::RebindSyntheticChain {

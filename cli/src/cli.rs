@@ -141,6 +141,8 @@ pub(crate) enum Commands {
         expected_file_dev: Option<u64>,
         #[arg(long)]
         expected_file_ino: Option<u64>,
+        #[arg(long)]
+        receipt_fd: Option<i32>,
     },
     #[command(about = "Generate or safely rebind a complete synthetic v2 input chain")]
     RebindSyntheticChain {

@@ -564,9 +564,9 @@ esac
   })], roleEnv)
   const elapsed = Date.now() - started
   assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
-  assert(elapsed < 2_000, `one prepare deadline should bound helper work; elapsed=${elapsed}`)
+  assert(elapsed < 550, `the caller timeout must include helper termination and cleanup; elapsed=${elapsed}`)
   assert.equal(existsSync(request), false, 'cleanup must remove a complete install whose identity envelope was lost')
-  assert.equal(existsSync(manifest), false, 'every sibling output must receive cleanup within the shared grace window')
+  assert.equal(existsSync(manifest), false, 'every sibling output must receive cleanup within the reserved deadline window')
   assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
 
   const [retried] = await rpc(fixtureCli(root), [toolCall(2, 'mdp_prepare_run', {
@@ -577,6 +577,44 @@ esac
     manifest_out: manifest,
   })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: realCli })
   assert.equal(retried.result.structuredContent.status, 'ready', JSON.stringify(retried))
+})
+
+test('receipt-bound timeout cleanup preserves an identical concurrent replacement', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-identical-replacement-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-identical-race.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*)
+    "${realCli}" "$@" >/dev/null || exit $?
+    mv request.json request.original.json
+    cp request.original.json request.json
+    sleep 10
+    ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(existsSync(request), true, 'identity cleanup must preserve the replacement')
+  assert.deepEqual(readFileSync(request), readFileSync(join(work, 'request.original.json')))
+  assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
 })
 
 test('real CLI completes canonical GTM and proposal handoffs across disjoint roots', async (t) => {
