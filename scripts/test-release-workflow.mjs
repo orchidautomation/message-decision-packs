@@ -17,6 +17,10 @@ const requiredPrefix = [
   buildCommand,
 ]
 
+function hasShellOverride(line) {
+  return /(?:^|[\s{,])(?:shell|["']shell["'])\s*:/u.test(line.trim())
+}
+
 function stepBlock(workflow, name) {
   const lines = workflow.split(/\r?\n/)
   const marker = `- name: ${name}`
@@ -88,7 +92,8 @@ function filterStepBlock(workflow) {
     step.find(
       (line) =>
         line.match(/^\s*/u)[0].length === 8 &&
-        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)),
+        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) ||
+        hasShellOverride(line),
     ),
     undefined,
     'projected paths-filter step must not be bypassable',
@@ -102,7 +107,8 @@ function assertCliJobWiring(workflow) {
     changes.find(
       (line) =>
         line.match(/^\s*/u)[0].length === 4 &&
-        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)),
+        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) ||
+        hasShellOverride(line),
     ),
     undefined,
     'changes job must not be bypassable',
@@ -129,7 +135,7 @@ function assertCliJobWiring(workflow) {
     'cli job must not ignore failures',
   )
   assert.equal(
-    cli.find((line) => line.trim().startsWith('shell:')),
+    cli.find(hasShellOverride),
     undefined,
     'cli job must not override run-command execution',
   )
@@ -155,7 +161,8 @@ function assertUnconditionalStep(workflow, name) {
     .slice(start + 1, end)
     .find(
       (line) =>
-        ['if:', 'continue-on-error:', 'shell:'].some((key) => line.trim().startsWith(key)) &&
+        (['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) ||
+          hasShellOverride(line)) &&
         line.match(/^\s*/u)[0].length === stepIndent + 2,
     )
   assert.equal(control, undefined, `required CI step must not be bypassable: ${name}`)
@@ -168,7 +175,7 @@ function assertNoWorkflowShellOverride(workflow) {
   )
   assert.notEqual(jobsIndex, -1, 'missing jobs block')
   assert.equal(
-    lines.slice(0, jobsIndex).find((line) => line.trim().startsWith('shell:')),
+    lines.slice(0, jobsIndex).find(hasShellOverride),
     undefined,
     'workflow must not override run-command execution',
   )
@@ -321,10 +328,24 @@ for (const [name, mutation] of [
     ),
   ],
   [
+    'flow-style cli job shell',
+    ciWorkflow.replace(
+      '  cli:\n',
+      '  cli:\n    defaults: { run: { shell: "/bin/true {0}" } }\n',
+    ),
+  ],
+  [
     'custom workflow shell',
     ciWorkflow.replace(
       'jobs:\n',
       'defaults:\n  run:\n    shell: /bin/true {0}\n\njobs:\n',
+    ),
+  ],
+  [
+    'flow-style workflow shell',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'defaults: { run: { "shell": "/bin/true {0}" } }\n\njobs:\n',
     ),
   ],
   [
