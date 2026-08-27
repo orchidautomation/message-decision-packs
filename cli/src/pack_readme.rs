@@ -356,21 +356,69 @@ fn inspect_marked_region(
     begin_marker: &str,
     end_marker: &str,
 ) -> Result<Option<(usize, usize)>, &'static str> {
-    let begins = readme
-        .match_indices(begin_marker)
-        .map(|(offset, _)| offset)
-        .collect::<Vec<_>>();
-    let ends = readme
-        .match_indices(end_marker)
-        .map(|(offset, _)| offset)
-        .collect::<Vec<_>>();
+    let begins = standalone_marker_line_offsets(readme, begin_marker);
+    let ends = standalone_marker_line_offsets(readme, end_marker);
     match (begins.as_slice(), ends.as_slice()) {
         ([], []) => Ok(None),
-        ([begin], [end]) if begin < end => Ok(Some((
-            *begin,
-            block_end_offset(readme, *begin, end_marker).ok_or(README_MARKER_DIAGNOSTIC)?,
-        ))),
+        ([(begin, _)], [(end, end_after_line)]) if begin < end => {
+            Ok(Some((*begin, *end_after_line)))
+        }
         _ => Err(README_MARKER_DIAGNOSTIC),
+    }
+}
+
+/// Locate exact, standalone marker lines outside Markdown fenced code blocks.
+/// Both LF and CRLF line endings are recognized and included in replacement
+/// offsets. Quoted, inline, indented, or fenced marker text remains human prose.
+fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usize)> {
+    let mut offsets = Vec::new();
+    let mut offset = 0;
+    let mut fence: Option<(char, usize)> = None;
+    for raw_line in readme.split_inclusive('\n') {
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
+            if closing {
+                fence = None;
+            } else if fence.is_none() {
+                fence = Some((character, length));
+            }
+        } else if fence.is_none() && line == marker {
+            offsets.push((offset, offset + raw_line.len()));
+        }
+        offset += raw_line.len();
+    }
+    offsets
+}
+
+fn fence_delimiter(line: &str, open: Option<(char, usize)>) -> Option<(char, usize, bool)> {
+    let leading_spaces = line
+        .chars()
+        .take_while(|character| *character == ' ')
+        .count();
+    if leading_spaces > 3 {
+        return None;
+    }
+    let rest = &line[leading_spaces..];
+    let character = rest.chars().next()?;
+    if !matches!(character, '`' | '~') {
+        return None;
+    }
+    let length = rest
+        .chars()
+        .take_while(|candidate| *candidate == character)
+        .count();
+    if length < 3 {
+        return None;
+    }
+    match open {
+        Some((open_character, open_length)) => {
+            let closing = character == open_character
+                && length >= open_length
+                && rest[length..].trim().is_empty();
+            closing.then_some((character, length, true))
+        }
+        None => Some((character, length, false)),
     }
 }
 
@@ -447,20 +495,6 @@ fn marked_block_offsets(
     inspect_marked_region(readme, begin_marker, end_marker)
         .ok()
         .flatten()
-}
-
-/// Return the offset just past the end of the owned block beginning at `begin`,
-/// consuming the single line terminator after the end marker so the captured
-/// string equals the freshly rendered block byte-for-byte.
-fn block_end_offset(readme: &str, begin: usize, end_marker: &str) -> Option<usize> {
-    let end_marker_start = begin + readme[begin..].find(end_marker)?;
-    let after_marker = end_marker_start + end_marker.len();
-    let bytes = readme.as_bytes();
-    if after_marker < bytes.len() && bytes[after_marker] == b'\n' {
-        Some(after_marker + 1)
-    } else {
-        Some(after_marker)
-    }
 }
 
 fn source_ids(source_ledger: &Value) -> Vec<String> {
@@ -666,6 +700,56 @@ mod tests {
     fn extract_returns_none_for_legacy_readme_without_marker() {
         let legacy = "# Human Pack\n\nOrientation prose only.\n";
         assert!(extract_inventory_block(legacy).is_none());
+    }
+
+    #[test]
+    fn marker_text_in_inline_quotes_and_fences_remains_human_prose() {
+        let human = format!(
+            "Inline `{README_OWNERSHIP_BEGIN}` and quoted text:\n> {README_INVENTORY_BEGIN}\n\n```markdown\n{README_OWNERSHIP_BEGIN}\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\n{README_INVENTORY_END}\n```\n"
+        );
+        assert!(validate_readme_regions(&human).is_ok());
+        assert!(extract_ownership_block(&human).is_none());
+        assert!(extract_inventory_block(&human).is_none());
+
+        let manifest = manifest_with("Quoted Marker Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let refreshed = replace_readme_regions(&human, &fresh).expect("refresh legacy prose");
+        assert!(
+            refreshed.contains(&human),
+            "refresh must retain adversarial human prose byte-for-byte"
+        );
+        assert_eq!(refreshed.matches(README_OWNERSHIP_BEGIN).count(), 3);
+        assert_eq!(refreshed.matches(README_INVENTORY_BEGIN).count(), 3);
+        assert!(validate_readme_regions(&refreshed).is_ok());
+    }
+
+    #[test]
+    fn standalone_crlf_marker_lines_are_recognized_with_exact_offsets() {
+        let ownership = render_ownership_block().replace('\n', "\r\n");
+        let inventory =
+            format!("{README_INVENTORY_BEGIN}\r\n## Inventory\r\n{README_INVENTORY_END}\r\n");
+        let readme = format!("{ownership}\r\nHuman bytes.\r\n\r\n{inventory}");
+        assert!(validate_readme_regions(&readme).is_ok());
+        assert_eq!(
+            extract_ownership_block(&readme).as_deref(),
+            Some(ownership.as_str())
+        );
+        assert_eq!(
+            extract_inventory_block(&readme).as_deref(),
+            Some(inventory.as_str())
+        );
+
+        let fresh_inventory =
+            format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let refreshed = replace_readme_regions(&readme, &fresh_inventory).expect("refresh CRLF");
+        assert!(refreshed.contains("Human bytes.\r\n\r\n"));
+        assert_eq!(
+            extract_ownership_block(&refreshed),
+            Some(render_ownership_block())
+        );
+        assert_eq!(extract_inventory_block(&refreshed), Some(fresh_inventory));
     }
 
     #[test]

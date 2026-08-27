@@ -660,6 +660,42 @@ mod tests {
     }
 
     #[test]
+    fn quoted_inline_and_fenced_marker_text_stays_legacy_human_prose() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-quoted-markers-{}", nonce()));
+        init_pack(&root, "Quoted Marker Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let human = format!(
+            "Human orientation with inline `{}`.\n\n> {}\n\n```markdown\n{}\n{}\n{}\n{}\n```\n\nKeep these exact bytes.\n",
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            crate::pack_readme::README_INVENTORY_BEGIN,
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            crate::pack_readme::README_OWNERSHIP_END,
+            crate::pack_readme::README_INVENTORY_BEGIN,
+            crate::pack_readme::README_INVENTORY_END,
+        );
+        std::fs::write(&readme_path, &human).expect("write adversarial legacy README");
+
+        let before = check_readme(&root).expect("check legacy README");
+        assert_eq!(before["status"], "unassessed");
+        assert_eq!(before["valid"], true);
+        assert_eq!(
+            before["changed_generated_regions"],
+            json!(["ownership", "inventory"])
+        );
+
+        refresh_readme(&root, None, false).expect("refresh legacy README");
+        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+        assert!(
+            refreshed.contains(&human),
+            "refresh must preserve quoted, inline, and fenced marker prose byte-for-byte"
+        );
+        let after = check_readme(&root).expect("check refreshed README");
+        assert_eq!(after["status"], "fresh");
+        assert_eq!(after["changed_generated_regions"], json!([]));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn refresh_migrates_legacy_readme_by_appending_owned_block() {
         let root = std::env::temp_dir().join(format!("mdp-readme-migrate-{}", nonce()));
         init_pack(&root, "Migrate Readme Pack", "gtm", true, false)
