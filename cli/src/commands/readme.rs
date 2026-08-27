@@ -302,12 +302,15 @@ fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Va
 
 fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut fence: Option<(char, usize)> = None;
+    let mut indented_code = false;
+    let mut indented_code_can_start = true;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
         if let Some((character, length, closing)) = fence_delimiter(line, fence) {
             if closing {
                 fence = None;
+                indented_code_can_start = true;
             } else if fence.is_none() {
                 fence = Some((character, length));
             }
@@ -320,9 +323,43 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             visible.push('\n');
             continue;
         }
+
+        let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+        let indented = markdown_indent_columns(line) >= 4;
+        if indented_code {
+            if blank || indented {
+                // Blank lines belong to an open indented block when a later
+                // indented chunk continues it; either way they contain no
+                // reference claim and preserve only a parsing boundary here.
+                visible.push('\n');
+                continue;
+            }
+            indented_code = false;
+        }
+        if indented && indented_code_can_start {
+            indented_code = true;
+            visible.push('\n');
+            continue;
+        }
         visible.push_str(&markdown[start..line_end]);
+        // CommonMark indented code cannot interrupt a paragraph. A blank line
+        // re-enables block start; ordinary prose keeps later indentation in
+        // the paragraph, where inline code spans remain mechanically visible.
+        indented_code_can_start = blank;
     }
     code_span_tokens(&visible)
+}
+
+fn markdown_indent_columns(line: &str) -> usize {
+    let mut columns = 0;
+    for byte in line.bytes() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - (columns % 4),
+            _ => break,
+        }
+    }
+    columns
 }
 
 /// Project CommonMark-style backtick code spans in bounded linear time.
@@ -1058,6 +1095,46 @@ Inline `inline-code` must be ignored.
                 "cards/multiline.yaml"
             ]
         );
+    }
+
+    #[test]
+    fn card_reference_parser_excludes_indented_code_blocks_only() {
+        let markdown = "    `cards/first-code.yaml`\n\n\t`cards/continued-code.yaml`\nOutside `cards/visible.yaml`.\nParagraph continuation\n    `cards/paragraph-span.yaml`\n";
+        assert_eq!(
+            inline_code_tokens(markdown),
+            vec!["cards/visible.yaml", "cards/paragraph-span.yaml"],
+            "blank-line continuation stays code, while indentation cannot interrupt a paragraph"
+        );
+    }
+
+    #[test]
+    fn readme_check_and_validate_ignore_indented_code_card_examples() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-indented-code-{}", nonce()));
+        init_pack(&root, "Indented Code Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let mut readme = std::fs::read_to_string(&readme_path).expect("README");
+        readme.push_str(
+            "\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\nHuman `cards/visible-missing.yaml`.\n",
+        );
+        std::fs::write(&readme_path, readme).expect("write human examples");
+
+        let checked = check_readme(&root).expect("check README");
+        let check_refs = checked["warnings"]
+            .as_array()
+            .expect("warnings")
+            .iter()
+            .filter(|warning| warning["code"] == "readme_human_card_reference_missing")
+            .map(|warning| warning["reference"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(check_refs, vec!["cards/visible-missing.yaml"]);
+
+        let validate_refs = readme_validation_issues(&root)
+            .into_iter()
+            .filter(|issue| issue["code"] == "readme_human_card_reference_missing")
+            .map(|issue| issue["reference"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(validate_refs, vec!["cards/visible-missing.yaml"]);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
