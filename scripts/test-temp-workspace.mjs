@@ -282,6 +282,38 @@ test('missing or no-op secure helper fails closed without claiming cleanup', (t)
   assert.equal(readFileSync(join(noOpRoot, 'owned'), 'utf8'), 'owned bytes')
 })
 
+test('dedicated secure helper takes precedence over the operational CLI fixture', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-helper-precedence-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const previous = {
+    mdp: process.env.MDP_BIN,
+    secure: process.env.MDP_SECURE_INSTALL_BIN,
+    marker: process.env.MDP_FAKE_SPAWN_MARKER,
+  }
+  t.after(() => {
+    for (const [name, value] of [
+      ['MDP_BIN', previous.mdp],
+      ['MDP_SECURE_INSTALL_BIN', previous.secure],
+      ['MDP_FAKE_SPAWN_MARKER', previous.marker],
+    ]) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  })
+  const marker = join(base, 'fixture-spawned')
+  const fixture = join(base, 'operational-fixture')
+  writeFileSync(fixture, '#!/bin/sh\ntouch "$MDP_FAKE_SPAWN_MARKER"\nexit 9\n', { mode: 0o700 })
+  process.env.MDP_BIN = fixture
+  process.env.MDP_SECURE_INSTALL_BIN = fileURLToPath(new URL('../cli/target/debug/mdp', import.meta.url))
+  process.env.MDP_FAKE_SPAWN_MARKER = marker
+  const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  writeFileSync(join(root, 'owned'), 'owned bytes')
+
+  assert.equal(cleanupOwnedTempWorkspace(root, { purpose: 'validation' }), true)
+  assert.equal(existsSync(root), false)
+  assert.equal(existsSync(marker), false)
+})
+
 test('helper termination after mutation is reconciled from exact identities', (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-helper-signal-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))

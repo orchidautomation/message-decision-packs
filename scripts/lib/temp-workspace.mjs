@@ -16,6 +16,7 @@ const sameIdentity = (left, right) => left.dev === right.dev && left.ino === rig
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const secureHelper = (explicit) => {
   if (explicit) return explicit
+  if (process.env.MDP_SECURE_INSTALL_BIN) return process.env.MDP_SECURE_INSTALL_BIN
   if (process.env.MDP_BIN) return process.env.MDP_BIN
   const developmentBinary = join(repositoryRoot, 'cli', 'target', 'debug', 'mdp')
   return existsSync(developmentBinary) ? developmentBinary : 'mdp'
