@@ -125,6 +125,13 @@ fn capabilities_envelope_is_one_parseable_json_value() {
         value["data"]["presentation_contract"].is_object(),
         "capabilities should expose the presentation contract"
     );
+    let doctor = value["data"]["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|command| command["name"] == "doctor")
+        .expect("doctor command projection");
+    assert_eq!(doctor["output_contract"], "mdp.doctor.v1");
     assert!(stdout.contains("presentation_contract"));
 }
 
