@@ -8,6 +8,7 @@ import { superviseProcess } from './lib/process-supervisor.mjs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -65,6 +66,7 @@ if (args.includes('verify-run')) {
     writeFileSync(receipt.ready_path, '')
     process.on('SIGTERM', () => {})
     setInterval(() => {}, 1000)
+    await new Promise(() => {})
   }
   const data = { contract: 'mdp.run-verification.v1', valid: receipt.valid !== false, checks: [] }
   process.stdout.write(JSON.stringify({ ok: true, command: 'verify-run', data }))
@@ -1207,6 +1209,13 @@ test('notifications/cancelled aborts a hanging clean run with sanitized cancella
     env: { ...process.env, MDP_BIN: fixtureCli(root), ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])) },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, 'close')
+      child.kill('SIGKILL')
+      await closed
+    }
+  })
   const replies = []
   let outputText = ''
   child.stdout.setEncoding('utf8')
@@ -1245,7 +1254,6 @@ test('notifications/cancelled aborts a hanging clean run with sanitized cancella
   assert.equal(reply.result.structuredContent.deadline.outcome, 'cancelled')
   assert.equal(reply.result.structuredContent.deadline.phase, 'cancellation')
   assert.equal(JSON.stringify(reply).includes(root), false)
-  child.kill('SIGKILL')
 })
 
 test('verify cancellation is bounded while ping remains responsive', async (t) => {
@@ -1259,6 +1267,13 @@ test('verify cancellation is bounded while ping remains responsive', async (t) =
   const child = spawn(process.execPath, [server], {
     env: { ...process.env, MDP_BIN: fixtureCli(root), ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])) },
     stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, 'close')
+      child.kill('SIGKILL')
+      await closed
+    }
   })
   const replies = []
   let outputText = ''
@@ -1301,7 +1316,6 @@ test('verify cancellation is bounded while ping remains responsive', async (t) =
   assert.equal(reply.result.structuredContent.code, 'cli-cancelled')
   assert.equal(reply.result.structuredContent.diagnostic.phase, 'cancellation')
   assert.equal(JSON.stringify(reply).includes(root), false)
-  child.kill('SIGKILL')
 })
 
 test('passes only file paths to a bounded CLI child and returns its authority unchanged', async (t) => {
