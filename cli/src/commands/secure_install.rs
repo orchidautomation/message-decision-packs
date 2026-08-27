@@ -186,4 +186,77 @@ mod tests {
         assert!(!renamed.join("request.json").exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
+
+    #[test]
+    fn rejects_path_components_and_mismatched_directory_identity_without_writing() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-install-denial-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.json");
+        std::fs::write(&source, b"fixture").unwrap();
+        let directory = File::open(&root).unwrap();
+        let identity = directory.metadata().unwrap();
+
+        assert!(
+            secure_install(
+                "install",
+                Some(&source),
+                "../escaped.json",
+                directory.as_raw_fd(),
+                identity.dev(),
+                identity.ino(),
+                None,
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            secure_install(
+                "install",
+                Some(&source),
+                "request.json",
+                directory.as_raw_fd(),
+                identity.dev(),
+                identity.ino().wrapping_add(1),
+                None,
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            secure_install(
+                "install",
+                None,
+                "request.json",
+                directory.as_raw_fd(),
+                identity.dev(),
+                identity.ino(),
+                None,
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            secure_install(
+                "unknown",
+                Some(&source),
+                "request.json",
+                directory.as_raw_fd(),
+                identity.dev(),
+                identity.ino(),
+                None,
+                None,
+            )
+            .is_err()
+        );
+        assert!(!root.join("request.json").exists());
+        assert!(!root.parent().unwrap().join("escaped.json").exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 }
