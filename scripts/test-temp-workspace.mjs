@@ -53,6 +53,21 @@ test('creates unpredictable private roots and cleans handled success and failure
   }
 })
 
+test('creation normalizes private modes under a restrictive umask', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-umask-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const previous = process.umask(0o777)
+  let root
+  try {
+    root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  } finally {
+    process.umask(previous)
+  }
+  assert.equal(lstatSync(root).mode & 0o777, 0o700)
+  assert.equal(lstatSync(join(root, TEMP_WORKSPACE_MARKER)).mode & 0o777, 0o600)
+  assert.equal(cleanupOwnedTempWorkspace(root, { purpose: 'validation' }), true)
+})
+
 test('wrapper refuses child success when owned-root cleanup is incomplete', async (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-wrapper-cleanup-refusal-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
@@ -128,7 +143,7 @@ exit 0
   assert.equal(readFileSync(probe, 'utf8').includes('invoked'), true)
 })
 
-test('validation wrapper does not create a workspace during Make dry runs', (t) => {
+test('validation wrapper skips work for Make dry-run, question, and touch modes', (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-make-dry-run-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
   const spawned = join(base, 'helper-spawned')
@@ -145,12 +160,14 @@ exit 73
   delete environment.MDP_BIN
   delete environment.MDP_TEMP_WORKSPACE_ACTIVE
   delete environment.NODE_TEST_CONTEXT
-  const result = spawnSync('make', ['-n', 'validate-version-sync'], {
-    cwd: repositoryRoot,
-    encoding: 'utf8',
-    env: environment,
-  })
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  for (const [mode, expectedStatus] of [['-n', 0], ['-q', 1], ['-t', 0]]) {
+    const result = spawnSync('make', [mode, 'validate-version-sync'], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      env: environment,
+    })
+    assert.equal(result.status, expectedStatus, `${mode}\n${result.stdout}\n${result.stderr}`)
+  }
   assert.equal(existsSync(spawned), false)
   assert.equal(readdirSync(base).some((name) => name.startsWith('mdp-owned-validation-')), false)
 })

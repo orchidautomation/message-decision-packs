@@ -141,6 +141,7 @@ export const createOwnedTempWorkspace = ({ purpose, baseDir = tmpdir(), nowMs = 
       flag: 'wx',
       mode: 0o600,
     })
+    chmodSync(markerPath, 0o600)
     const createdAt = new Date(nowMs)
     utimesSync(markerPath, createdAt, createdAt)
     utimesSync(root, createdAt, createdAt)

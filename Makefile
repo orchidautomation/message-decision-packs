@@ -10,11 +10,17 @@ export PYTHONDONTWRITEBYTECODE
 VALIDATION_TARGETS := validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity
 
 ifneq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
+MAKE_OPTION_WORD := $(firstword $(MAKEFLAGS))
+NON_EXECUTING_MAKE_MODE := $(or $(findstring n,$(MAKE_OPTION_WORD)),$(findstring q,$(MAKE_OPTION_WORD)),$(findstring t,$(MAKE_OPTION_WORD)))
+ifneq ($(NON_EXECUTING_MAKE_MODE),)
 $(VALIDATION_TARGETS):
-	@flags="$${MAKEFLAGS%% *}"; case "$$flags" in *n*) exit 0 ;; esac; \
-	mdp_build_bin="$$($(CARGO) build --manifest-path cli/Cargo.toml --message-format=json-render-diagnostics | $(PYTHON) -c 'import json,sys; artifacts=[m.get("executable") for line in sys.stdin if (m:=json.loads(line)).get("reason")=="compiler-artifact" and m.get("target",{}).get("name")=="mdp" and "bin" in m.get("target",{}).get("kind",[]) and m.get("executable")]; print(artifacts[-1] if artifacts else "")')"; \
+	@:
+else
+$(VALIDATION_TARGETS):
+	@mdp_build_bin="$$($(CARGO) build --manifest-path cli/Cargo.toml --message-format=json-render-diagnostics | $(PYTHON) -c 'import json,sys; artifacts=[m.get("executable") for line in sys.stdin if (m:=json.loads(line)).get("reason")=="compiler-artifact" and m.get("target",{}).get("name")=="mdp" and "bin" in m.get("target",{}).get("kind",[]) and m.get("executable")]; print(artifacts[-1] if artifacts else "")')"; \
 	test -n "$$mdp_build_bin" && test -x "$$mdp_build_bin"; \
 	MDP_BIN="$${MDP_BIN:-$$mdp_build_bin}" MDP_SECURE_INSTALL_BIN="$${MDP_SECURE_INSTALL_BIN:-$$mdp_build_bin}" node scripts/with-temp-workspace.mjs --purpose validation -- $(MAKE) $@
+endif
 endif
 
 ifeq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
