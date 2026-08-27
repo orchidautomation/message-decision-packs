@@ -70,6 +70,11 @@ pub(crate) enum Commands {
         #[arg(long, help = "Show files that would be written without writing them")]
         dry_run: bool,
     },
+    #[command(about = "Preview and transactionally apply a complete staged pack change set")]
+    Author {
+        #[command(subcommand)]
+        command: AuthorCommand,
+    },
     #[command(about = "Report local setup and pack health")]
     Doctor {
         #[arg(long, default_value = ".")]
@@ -611,6 +616,37 @@ pub(crate) enum Commands {
 }
 
 #[derive(Subcommand)]
+pub(crate) enum AuthorCommand {
+    #[command(about = "Validate and preview a staged pack without changing the live pack")]
+    Preview {
+        #[arg(long, default_value = ".", help = "Existing live pack root")]
+        dir: PathBuf,
+        #[arg(
+            long,
+            help = "Complete staged candidate pack root outside the live pack"
+        )]
+        candidate: PathBuf,
+        #[arg(long, help = "New path for the sealed mdp.pack-change-set.v1 plan")]
+        out: PathBuf,
+    },
+    #[command(about = "Apply a sealed preview if the live pack and candidate still match")]
+    Apply {
+        #[arg(long, default_value = ".", help = "Existing live pack root")]
+        dir: PathBuf,
+        #[arg(
+            long,
+            help = "Complete staged candidate pack root outside the live pack"
+        )]
+        candidate: PathBuf,
+        #[arg(
+            long,
+            help = "Existing mdp.pack-change-set.v1 plan from author preview"
+        )]
+        change_set: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
 pub(crate) enum ConformanceCommand {
     #[command(about = "Compile deterministic D1-D12 sufficiency assertions for one candidate")]
     Compile {
@@ -1111,6 +1147,62 @@ mod tests {
             Commands::Requirements { dir, job }
                 if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
         ));
+    }
+
+    #[test]
+    fn author_requires_explicit_candidate_and_change_set_paths() {
+        let preview = Cli::try_parse_from([
+            "mdp",
+            "author",
+            "preview",
+            "--dir",
+            "live",
+            "--candidate",
+            "candidate",
+            "--out",
+            "change-set.json",
+        ])
+        .expect("author preview should parse");
+        assert!(matches!(
+            preview.command,
+            Commands::Author {
+                command: AuthorCommand::Preview { dir, candidate, out }
+            } if dir == PathBuf::from("live")
+                && candidate == PathBuf::from("candidate")
+                && out == PathBuf::from("change-set.json")
+        ));
+
+        let apply = Cli::try_parse_from([
+            "mdp",
+            "author",
+            "apply",
+            "--dir",
+            "live",
+            "--candidate",
+            "candidate",
+            "--change-set",
+            "change-set.json",
+        ])
+        .expect("author apply should parse");
+        assert!(matches!(
+            apply.command,
+            Commands::Author {
+                command: AuthorCommand::Apply {
+                    dir,
+                    candidate,
+                    change_set
+                }
+            } if dir == PathBuf::from("live")
+                && candidate == PathBuf::from("candidate")
+                && change_set == PathBuf::from("change-set.json")
+        ));
+
+        assert!(
+            Cli::try_parse_from(["mdp", "author", "preview", "--candidate", "candidate"]).is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["mdp", "author", "apply", "--candidate", "candidate"]).is_err()
+        );
     }
 
     #[test]

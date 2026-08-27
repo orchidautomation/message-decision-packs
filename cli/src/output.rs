@@ -359,6 +359,23 @@ pub(crate) fn print_output(
 
 fn summarize(command: &str, data: &Value) -> Value {
     match command {
+        "author-preview" | "author-apply" => json!({
+            "contract": data["contract"],
+            "status": data["status"],
+            "valid": data["valid"],
+            "change_set_sha256": data["change_set_sha256"],
+            "change_set_path": data["change_set_path"],
+            "created_count": array_len(&data["created"]),
+            "changed_count": array_len(&data["changed"]),
+            "unchanged_count": array_len(&data["unchanged"]),
+            "deleted_count": array_len(&data["deleted"]),
+            "refused_count": array_len(&data["refused"]),
+            "refused_sample": data["refused"].as_array().map(|items| items.iter().take(8).cloned().collect::<Vec<_>>()).unwrap_or_default(),
+            "rolled_back_count": array_len(&data["rolled_back"]),
+            "rolled_back_sample": data["rolled_back"].as_array().map(|items| items.iter().take(8).cloned().collect::<Vec<_>>()).unwrap_or_default(),
+            "reason_codes": data["reason_codes"],
+            "private_content_included": false
+        }),
         "init" => json!({
             "dry_run": data["dry_run"],
             "root": data["root"],
@@ -1045,6 +1062,53 @@ fn issue_message(item: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn author_summary_is_counted_and_samples_only_bounded_conflicts() {
+        let paths = (0..100)
+            .map(|index| format!(".mdp/cards/{index}.yaml"))
+            .collect::<Vec<_>>();
+        let summary = summarize(
+            "author-apply",
+            &json!({
+                "contract": "mdp.pack-authoring-result.v1",
+                "status": "refused",
+                "valid": false,
+                "created": paths.clone(),
+                "changed": [],
+                "unchanged": [],
+                "deleted": [],
+                "refused": paths.clone(),
+                "rolled_back": paths,
+                "reason_codes": ["live-pack-changed-after-preview"],
+                "private_content_included": false
+            }),
+        );
+        assert_eq!(summary["created_count"], 100);
+        assert_eq!(summary["refused_count"], 100);
+        assert_eq!(summary["refused_sample"].as_array().unwrap().len(), 8);
+        assert_eq!(summary["rolled_back_sample"].as_array().unwrap().len(), 8);
+        assert!(summary.get("created").is_none());
+
+        let preview = summarize(
+            "author-preview",
+            &json!({
+                "contract": "mdp.pack-authoring-result.v1",
+                "status": "previewed",
+                "valid": true,
+                "created": (0..100).map(|index| format!(".mdp/new/{index}.yaml")).collect::<Vec<_>>(),
+                "changed": [],
+                "unchanged": [],
+                "deleted": [],
+                "refused": [],
+                "rolled_back": [],
+                "reason_codes": [],
+                "private_content_included": false
+            }),
+        );
+        assert_eq!(preview["created_count"], 100);
+        assert!(preview.get("created").is_none());
+    }
 
     #[test]
     fn brief_summary_exposes_status_artifacts_and_provenance() {
