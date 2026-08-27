@@ -859,7 +859,7 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
                     break;
                 }
                 '<' | '\n' | '\r' if !escaped => return None,
-                character if character.is_whitespace() && !escaped => return None,
+                character if character.is_whitespace() => return None,
                 _ => escaped = false,
             }
         }
@@ -872,7 +872,7 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
         let mut escaped = false;
         let mut end = 0usize;
         for (index, character) in rest.char_indices() {
-            if character.is_whitespace() && !escaped {
+            if character.is_whitespace() {
                 break;
             }
             match character {
@@ -2575,6 +2575,36 @@ Inline `inline-code` must be ignored.
         assert_eq!(checked["status"], "unassessed", "{checked}");
         let error = refresh_readme(&root, None, true)
             .expect_err("dry-run must refuse insertion inside the resulting open fence");
+        assert_eq!(
+            error.to_string(),
+            crate::pack_readme::README_FENCE_DIAGNOSTIC
+        );
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("README after refusal"),
+            adversarial
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn escaped_destination_space_keeps_check_refresh_fail_closed() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-invalid-destination-{}", nonce()));
+        init_pack(&root, "Invalid Destination Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let prefix = "[ref]: /url\\ space\n2. ```markdown\n\n   ```";
+        let adversarial = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!("{prefix}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+            1,
+        );
+        std::fs::write(&readme_path, &adversarial).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "unassessed", "{checked}");
+        let error = refresh_readme(&root, None, true)
+            .expect_err("dry-run must refuse insertion inside the actual open fence");
         assert_eq!(
             error.to_string(),
             crate::pack_readme::README_FENCE_DIAGNOSTIC

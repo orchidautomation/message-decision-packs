@@ -1108,7 +1108,7 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
                     break;
                 }
                 '<' | '\n' | '\r' if !escaped => return None,
-                character if character.is_whitespace() && !escaped => return None,
+                character if character.is_whitespace() => return None,
                 _ => escaped = false,
             }
         }
@@ -1121,7 +1121,7 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
         let mut escaped = false;
         let mut end = 0usize;
         for (index, character) in rest.char_indices() {
-            if character.is_whitespace() && !escaped {
+            if character.is_whitespace() {
                 break;
             }
             match character {
@@ -1967,6 +1967,14 @@ mod tests {
         assert!(open_fence_at_eof(&invalid_multiline_title).is_some());
         assert_eq!(extract_ownership_block(&invalid_multiline_title), None);
         assert_eq!(extract_inventory_block(&invalid_multiline_title), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let escaped_destination_space =
+            format!("[ref]: /url\\ space\n2. ```markdown\n\n   ```\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&escaped_destination_space).is_ok());
+        assert!(open_fence_at_eof(&escaped_destination_space).is_some());
+        assert_eq!(extract_ownership_block(&escaped_destination_space), None);
+        assert_eq!(extract_inventory_block(&escaped_destination_space), None);
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let lazy_list_paragraph = format!("- paragraph\n<x>\n{ownership}{inventory}");
