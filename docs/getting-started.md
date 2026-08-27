@@ -1,5 +1,9 @@
 # Getting Started
 
+For multi-file edits to an existing pack, do not author directly in the live
+tree. Stage a complete candidate and use `mdp author preview` followed by
+`mdp author apply`; see [Failure-safe pack authoring](pack-authoring.md).
+
 Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions and profile-specific review decisions as routing contracts, fit or review rules, approved claims, avoid-rules, output-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, submit proposals, own approvals, or act as an AI SDR.
 
 If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, output-rules, and bounded context for drafting.

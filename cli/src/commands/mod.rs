@@ -1,3 +1,4 @@
+pub(crate) mod authoring;
 pub(crate) mod briefs;
 pub(crate) mod capabilities;
 pub(crate) mod conformance;
@@ -24,6 +25,9 @@ pub(crate) mod skills;
 pub(crate) mod source_binding;
 pub(crate) mod synthetic_chain;
 
+pub(crate) use authoring::{
+    PACK_AUTHORING_RESULT_V1, apply_pack_change_set, preview_pack_change_set,
+};
 pub(crate) use briefs::{
     demo_copy, emit_brief_scoped, prospect_brief_with_context, render_readable_prospect_brief,
 };

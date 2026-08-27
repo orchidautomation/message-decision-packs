@@ -57,6 +57,39 @@ mdp --json explain --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 ```
 
+## Stage Every Multi-File Change
+
+Never make a multi-file authoring pass directly in the live pack. Copy the
+complete pack to a separate candidate directory outside the live tree, make
+all intended `.mdp/` edits there, refresh candidate-owned projections, and
+then seal a preview:
+
+```bash
+mdp --json readme refresh --dir CANDIDATE_ROOT
+mdp --json author preview --dir PACK_ROOT \
+  --candidate CANDIDATE_ROOT --out CHANGE_SET_JSON
+```
+
+`author preview` uses the normal pack validator, writes no live-pack files,
+and returns bounded `created`, `changed`, `unchanged`, and `deleted` path lists
+without file bodies. Review those lists and the candidate itself. Do not treat
+a generated candidate or a successful preview as reviewed authority.
+
+Only after review, apply that exact sealed change set:
+
+```bash
+mdp --json author apply --dir PACK_ROOT \
+  --candidate CANDIDATE_ROOT --change-set CHANGE_SET_JSON
+```
+
+Apply refuses exact live or candidate paths that changed after preview. A
+handled publication failure rolls back all MDP-owned writes and reports the
+rolled-back paths; it never overwrites a concurrent edit. Preserve the
+candidate and change-set file for inspection when apply is refused or recovery
+is indeterminate. Files outside `.mdp/` and runtime output directories are not
+author-managed. This workflow is filesystem-native and does not require or
+create a Git repository, commit, or branch.
+
 Every newly initialized or one-prompt-generated GTM pack must keep the starter
 prospect Decision Input Contract or replace it with an equally complete
 pack-specific contract before it is presented as governed or self-standing.

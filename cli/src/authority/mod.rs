@@ -90,6 +90,7 @@ pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("capabilities", SurfaceRole::Projection),
     ("conformance", SurfaceRole::Verifier),
     ("init", SurfaceRole::ArtifactWriter),
+    ("author", SurfaceRole::ArtifactWriter),
     ("doctor", SurfaceRole::Diagnostic),
     ("skills", SurfaceRole::Projection),
     ("requirements", SurfaceRole::Projection),
