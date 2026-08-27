@@ -259,6 +259,35 @@ test('missing or no-op secure helper fails closed without claiming cleanup', (t)
   assert.equal(readFileSync(join(noOpRoot, 'owned'), 'utf8'), 'owned bytes')
 })
 
+test('helper termination after mutation is reconciled from exact identities', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-helper-signal-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const helper = join(base, 'mutate-then-signal')
+  writeFileSync(helper, `#!/usr/bin/env node
+const fs = require('node:fs')
+const path = require('node:path')
+const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, all) => {
+  if (value.startsWith('--') && all[index + 1] && !all[index + 1].startsWith('--')) pairs.push([value.slice(2), all[index + 1]])
+  return pairs
+}, []))
+const parent = process.platform === 'darwin' ? '/dev/fd/3' : '/proc/self/fd/3'
+if (args.action === 'move-directory') fs.renameSync(path.join(parent, args.name), path.join(parent, args['to-name']))
+else if (args.action === 'remove-directory') fs.rmdirSync(path.join(parent, args.name))
+else process.exit(2)
+process.kill(process.pid, 'SIGTERM')
+`, { mode: 0o700 })
+  chmodSync(helper, 0o700)
+  const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  writeFileSync(join(root, 'owned'), 'owned bytes')
+
+  assert.equal(cleanupOwnedTempWorkspace(root, {
+    purpose: 'validation',
+    secureHelperPath: helper,
+  }), true)
+  assert.equal(existsSync(root), false)
+  assert.deepEqual(readdirSync(base).sort(), ['mutate-then-signal'])
+})
+
 test('restore destination collision preserves replacement and quarantined original', (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-restore-collision-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
