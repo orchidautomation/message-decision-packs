@@ -906,7 +906,7 @@ fn recover_owned_workspace(dir_fd: RawFd, record_name: &CString) -> Result<Value
         libc::openat(
             dir_fd,
             record_name.as_ptr(),
-            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
         )
     };
     if record_fd < 0 {
@@ -1526,6 +1526,38 @@ mod tests {
                 .starts_with(".mdp-quarantine-")
         }));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn owned_recovery_fifo_is_rejected_without_blocking() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-recovery-fifo-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let record_name = CString::new(format!(
+            "{OWNED_RECOVERY_PREFIX}.mdp-owned-temp-quarantine-mdp-owned-validation-Ab12Cd-{}-1-1-{}",
+            "1".repeat(32),
+            "2".repeat(32)
+        ))
+        .unwrap();
+        let record_path = root.join(record_name.to_str().unwrap());
+        let fifo = CString::new(record_path.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        let parent = File::open(&root).unwrap();
+        let started = std::time::Instant::now();
+        assert!(recover_owned_workspace(parent.as_raw_fd(), &record_name).is_err());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "FIFO recovery inspection must be nonblocking"
+        );
+        assert!(record_path.exists());
+        std::fs::remove_file(record_path).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 
     #[test]
