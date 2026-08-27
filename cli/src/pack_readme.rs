@@ -561,7 +561,8 @@ enum RawHtmlEnd {
 }
 
 fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag: bool) -> bool {
-    let lower = line.trim_start_matches([' ', '\t']).to_ascii_lowercase();
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let lower = trimmed.to_ascii_lowercase();
     if let Some(termination) = end.as_ref() {
         let closed = match termination {
             RawHtmlEnd::Literal(literal) => lower.contains(literal),
@@ -594,16 +595,27 @@ fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag
             return true;
         }
     }
-    for (opener, closer) in [("<!--", "-->"), ("<?", "?>"), ("<![cdata[", "]]>")] {
-        if lower.starts_with(opener) {
-            if !lower.contains(closer) {
+    for (opener, closer) in [("<!--", "-->"), ("<?", "?>")] {
+        if trimmed.starts_with(opener) {
+            if !trimmed.contains(closer) {
                 *end = Some(RawHtmlEnd::Literal(closer));
             }
             return true;
         }
     }
-    if lower.starts_with("<!") && lower.as_bytes().get(2).is_some_and(u8::is_ascii_alphabetic) {
-        if !lower.contains('>') {
+    if trimmed.starts_with("<![CDATA[") {
+        if !trimmed.contains("]]>") {
+            *end = Some(RawHtmlEnd::Literal("]]>"));
+        }
+        return true;
+    }
+    if trimmed.starts_with("<!")
+        && trimmed
+            .as_bytes()
+            .get(2)
+            .is_some_and(u8::is_ascii_uppercase)
+    {
+        if !trimmed.contains('>') {
             *end = Some(RawHtmlEnd::Literal(">"));
         }
         return true;
@@ -1770,6 +1782,12 @@ mod tests {
         assert!(validate_readme_regions(&indented_script).is_ok());
         assert_eq!(extract_ownership_block(&indented_script), Some(ownership));
         assert_eq!(extract_inventory_block(&indented_script), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let lowercase_cdata = format!("<![cdata[\n{ownership}{inventory}]]>\n");
+        assert!(validate_readme_regions(&lowercase_cdata).is_ok());
+        assert_eq!(extract_ownership_block(&lowercase_cdata), Some(ownership));
+        assert_eq!(extract_inventory_block(&lowercase_cdata), Some(inventory));
         for opener in ["> <div>", "- <div>"] {
             let ownership = render_ownership_block();
             let inventory =

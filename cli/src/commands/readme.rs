@@ -467,7 +467,8 @@ enum RawHtmlEnd {
 }
 
 fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag: bool) -> bool {
-    let lower = line.trim_start_matches([' ', '\t']).to_ascii_lowercase();
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let lower = trimmed.to_ascii_lowercase();
     if let Some(termination) = end.as_ref() {
         let closed = match termination {
             RawHtmlEnd::Literal(literal) => lower.contains(literal),
@@ -500,16 +501,27 @@ fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag
             return true;
         }
     }
-    for (opener, closer) in [("<!--", "-->"), ("<?", "?>"), ("<![cdata[", "]]>")] {
-        if lower.starts_with(opener) {
-            if !lower.contains(closer) {
+    for (opener, closer) in [("<!--", "-->"), ("<?", "?>")] {
+        if trimmed.starts_with(opener) {
+            if !trimmed.contains(closer) {
                 *end = Some(RawHtmlEnd::Literal(closer));
             }
             return true;
         }
     }
-    if lower.starts_with("<!") && lower.as_bytes().get(2).is_some_and(u8::is_ascii_alphabetic) {
-        if !lower.contains('>') {
+    if trimmed.starts_with("<![CDATA[") {
+        if !trimmed.contains("]]>") {
+            *end = Some(RawHtmlEnd::Literal("]]>"));
+        }
+        return true;
+    }
+    if trimmed.starts_with("<!")
+        && trimmed
+            .as_bytes()
+            .get(2)
+            .is_some_and(u8::is_ascii_uppercase)
+    {
+        if !trimmed.contains('>') {
             *end = Some(RawHtmlEnd::Literal(">"));
         }
         return true;
@@ -2089,6 +2101,11 @@ Inline `inline-code` must be ignored.
             vec!["cards/after-quoted-html.yaml", "cards/after-list-html.yaml"],
             "raw HTML state ends when its quote or list container exits"
         );
+        assert_eq!(
+            inline_code_tokens("<![cdata[\n`cards/lowercase-cdata-visible.yaml`\n]]>\n"),
+            vec!["cards/lowercase-cdata-visible.yaml"],
+            "CDATA openers are case-sensitive"
+        );
     }
 
     #[test]
@@ -2242,6 +2259,41 @@ Inline `inline-code` must be ignored.
         );
         assert!(refreshed.contains("    <script>\n"));
         assert!(refreshed.ends_with("</script>\n"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lowercase_cdata_does_not_hide_or_duplicate_owned_regions() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-lowercase-cdata-{}", nonce()));
+        init_pack(&root, "Lowercase CDATA Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let invalid_cdata = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!("<![cdata[\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+            1,
+        ) + "]]>\n";
+        std::fs::write(&readme_path, &invalid_cdata).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "fresh", "{checked}");
+        refresh_readme(&root, None, false).expect("refresh README");
+        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
+                .count(),
+            1
+        );
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_INVENTORY_BEGIN)
+                .count(),
+            1
+        );
+        assert!(refreshed.contains("<![cdata[\n"));
+        assert!(refreshed.ends_with("]]>\n"));
         let _ = std::fs::remove_dir_all(root);
     }
 
