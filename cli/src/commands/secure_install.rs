@@ -157,10 +157,11 @@ fn secure_install_with_hook<F: FnOnce()>(
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(source)?;
+    let staging_name = quarantine_name()?;
     let target_fd = unsafe {
         libc::openat(
             dir_fd,
-            name.as_ptr(),
+            staging_name.as_ptr(),
             libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
             0o600,
         )
@@ -170,6 +171,7 @@ fn secure_install_with_hook<F: FnOnce()>(
     }
     let mut target = unsafe { File::from_raw_fd(target_fd) };
     let opened = opened_identity(target_fd)?;
+    let mut published = false;
     let installed = (|| -> Result<(u64, u64, String)> {
         std::io::copy(&mut input, &mut target)?;
         target.sync_all()?;
@@ -179,6 +181,8 @@ fn secure_install_with_hook<F: FnOnce()>(
         if source_sha256 != target_sha256 {
             bail!("secure install content mismatch");
         }
+        rename_no_replace(dir_fd, &staging_name, name)?;
+        published = true;
         before_path_check();
         if named_identity(dir_fd, name)? != identity {
             bail!("secure install leaf identity mismatch");
@@ -195,7 +199,8 @@ fn secure_install_with_hook<F: FnOnce()>(
             "sha256": sha256
         })),
         Err(error) => {
-            let _ = remove_if_identity(dir_fd, name, opened.0, opened.1);
+            let cleanup_name = if published { name } else { &staging_name };
+            let _ = remove_if_identity(dir_fd, cleanup_name, opened.0, opened.1);
             Err(error)
         }
     }
@@ -224,6 +229,33 @@ pub(crate) fn secure_install(
             let expected_file_ino =
                 expected_file_ino.ok_or_else(|| anyhow!("expected file ino is required"))?;
             remove_if_identity(dir_fd, &name, expected_file_dev, expected_file_ino)?;
+            Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
+        }
+        "remove-matching" => {
+            let source = source.ok_or_else(|| anyhow!("secure remove source is required"))?;
+            let mut input = OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(source)?;
+            let target_fd = unsafe {
+                libc::openat(
+                    dir_fd,
+                    name.as_ptr(),
+                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if target_fd < 0 {
+                return Err(io::Error::last_os_error()).map_err(Into::into);
+            }
+            let mut target = unsafe { File::from_raw_fd(target_fd) };
+            let identity = opened_identity(target_fd)?;
+            if named_identity(dir_fd, &name)? != identity
+                || file_sha256(&mut input)? != file_sha256(&mut target)?
+                || named_identity(dir_fd, &name)? != identity
+            {
+                bail!("secure remove source or identity mismatch");
+            }
+            remove_if_identity(dir_fd, &name, identity.0, identity.1)?;
             Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
         }
         "verify" => {
@@ -269,7 +301,7 @@ pub(crate) fn secure_install(
                 "sha256": target_sha256
             }))
         }
-        _ => bail!("secure install action must be install, verify, or remove"),
+        _ => bail!("secure install action must be install, verify, remove, or remove-matching"),
     }
 }
 

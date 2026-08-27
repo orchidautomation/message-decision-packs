@@ -42,7 +42,15 @@ if (args.includes('prepare-run')) {
     pack_dir: packDir,
     inputs: [],
   }
-  writeFileSync(out, JSON.stringify(request))
+  let requestBytes = JSON.stringify(request)
+  const requestSizePath = packDir + '/.prepare-request-size'
+  if (existsSync(requestSizePath)) {
+    const requestedSize = Number(readFileSync(requestSizePath, 'utf8'))
+    if (Number.isInteger(requestedSize) && requestedSize >= requestBytes.length) {
+      requestBytes = requestBytes + ' '.repeat(requestedSize - requestBytes.length)
+    }
+  }
+  writeFileSync(out, requestBytes)
   const manifestIndex = args.indexOf('--manifest-out')
   if (manifestIndex >= 0) writeFileSync(args[manifestIndex + 1], JSON.stringify({ contract: 'mdp.run-request-compile-manifest.v1' }))
   process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'ready', request_path: out } }))
@@ -485,6 +493,90 @@ exit "$status"
   assert.equal(readFileSync(request, 'utf8'), 'concurrent replacement')
   assert.equal(existsSync(displaced), true)
   assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
+})
+
+test('prepare publishes only requests consumable by the run adapter size boundary', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-request-size-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const roleEnv = Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root]))
+
+  writeFileSync(join(pack, '.prepare-request-size'), String(1_048_576))
+  const atLimit = join(work, 'at-limit.json')
+  const [accepted] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: atLimit,
+  })], roleEnv)
+  assert.equal(accepted.result.structuredContent.status, 'ready', JSON.stringify(accepted))
+  assert.equal(readFileSync(atLimit).length, 1_048_576)
+
+  writeFileSync(join(pack, '.prepare-request-size'), String(1_048_577))
+  const overLimit = join(work, 'over-limit.json')
+  const [rejected] = await rpc(fixtureCli(root), [toolCall(2, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: overLimit,
+  })], roleEnv)
+  assert.equal(rejected.result.structuredContent.status, 'blocked', JSON.stringify(rejected))
+  assert.match(rejected.result.structuredContent.diagnostics[0].message, /mdp_run limit/)
+  assert.equal(existsSync(overLimit), false)
+})
+
+test('prepare deadline bounds helpers and recovers an install killed before identity output', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-install-timeout-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-timeout.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*)
+    "${realCli}" "$@" >/dev/null
+    sleep 10
+    ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const manifest = join(work, 'manifest.json')
+  const roleEnv = {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  }
+  const started = Date.now()
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    manifest_out: manifest,
+    timeout_ms: 400,
+  })], roleEnv)
+  const elapsed = Date.now() - started
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert(elapsed < 2_000, `one prepare deadline should bound helper work; elapsed=${elapsed}`)
+  assert.equal(existsSync(request), false, 'cleanup must remove a complete install whose identity envelope was lost')
+  assert.equal(existsSync(manifest), false, 'every sibling output must receive cleanup within the shared grace window')
+  assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
+
+  const [retried] = await rpc(fixtureCli(root), [toolCall(2, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    manifest_out: manifest,
+  })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: realCli })
+  assert.equal(retried.result.structuredContent.status, 'ready', JSON.stringify(retried))
 })
 
 test('real CLI completes canonical GTM and proposal handoffs across disjoint roots', async (t) => {
