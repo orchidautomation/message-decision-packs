@@ -8,12 +8,14 @@ if [ ! -d "$release_assets" ]; then
 fi
 
 release_assets="$(cd "$release_assets" && pwd)"
-for required in SHA256SUMS.txt install.sh release-manifest.json; do
+for required in SHA256SUMS.txt install.sh install-codex.sh release-manifest.json; do
   if [ ! -f "$release_assets/$required" ]; then
     echo "Missing release asset: $required" >&2
     exit 1
   fi
 done
+
+node "$(dirname "$0")/patch-codex-installer.mjs" "$release_assets/install-codex.sh"
 
 node "$(dirname "$0")/finalize-release-manifest.mjs" "$release_assets/release-manifest.json"
 

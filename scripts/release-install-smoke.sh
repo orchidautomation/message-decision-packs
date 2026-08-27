@@ -98,11 +98,50 @@ PLUXX_RUNTIME_STORE_ROOT="$install_home/.pluxx/runtimes" \
 
 mdp_bin="$install_dir/mdp"
 node_bin="$(command -v node)"
+codex_bin="${MDP_CODEX_BIN:-$(command -v codex || true)}"
 if [ ! -x "$mdp_bin" ]; then
   echo "Installed mdp binary not found or not executable: $mdp_bin" >&2
   exit 1
 fi
 "$mdp_bin" --version
+
+if [ -z "$codex_bin" ] || [ ! -x "$codex_bin" ]; then
+  echo "Codex CLI is required to verify native plugin registration." >&2
+  exit 1
+fi
+codex_plugin_list="$(HOME="$install_home" CODEX_HOME="$codex_home" "$codex_bin" plugin list --json)"
+MDP_CODEX_PLUGIN_LIST_JSON="$codex_plugin_list" \
+MDP_EXPECTED_CODEX_PLUGIN_VERSION="${version#v}" \
+MDP_EXPECTED_CODEX_PLUGIN_ROOT="$codex_plugin_root" \
+node <<'NODE'
+const fs = require('fs')
+let payload
+try {
+  payload = JSON.parse(process.env.MDP_CODEX_PLUGIN_LIST_JSON ?? '')
+} catch {
+  console.error('Codex plugin list returned invalid JSON after release installation.')
+  process.exit(1)
+}
+const selector = 'message-decision-packs@message-decision-packs-local'
+const installed = Array.isArray(payload.installed) ? payload.installed : []
+const plugin = installed.find((candidate) => candidate?.pluginId === selector)
+let sourcePath = ''
+let expectedPath = ''
+try {
+  sourcePath = fs.realpathSync(plugin?.source?.path ?? '')
+  expectedPath = fs.realpathSync(process.env.MDP_EXPECTED_CODEX_PLUGIN_ROOT)
+} catch {}
+if (
+  !plugin ||
+  plugin.installed !== true ||
+  plugin.enabled !== true ||
+  plugin.version !== process.env.MDP_EXPECTED_CODEX_PLUGIN_VERSION ||
+  sourcePath !== expectedPath
+) {
+  console.error(`Installed release did not register ${selector} as installed and enabled.`)
+  process.exit(1)
+}
+NODE
 
 if [ "${MDP_RELEASE_REQUIRE_STAGED_PARITY:-0}" = "1" ]; then
   case "$(uname -s)-$(uname -m)" in
