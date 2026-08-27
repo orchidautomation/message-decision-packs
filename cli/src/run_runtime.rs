@@ -1623,7 +1623,7 @@ pub(crate) fn recover_run_output(output_root: &Path, apply: bool) -> Result<Valu
         _ => return Ok(recovery_refusal("recovery-parent-unsafe")),
     };
     if parent_metadata.uid() != unsafe { libc::geteuid() }
-        && parent_metadata.mode() & libc::S_ISVTX == 0
+        && parent_metadata.mode() & (libc::S_ISVTX as u32) == 0
     {
         return Ok(recovery_refusal("recovery-parent-owner-unsafe"));
     }
