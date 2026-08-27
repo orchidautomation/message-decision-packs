@@ -306,11 +306,13 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut indented_code_can_start = true;
     let mut container_state = MarkdownContainerState::default();
     let mut previous_container = None;
+    let mut paragraph_open = false;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
-        let (block_content, container) = container_state.project(line, opening_container);
+        let (block_content, container) =
+            container_state.project(line, opening_container, paragraph_open);
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
             indented_code_can_start = true;
@@ -340,10 +342,12 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             // Preserve a block boundary without exposing fence delimiters as
             // inline code or joining prose from opposite sides of the block.
             visible.push('\n');
+            paragraph_open = false;
             continue;
         }
         if fence.is_some() {
             visible.push('\n');
+            paragraph_open = false;
             continue;
         }
 
@@ -357,6 +361,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
                 // indented chunk continues it; either way they contain no
                 // reference claim and preserve only a parsing boundary here.
                 visible.push('\n');
+                paragraph_open = false;
                 continue;
             }
             indented_code = false;
@@ -364,6 +369,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         if indented && indented_code_can_start {
             indented_code = true;
             visible.push('\n');
+            paragraph_open = false;
             continue;
         }
         visible.push_str(&markdown[start..line_end]);
@@ -371,6 +377,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
         indented_code_can_start = blank;
+        paragraph_open = !blank;
     }
     code_span_tokens(&visible)
 }
@@ -406,6 +413,7 @@ impl MarkdownContainerState {
         &mut self,
         line: &'a str,
         opening: Option<&MarkdownContainer>,
+        paragraph_open: bool,
     ) -> (&'a str, MarkdownContainer) {
         let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
         if let Some(opening) = opening {
@@ -440,7 +448,7 @@ impl MarkdownContainerState {
             container.clear();
             line
         };
-        let content = parse_new_container_prefixes(content, &mut container);
+        let content = parse_new_container_prefixes(content, &mut container, paragraph_open);
         self.active = container.clone();
         (content, container)
     }
@@ -462,14 +470,17 @@ fn project_container_path<'a>(
 fn parse_new_container_prefixes<'a>(
     mut line: &'a str,
     container: &mut MarkdownContainer,
+    mut paragraph_open: bool,
 ) -> &'a str {
     loop {
         if let Some(content) = strip_one_blockquote_prefix(line) {
             container.push(MarkdownContainerSegment::Quote);
             line = content;
-        } else if let Some((indent, content)) = list_item_content(line) {
+            paragraph_open = false;
+        } else if let Some((indent, content)) = list_item_content(line, paragraph_open) {
             container.push(MarkdownContainerSegment::List(indent));
             line = content;
+            paragraph_open = false;
         } else {
             return line;
         }
@@ -493,15 +504,15 @@ fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
     Some(&line[consumed..])
 }
 
-fn list_item_content(line: &str) -> Option<(usize, &str)> {
+fn list_item_content(line: &str, paragraph_open: bool) -> Option<(usize, &str)> {
     let bytes = line.as_bytes();
     let leading = bytes
         .iter()
         .take(3)
         .take_while(|byte| **byte == b' ')
         .count();
-    let marker_end = match bytes.get(leading)? {
-        b'-' | b'+' | b'*' => leading + 1,
+    let (marker_end, ordered_start) = match bytes.get(leading)? {
+        b'-' | b'+' | b'*' => (leading + 1, None),
         byte if byte.is_ascii_digit() => {
             let mut cursor = leading;
             while bytes.get(cursor).is_some_and(u8::is_ascii_digit) && cursor - leading < 9 {
@@ -510,10 +521,13 @@ fn list_item_content(line: &str) -> Option<(usize, &str)> {
             if !matches!(bytes.get(cursor), Some(b'.' | b')')) {
                 return None;
             }
-            cursor + 1
+            (cursor + 1, Some(&line[leading..cursor]))
         }
         _ => return None,
     };
+    if paragraph_open && ordered_start.is_some_and(|start| start != "1") {
+        return None;
+    }
     let mut whitespace_end = marker_end;
     // Continuation indentation includes both the marker width and padding.
     // Counting leading whitespace alone makes `- ` require one column rather
@@ -626,11 +640,13 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut in_sources = false;
     let mut fence: Option<(char, usize, MarkdownContainer)> = None;
     let mut container_state = MarkdownContainerState::default();
+    let mut paragraph_open = false;
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
-        let (block_content, container) = container_state.project(line, opening_container);
+        let (block_content, container) =
+            container_state.project(line, opening_container, paragraph_open);
         if fence
             .as_ref()
             .is_some_and(|(_, _, opening_container)| *opening_container != container)
@@ -646,15 +662,19 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             } else if fence.is_none() {
                 fence = Some((character, length, container));
             }
+            paragraph_open = false;
             continue;
         }
         if fence.is_some() {
+            paragraph_open = false;
             continue;
         }
         if line.starts_with("## ") {
             in_sources = line == "## Sources";
+            paragraph_open = false;
             continue;
         }
+        paragraph_open = !line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
         if !in_sources {
             continue;
         }
@@ -1360,6 +1380,18 @@ Inline `inline-code` must be ignored.
             ],
             "a bullet continuation includes marker width plus padding"
         );
+        assert_eq!(
+            inline_code_tokens(
+                "Paragraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n"
+            ),
+            vec!["cards/non-one-ordered-visible.yaml"],
+            "an ordered list not starting at one cannot interrupt a paragraph"
+        );
+        assert!(
+            inline_code_tokens("Paragraph\n1. ```markdown\n   `cards/one-ordered-hidden.yaml`\n")
+                .is_empty(),
+            "an ordered list starting at one may interrupt a paragraph"
+        );
     }
 
     #[test]
@@ -1379,7 +1411,7 @@ Inline `inline-code` must be ignored.
         let readme_path = root.join(".mdp/README.md");
         let mut readme = std::fs::read_to_string(&readme_path).expect("README");
         readme.push_str(
-            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
+            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         std::fs::write(&readme_path, readme).expect("write human examples");
 
@@ -1398,6 +1430,7 @@ Inline `inline-code` must be ignored.
                 "cards/quoted-root.yaml",
                 "cards/list-root.yaml",
                 "cards/nested-list-root.yaml",
+                "cards/non-one-ordered-visible.yaml",
                 "cards/visible-missing.yaml"
             ]
         );
@@ -1414,6 +1447,7 @@ Inline `inline-code` must be ignored.
                 "cards/quoted-root.yaml",
                 "cards/list-root.yaml",
                 "cards/nested-list-root.yaml",
+                "cards/non-one-ordered-visible.yaml",
                 "cards/visible-missing.yaml"
             ]
         );

@@ -414,6 +414,7 @@ struct MarkdownFenceScanner {
     fence: Option<(char, usize, MarkdownContainer)>,
     container: MarkdownContainer,
     blank_lines: usize,
+    paragraph_open: bool,
 }
 
 impl MarkdownFenceScanner {
@@ -455,7 +456,8 @@ impl MarkdownFenceScanner {
                 container.clear();
                 line
             };
-            let content = parse_new_container_prefixes(content, &mut container);
+            let content =
+                parse_new_container_prefixes(content, &mut container, self.paragraph_open);
             self.container = container.clone();
             (content, container)
         };
@@ -471,6 +473,7 @@ impl MarkdownFenceScanner {
             .as_ref()
             .map(|(character, length, _)| (*character, *length));
         if let Some((character, length, closing)) = fence_delimiter(block_content, open) {
+            self.paragraph_open = false;
             if closing {
                 self.fence = None;
                 return false;
@@ -480,7 +483,13 @@ impl MarkdownFenceScanner {
             }
             return true;
         }
-        self.fence.is_some()
+        if self.fence.is_some() {
+            self.paragraph_open = false;
+            true
+        } else {
+            self.paragraph_open = !blank;
+            false
+        }
     }
 }
 
@@ -500,14 +509,17 @@ fn project_container_path<'a>(
 fn parse_new_container_prefixes<'a>(
     mut line: &'a str,
     container: &mut MarkdownContainer,
+    mut paragraph_open: bool,
 ) -> &'a str {
     loop {
         if let Some(content) = strip_one_blockquote_prefix(line) {
             container.push(MarkdownContainerSegment::Quote);
             line = content;
-        } else if let Some((indent, content)) = list_item_content(line) {
+            paragraph_open = false;
+        } else if let Some((indent, content)) = list_item_content(line, paragraph_open) {
             container.push(MarkdownContainerSegment::List(indent));
             line = content;
+            paragraph_open = false;
         } else {
             return line;
         }
@@ -531,15 +543,15 @@ fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
     Some(&line[consumed..])
 }
 
-fn list_item_content(line: &str) -> Option<(usize, &str)> {
+fn list_item_content(line: &str, paragraph_open: bool) -> Option<(usize, &str)> {
     let bytes = line.as_bytes();
     let leading = bytes
         .iter()
         .take(3)
         .take_while(|byte| **byte == b' ')
         .count();
-    let marker_end = match bytes.get(leading)? {
-        b'-' | b'+' | b'*' => leading + 1,
+    let (marker_end, ordered_start) = match bytes.get(leading)? {
+        b'-' | b'+' | b'*' => (leading + 1, None),
         byte if byte.is_ascii_digit() => {
             let mut cursor = leading;
             while bytes.get(cursor).is_some_and(u8::is_ascii_digit) && cursor - leading < 9 {
@@ -548,10 +560,13 @@ fn list_item_content(line: &str) -> Option<(usize, &str)> {
             if !matches!(bytes.get(cursor), Some(b'.' | b')')) {
                 return None;
             }
-            cursor + 1
+            (cursor + 1, Some(&line[leading..cursor]))
         }
         _ => return None,
     };
+    if paragraph_open && ordered_start.is_some_and(|start| start != "1") {
+        return None;
+    }
     let mut whitespace_end = marker_end;
     let marker_column = marker_end;
     let mut content_column = marker_column;
@@ -1106,6 +1121,14 @@ mod tests {
         assert!(
             open_fence_at_eof("- ```markdown\n underindented body").is_none(),
             "a bullet continuation includes marker width plus padding"
+        );
+        assert!(
+            open_fence_at_eof("Paragraph\n2. ```markdown\n   body").is_none(),
+            "an ordered list not starting at one cannot interrupt a paragraph"
+        );
+        assert!(
+            open_fence_at_eof("Paragraph\n1. ```markdown\n   body").is_some(),
+            "an ordered list starting at one may interrupt a paragraph"
         );
     }
 
