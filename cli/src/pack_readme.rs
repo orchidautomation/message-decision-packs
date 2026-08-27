@@ -498,13 +498,16 @@ impl MarkdownFenceScanner {
         }
         if let Some((opening_container, closing)) = open_definition_title
             && opening_container == container
-            && let Some(closed) = multiline_title_line_state(block_content, closing)
+            && project_container_path(line, &opening_container).is_some()
         {
-            if !closed {
-                self.open_definition_title = Some((opening_container, closing));
+            if let Some(closed) = multiline_title_line_state(block_content, closing) {
+                if !closed {
+                    self.open_definition_title = Some((opening_container, closing));
+                }
+                self.paragraph_open = false;
+                return false;
             }
-            self.paragraph_open = false;
-            return false;
+            self.paragraph_open = true;
         }
         let canonical_owned_marker = self.raw_html_end.is_none()
             && container.is_empty()
@@ -1955,6 +1958,15 @@ mod tests {
         assert!(open_fence_at_eof(&multiline_title).is_none());
         assert_eq!(extract_ownership_block(&multiline_title), Some(ownership));
         assert_eq!(extract_inventory_block(&multiline_title), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let invalid_multiline_title = format!(
+            "[ref]: /url \"multi\n    line\"\n2. ```markdown\n   human paragraph\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&invalid_multiline_title).is_ok());
+        assert!(open_fence_at_eof(&invalid_multiline_title).is_some());
+        assert_eq!(extract_ownership_block(&invalid_multiline_title), None);
+        assert_eq!(extract_inventory_block(&invalid_multiline_title), None);
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let lazy_list_paragraph = format!("- paragraph\n<x>\n{ownership}{inventory}");

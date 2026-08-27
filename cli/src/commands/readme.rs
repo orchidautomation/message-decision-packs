@@ -346,14 +346,17 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         }
         if let Some((opening_container, closing)) = pending_open_definition_title
             && opening_container == container
-            && let Some(closed) = multiline_title_line_state(block_content, closing)
+            && project_container_path(line, &opening_container).is_some()
         {
-            if !closed {
-                open_definition_title = Some((opening_container, closing));
+            if let Some(closed) = multiline_title_line_state(block_content, closing) {
+                if !closed {
+                    open_definition_title = Some((opening_container, closing));
+                }
+                visible.push('\n');
+                paragraph_open = false;
+                continue;
             }
-            visible.push('\n');
-            paragraph_open = false;
-            continue;
+            paragraph_open = true;
         }
         let continuing_raw_html = raw_html_end_tag.is_some();
         if (raw_html_end_tag.is_some() || fence.is_none())
@@ -1283,13 +1286,16 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
         }
         if let Some((opening_container, closing)) = pending_open_definition_title
             && opening_container == container
-            && let Some(closed) = multiline_title_line_state(block_content, closing)
+            && project_container_path(line, &opening_container).is_some()
         {
-            if !closed {
-                open_definition_title = Some((opening_container, closing));
+            if let Some(closed) = multiline_title_line_state(block_content, closing) {
+                if !closed {
+                    open_definition_title = Some((opening_container, closing));
+                }
+                paragraph_open = false;
+                continue;
             }
-            paragraph_open = false;
-            continue;
+            paragraph_open = true;
         }
         let continuing_raw_html = raw_html_end_tag.is_some();
         if (raw_html_end_tag.is_some() || fence.is_none())
@@ -2019,6 +2025,12 @@ Inline `inline-code` must be ignored.
             vec!["declared"],
             "a higher-level heading ends the Sources section"
         );
+        let sibling_title = "## Sources\n- [ref]: /url \"multi\n- `sibling-source`: accepted\n";
+        assert_eq!(
+            source_reference_ids(sibling_title),
+            vec!["sibling-source"],
+            "an opened title cannot consume a sibling source item"
+        );
 
         let list_fence = "- ```text\n  list-fenced body\n  ```\n\n## Sources\n- `visible-after-list-fence`: accepted\n";
         assert_eq!(
@@ -2127,6 +2139,11 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/multiline-title-visible.yaml"],
             "multiline definition titles close before later root blocks"
+        );
+        assert_eq!(
+            inline_code_tokens("- [ref]: /url \"multi\n- `cards/sibling-title-visible.yaml`\"\n"),
+            vec!["cards/sibling-title-visible.yaml"],
+            "an opened title cannot consume a sibling list item"
         );
         assert_eq!(
             inline_code_tokens("- paragraph\n<x>\nRoot `cards/lazy-list-visible.yaml`.\n"),
@@ -2538,6 +2555,35 @@ Inline `inline-code` must be ignored.
             );
             let _ = std::fs::remove_dir_all(root);
         }
+    }
+
+    #[test]
+    fn invalid_multiline_title_restores_paragraph_and_hides_owned_regions() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-invalid-title-{}", nonce()));
+        init_pack(&root, "Invalid Title Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let prefix = "[ref]: /url \"multi\n    line\"\n2. ```markdown\n   human paragraph\n   ```";
+        let adversarial = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!("{prefix}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+            1,
+        );
+        std::fs::write(&readme_path, &adversarial).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "unassessed", "{checked}");
+        let error = refresh_readme(&root, None, true)
+            .expect_err("dry-run must refuse insertion inside the resulting open fence");
+        assert_eq!(
+            error.to_string(),
+            crate::pack_readme::README_FENCE_DIAGNOSTIC
+        );
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("README after refusal"),
+            adversarial
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
