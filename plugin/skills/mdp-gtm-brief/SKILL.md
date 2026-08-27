@@ -1,6 +1,6 @@
 ---
 name: mdp-gtm-brief
-description: Use when applying a GTM Message Decision Pack to a supplied prospect for fit/readiness, bounded pre-draft context, or review of supplied outbound copy. Do not use for pack editing, generic prospecting, enrichment, copywriting, sending, CRM, or proposals.
+description: Use when applying a GTM Message Decision Pack to a supplied prospect for fit/readiness, bounded pre-draft context, or review of supplied outbound copy. Do not use for pack editing, prospecting, enrichment, copywriting, sending, CRM, or proposals.
 ---
 
 # MDP GTM Brief

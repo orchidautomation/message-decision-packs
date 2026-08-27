@@ -15,16 +15,17 @@ use crate::commands::{
     emit_brief_scoped, eval_pack, explain, gaps, init_pack_targeted, init_pack_targeted_dry_run,
     pack, preview_pack_change_set, project_conformance_file, project_conformance_report,
     project_prompt_output_validation_file, project_run_files, project_source_file,
-    prospect_brief_with_context, rebind_synthetic_chain, refresh_readme, render_human_brief_file,
-    render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
-    route_budget_preflight_command, route_budget_preflight_query_command, route_scoped,
-    run_preflight_file, run_receipt, run_request_file_with_transport, sample_leads, schema, skills,
-    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
-    validate_source_binding_file, verify_output_file, verify_output_readable_file,
-    verify_run_files,
+    prospect_brief_with_context, readiness, rebind_synthetic_chain, recover_run_output,
+    refresh_readme, render_human_brief_file, render_human_brief_markdown, render_mermaid,
+    render_readable_prospect_brief, requirements, route_budget_preflight_command,
+    route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
+    run_request_file_with_transport, sample_leads, schema, skills, validate_behavioral_files,
+    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
+    verify_output_file, verify_output_readable_file, verify_run_files,
 };
 use crate::output::{
-    PresentationOutcome, print_output, print_output_mode_conflict, resolve_presentation,
+    PresentationOutcome, print_output, print_output_mode_conflict, print_output_with_status,
+    resolve_presentation,
 };
 use crate::pack_io::{planned_json_write, write_json_file};
 use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
@@ -209,7 +210,17 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 apply_pack_change_set(&dir, &candidate, &change_set)?,
             ),
         },
-        Commands::Doctor { dir } => print_output(json_mode, summary_mode, "doctor", doctor(&dir)),
+        Commands::Doctor { dir } => print_doctor(json_mode, summary_mode, doctor(&dir)),
+        Commands::Check {
+            dir,
+            job,
+            input_validation,
+        } => print_output(
+            json_mode,
+            summary_mode,
+            "check",
+            readiness(&dir, job.as_deref(), input_validation.as_deref()),
+        ),
         Commands::Skills { dir, job } => print_output(
             json_mode,
             summary_mode,
@@ -514,6 +525,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             json_mode,
             summary_mode,
             run_request_file_with_transport(&request, &out_dir, transport_timeout_ms)?,
+        ),
+        Commands::RecoverRun { out_dir, apply } => print_checked(
+            json_mode,
+            summary_mode,
+            "recover-run",
+            recover_run_output(&out_dir, apply)?,
         ),
         Commands::RunPreflight {
             request,
@@ -926,6 +943,16 @@ fn print_checked(json_mode: bool, summary_mode: bool, command: &str, data: Value
         ),
     };
     print_output(json_mode, summary_mode, command, data)?;
+    if valid {
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
+}
+
+fn print_doctor(json_mode: bool, summary_mode: bool, data: Value) -> Result<()> {
+    let valid = data["valid"].as_bool().unwrap_or(false);
+    print_output_with_status(json_mode, summary_mode, "doctor", data, valid)?;
     if valid {
         Ok(())
     } else {

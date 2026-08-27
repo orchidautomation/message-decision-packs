@@ -125,7 +125,173 @@ fn capabilities_envelope_is_one_parseable_json_value() {
         value["data"]["presentation_contract"].is_object(),
         "capabilities should expose the presentation contract"
     );
+    let doctor = value["data"]["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|command| command["name"] == "doctor")
+        .expect("doctor command projection");
+    assert_eq!(doctor["output_contract"], "mdp.doctor.v1");
     assert!(stdout.contains("presentation_contract"));
+}
+
+#[test]
+fn doctor_exit_envelope_and_human_output_match_pack_validity() {
+    let missing = std::env::temp_dir().join(format!(
+        "mdp-doctor-contract-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let missing_arg = missing.display().to_string();
+    let (code, _, stderr, value) = run(
+        &["--json", "doctor", "--dir", missing_arg.as_str()],
+        Case::Ok,
+    );
+    assert_eq!(code, 1);
+    assert!(stderr.is_empty());
+    let value = value.expect("doctor JSON envelope");
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["data"]["status"], "pack-missing");
+    assert!(value["data"]["error_count"].is_u64());
+    assert!(value["data"]["warning_count"].is_u64());
+
+    let (summary_code, _, _, summary) = run(
+        &[
+            "--json",
+            "--summary",
+            "doctor",
+            "--dir",
+            missing_arg.as_str(),
+        ],
+        Case::Ok,
+    );
+    assert_eq!(summary_code, 1);
+    let summary = summary.expect("doctor summary envelope");
+    assert_eq!(summary["ok"], false);
+    assert!(summary["summary"]["error_count"].is_u64());
+    assert!(summary["summary"]["warning_count"].is_u64());
+
+    let output = Command::new(mdp_bin())
+        .args(["doctor", "--dir", missing_arg.as_str()])
+        .output()
+        .expect("human doctor invocation");
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("installation: ready"), "{stdout}");
+    assert!(stdout.contains("pack validity: invalid"), "{stdout}");
+    assert!(
+        stdout.contains("profile activation: not-assessed"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("job readiness: not-assessed"), "{stdout}");
+
+    let ready = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../plugin/assets/templates/basic")
+        .display()
+        .to_string();
+    let (code, _, _, value) = run(&["--json", "doctor", "--dir", &ready], Case::Ok);
+    assert_eq!(code, 0);
+    let value = value.expect("ready doctor JSON envelope");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["status"], "ready");
+    assert_eq!(value["data"]["job_readiness"]["state"], "not-assessed");
+}
+
+#[test]
+fn actionable_diagnostic_is_shared_by_json_and_human_errors() {
+    let args = ["init", "--bogus"];
+    let (json_code, _, json_stderr, value) = run(&["--json", "init", "--bogus"], Case::Ok);
+    assert_eq!(json_code, 2);
+    assert!(json_stderr.is_empty());
+    let value = value.expect("JSON error envelope");
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "invalid_argument");
+    assert_eq!(value["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    let diagnostic = &value["actionable_diagnostics"][0];
+    assert_eq!(diagnostic["phase"], "input");
+    assert_eq!(diagnostic["code"], "invalid_argument");
+    assert_eq!(diagnostic["retryability"], "after-user-action");
+    assert_eq!(diagnostic["next_action"]["command"], "mdp --help");
+
+    let output = Command::new(mdp_bin())
+        .args(args)
+        .output()
+        .expect("human error invocation");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let expected = format!(
+        "diagnostic [{} / {}]: {}",
+        diagnostic["phase"].as_str().unwrap(),
+        diagnostic["code"].as_str().unwrap(),
+        diagnostic["summary"].as_str().unwrap()
+    );
+    assert!(stderr.contains(&expected), "human stderr: {stderr}");
+    assert!(
+        stderr.contains("next: mdp --help"),
+        "human stderr: {stderr}"
+    );
+}
+
+#[test]
+fn prepare_run_argument_errors_share_the_actionable_code_across_presentations() {
+    let (json_code, _, json_stderr, value) = run(
+        &["--json", "prepare-run", "--definitely-unsupported"],
+        Case::Ok,
+    );
+    assert_eq!(json_code, 2);
+    assert!(json_stderr.is_empty());
+    let value = value.expect("JSON prepare-run error envelope");
+    assert_eq!(
+        value["actionable_diagnostics"][0]["code"],
+        "invalid_argument"
+    );
+    assert_eq!(value["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    assert!(value["data"].get("diagnostic_contract").is_none());
+    assert!(value["data"].get("actionable_diagnostics").is_none());
+
+    let (_, _, _, schema) = run(&["--json", "schema", "run-request-compile-v1"], Case::Ok);
+    let schema = schema.expect("compile schema envelope");
+    jsonschema::draft202012::validate(&schema["data"], &value["data"])
+        .expect("argument-error data must satisfy the closed compile schema");
+
+    let output = Command::new(mdp_bin())
+        .args(["prepare-run", "--definitely-unsupported"])
+        .output()
+        .expect("human prepare-run error invocation");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("diagnostic [input / invalid_argument]"),
+        "human stderr: {stderr}"
+    );
+}
+
+#[test]
+fn successful_target_command_advertises_empty_versioned_diagnostics() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-actionable-diagnostics-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("fixture root");
+    let root_arg = root.display().to_string();
+    let (code, _, stderr, value) = run(&["--json", "init", "--dir", root_arg.as_str()], Case::Ok);
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let value = value.expect("init envelope");
+    assert_eq!(value["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    assert_eq!(value["actionable_diagnostics"], serde_json::json!([]));
+    assert!(
+        value["data"].get("diagnostic_contract").is_none(),
+        "transport diagnostics must not mutate the init domain contract"
+    );
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -652,16 +818,37 @@ fn unknown_subcommand_in_json_mode_writes_one_json_envelope() {
 
 #[test]
 fn prepare_run_blocked_envelope_preserves_single_json_value() {
-    let (code, stdout, _stderr, value) = run(&["--json", "prepare-run"], Case::Ok);
+    let (code, stdout, _stderr, value) = run(
+        &[
+            "--json",
+            "prepare-run",
+            "--job",
+            "missing-job",
+            "--model",
+            "test-model",
+        ],
+        Case::Ok,
+    );
     let parsed = value.expect("prepare-run blocked parses as JSON");
     assert_eq!(parsed["ok"], serde_json::json!(false));
     assert_eq!(parsed["command"], "prepare-run");
     assert_eq!(parsed["data"]["contract"], "mdp.run-request-compile.v1");
     assert_eq!(parsed["data"]["status"], "blocked");
+    let blocked_code = parsed["data"]["diagnostics"][0]["code"]
+        .as_str()
+        .expect("bounded blocked diagnostic code");
     assert_eq!(
-        parsed["data"]["diagnostics"][0]["code"],
-        "cli-arguments-invalid"
+        parsed["diagnostic_contract"],
+        "mdp.actionable-diagnostic.v1"
     );
+    assert_eq!(parsed["actionable_diagnostics"][0]["code"], blocked_code);
+    assert!(parsed["data"].get("diagnostic_contract").is_none());
+    assert!(parsed["data"].get("actionable_diagnostics").is_none());
+
+    let (_, _, _, schema) = run(&["--json", "schema", "run-request-compile-v1"], Case::Ok);
+    let schema = schema.expect("compile schema envelope");
+    jsonschema::draft202012::validate(&schema["data"], &parsed["data"])
+        .expect("blocked data must satisfy the closed compile schema");
     assert!(!stdout.contains("error:"));
     let _ = code;
 }

@@ -11,6 +11,7 @@ pub(crate) mod init_transaction;
 pub(crate) mod pack;
 pub(crate) mod prompt_output;
 pub(crate) mod proof_output;
+pub(crate) mod readiness;
 pub(crate) mod readme;
 pub(crate) mod requirements;
 pub(crate) mod routing;
@@ -52,13 +53,14 @@ pub(crate) use prompt_output::validate_prompt_output_file_with_inputs;
 pub(crate) use proof_output::{
     author_proof_output_file, verify_output_file, verify_output_readable_file, verify_output_value,
 };
+pub(crate) use readiness::readiness;
 pub(crate) use readme::{check_readme, refresh_readme};
 pub(crate) use requirements::requirements;
 pub(crate) use routing::{
     check_claims_scoped, route_budget_preflight_command, route_budget_preflight_query_command,
     route_scoped,
 };
-pub(crate) use run::{run_preflight_file, run_request_file_with_transport};
+pub(crate) use run::{recover_run_output, run_preflight_file, run_request_file_with_transport};
 pub(crate) use run_receipt::{RunReceiptOptions, run_receipt};
 pub(crate) use run_verification::verify_run_files;
 pub(crate) use sample_leads::sample_leads;

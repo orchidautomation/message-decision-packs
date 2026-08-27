@@ -75,10 +75,31 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: AuthorCommand,
     },
-    #[command(about = "Report local setup and pack health")]
+    #[command(
+        about = "Report CLI installation health and requested-pack structural validity",
+        after_help = "Doctor checks the running CLI and the requested pack. Profile activation is reported separately and does not make a structurally valid pack invalid. Job readiness is not assessed here; use `mdp check --dir PACK_ROOT --job JOB_ID`."
+    )]
     Doctor {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
+    },
+    #[command(
+        about = "Project one authoritative, offline readiness answer",
+        after_help = "Example: mdp check --dir ./mdp-demo --job outbound-copy-brief"
+    )]
+    Check {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(
+            long,
+            help = "Exact jobs[].id to assess; omit for generic pack readiness"
+        )]
+        job: Option<String>,
+        #[arg(
+            long,
+            help = "Optional JSON result from validate-prompt-output for this job's governed input"
+        )]
+        input_validation: Option<PathBuf>,
     },
     #[command(about = "Print canonical skill inventory and pack-aware eligibility")]
     Skills {
@@ -365,6 +386,19 @@ pub(crate) enum Commands {
             help = "Host transport guard in milliseconds (canonical recommendation: 60000); does not replace the request policy"
         )]
         transport_timeout_ms: Option<u64>,
+    },
+    #[command(about = "Diagnose or explicitly remove one stale MDP-owned run transaction")]
+    RecoverRun {
+        #[arg(
+            long,
+            help = "Final run output directory whose hidden transaction is stranded"
+        )]
+        out_dir: PathBuf,
+        #[arg(
+            long,
+            help = "Remove only the validated stale MDP claim and its exact bound transaction"
+        )]
+        apply: bool,
     },
     #[command(about = "Read-only preflight for one clean-run request and optional transport guard")]
     RunPreflight {
@@ -811,6 +845,7 @@ pub(crate) enum SchemaTarget {
     Prospect,
     Eval,
     Skills,
+    ReadinessV1,
     RouteBudget,
     RouteBudgetSummaryV1,
 }
@@ -1164,6 +1199,41 @@ mod tests {
             parsed.command,
             Commands::Requirements { dir, job }
                 if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
+        ));
+    }
+
+    #[test]
+    fn check_accepts_generic_job_and_optional_input_validation_forms() {
+        let generic = Cli::try_parse_from(["mdp", "check", "--dir", "pack"])
+            .expect("generic readiness form should parse");
+        assert!(matches!(
+            generic.command,
+            Commands::Check {
+                dir,
+                job: None,
+                input_validation: None
+            } if dir == PathBuf::from("pack")
+        ));
+
+        let selected = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "check",
+            "--dir",
+            "pack",
+            "--job",
+            "outbound-copy-brief",
+            "--input-validation",
+            "validation.json",
+        ])
+        .expect("selected readiness form should parse");
+        assert!(matches!(
+            selected.command,
+            Commands::Check {
+                job: Some(job),
+                input_validation: Some(path),
+                ..
+            } if job == "outbound-copy-brief" && path == PathBuf::from("validation.json")
         ));
     }
 
