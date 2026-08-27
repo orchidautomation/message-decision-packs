@@ -175,6 +175,19 @@ fn secure_install_with_hook<F: FnOnce()>(
     let opened = opened_identity(target_fd)?;
     let mut published = false;
     let installed = (|| -> Result<(u64, u64, String)> {
+        receipt.set_len(0)?;
+        receipt.seek(SeekFrom::Start(0))?;
+        serde_json::to_writer(
+            &mut receipt,
+            &json!({
+                "contract": "mdp.secure-install-receipt.v1",
+                "dev": opened.0.to_string(),
+                "ino": opened.1.to_string(),
+                "staging_leaf": staging_name.to_str()?
+            }),
+        )?;
+        receipt.write_all(b"\n")?;
+        receipt.sync_all()?;
         std::io::copy(&mut input, &mut target)?;
         target.sync_all()?;
         let identity = opened;
@@ -183,19 +196,6 @@ fn secure_install_with_hook<F: FnOnce()>(
         if source_sha256 != target_sha256 {
             bail!("secure install content mismatch");
         }
-        receipt.set_len(0)?;
-        receipt.seek(SeekFrom::Start(0))?;
-        serde_json::to_writer(
-            &mut receipt,
-            &json!({
-                "contract": "mdp.secure-install-receipt.v1",
-                "dev": identity.0.to_string(),
-                "ino": identity.1.to_string(),
-                "staging_leaf": staging_name.to_str()?
-            }),
-        )?;
-        receipt.write_all(b"\n")?;
-        receipt.sync_all()?;
         rename_no_replace(dir_fd, &staging_name, name)?;
         published = true;
         before_path_check();

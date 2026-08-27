@@ -554,15 +554,43 @@ esac
     ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
     MDP_SECURE_INSTALL_BIN: wrapper,
   }
+  const child = spawn(process.execPath, [server], {
+    env: { ...process.env, MDP_BIN: fixtureCli(root), MDP_SECURE_INSTALL_BIN: wrapper, ...roleEnv },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  t.after(() => child.kill('SIGKILL'))
+  const replies = []
+  let outputText = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    outputText += chunk
+    let newline
+    while ((newline = outputText.indexOf('\n')) >= 0) {
+      const line = outputText.slice(0, newline)
+      outputText = outputText.slice(newline + 1)
+      if (line.trim()) replies.push(JSON.parse(line))
+    }
+  })
+  const waitForReply = async (id) => {
+    for (let attempt = 0; attempt < 1_000; attempt += 1) {
+      const reply = replies.find((candidate) => candidate.id === id)
+      if (reply) return reply
+      await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+    }
+    throw new Error(`response ${id} timed out`)
+  }
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} })}\n`)
+  await waitForReply(0)
   const started = Date.now()
-  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_prepare_run', {
     dir: pack,
     job: 'prospect-fit-or-brief',
     model: 'fixture-model',
     out: request,
     manifest_out: manifest,
     timeout_ms: 400,
-  })], roleEnv)
+  }))}\n`)
+  const blocked = await waitForReply(1)
   const elapsed = Date.now() - started
   assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
   assert(elapsed < 550, `the caller timeout must include helper termination and cleanup; elapsed=${elapsed}`)
@@ -570,6 +598,7 @@ esac
   assert.equal(existsSync(manifest), false, 'every sibling output must receive cleanup within the reserved deadline window')
   assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
 
+  child.stdin.end()
   const [retried] = await rpc(fixtureCli(root), [toolCall(2, 'mdp_prepare_run', {
     dir: pack,
     job: 'prospect-fit-or-brief',
@@ -580,7 +609,7 @@ esac
   assert.equal(retried.result.structuredContent.status, 'ready', JSON.stringify(retried))
 })
 
-test('receipt cleanup removes staging killed before atomic publication', async (t) => {
+test('receipt cleanup removes partial staging killed during copy before atomic publication', async (t) => {
   if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
   if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-staging-timeout-'))
@@ -590,11 +619,11 @@ test('receipt cleanup removes staging killed before atomic publication', async (
   for (const path of [pack, work]) mkdirSync(path)
   const simulator = join(root, 'secure-install-staging-timeout.mjs')
   writeFileSync(simulator, `#!/usr/bin/env node
-import { copyFileSync, fstatSync, fsyncSync, openSync, writeSync } from 'node:fs'
+import { fstatSync, fsyncSync, openSync, writeFileSync, writeSync } from 'node:fs'
 const args = process.argv.slice(2)
 const source = args[args.indexOf('--source') + 1]
 const stagingLeaf = '.mdp-quarantine-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-copyFileSync(source, stagingLeaf)
+writeFileSync(stagingLeaf, 'partial-sensitive-bytes')
 const stats = fstatSync(openSync(stagingLeaf, 'r'), { bigint: true })
 writeSync(4, JSON.stringify({ contract: 'mdp.secure-install-receipt.v1', dev: stats.dev.toString(), ino: stats.ino.toString(), staging_leaf: stagingLeaf }))
 fsyncSync(4)
