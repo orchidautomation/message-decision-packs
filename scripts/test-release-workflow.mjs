@@ -7,16 +7,61 @@ import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const workflowPath = join(root, '.github/workflows/release.yml')
+const ciWorkflowPath = join(root, '.github/workflows/ci.yml')
 const stepName = 'Install and smoke-test the published release'
 const buildCommand = 'cargo build --manifest-path cli/Cargo.toml'
 const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
+const assetParityCommand = '/usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"'
 const requiredPrefix = [
   'set -euo pipefail',
   'version="${{ steps.version.outputs.version }}"',
   buildCommand,
 ]
 
-function runBlock(workflow, name) {
+function hasShellOverride(line) {
+  if (hasMappingKey(line, 'shell')) {
+    return true
+  }
+  if (/(?:^|[\s{,])shell\s*:/u.test(line.trim())) {
+    return true
+  }
+  const quotedKeys = line.matchAll(
+    /(?:^|[\s{,])((?:"(?:\\.|[^"\\])*")|(?:'(?:''|[^'])*'))\s*:/gu,
+  )
+  return [...quotedKeys].some((match) => hasMappingKey(`${match[1]}:`, 'shell'))
+}
+
+function hasMappingKey(line, key) {
+  const trimmed = line.trim()
+  if (trimmed.startsWith('?')) {
+    // Explicit YAML keys admit quoted, escaped, commented, and block-scalar
+    // forms. Required CI scopes do not need them, so reject all of them.
+    return true
+  }
+  const terminator = '\\s*:'
+  const doubleQuoted = trimmed.match(new RegExp(`^("(?:\\\\.|[^"\\\\])*")${terminator}`, 'u'))
+  if (doubleQuoted) {
+    try {
+      return JSON.parse(doubleQuoted[1]) === key
+    } catch {
+      // YAML accepts additional escapes (for example \xNN and \UNNNNNNNN).
+      // Fail closed on any double-quoted mapping key that JSON cannot decode.
+      return doubleQuoted[1].includes('\\')
+    }
+  }
+  const singleQuoted = trimmed.match(new RegExp(`^'((?:''|[^'])*)'${terminator}`, 'u'))
+  if (singleQuoted) {
+    return singleQuoted[1].replaceAll("''", "'") === key
+  }
+  const plain = trimmed.match(new RegExp(`^([^\\s:{},][^:]*)${terminator}`, 'u'))
+  return plain?.[1].trim() === key
+}
+
+function hasBypassControl(line) {
+  return hasMappingKey(line, 'if') || hasMappingKey(line, 'continue-on-error')
+}
+
+function stepBlock(workflow, name) {
   const lines = workflow.split(/\r?\n/)
   const marker = `- name: ${name}`
   const start = lines.findIndex((line) => line.trim() === marker)
@@ -31,6 +76,119 @@ function runBlock(workflow, name) {
       break
     }
   }
+  return { lines, start, end, stepIndent }
+}
+
+function jobBlock(workflow, name) {
+  const lines = workflow.split(/\r?\n/)
+  const marker = `${name}:`
+  const start = lines.findIndex(
+    (line) => line.trim() === marker && line.match(/^\s*/u)[0].length === 2,
+  )
+  assert.notEqual(start, -1, `missing CI job: ${name}`)
+  let end = lines.length
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim()
+    const indent = lines[index].match(/^\s*/u)[0].length
+    if (trimmed && indent <= 2) {
+      end = index
+      break
+    }
+  }
+  return lines.slice(start, end)
+}
+
+function assertDirectJobProperty(lines, property, expected) {
+  const matches = lines.filter(
+    (line) => line.match(/^\s*/u)[0].length === 4 && line.trim().startsWith(`${property}:`),
+  )
+  assert.deepEqual(matches.map((line) => line.trim()), [`${property}: ${expected}`])
+}
+
+function filterStepBlock(workflow) {
+  const changes = jobBlock(workflow, 'changes')
+  const start = changes.findIndex(
+    (line) => line.match(/^\s*/u)[0].length === 6 && line.trim() === '- id: filter',
+  )
+  assert.notEqual(start, -1, 'changes job must contain the projected filter step')
+  let end = changes.length
+  for (let index = start + 1; index < changes.length; index += 1) {
+    const trimmed = changes[index].trim()
+    const indent = changes[index].match(/^\s*/u)[0].length
+    if (trimmed.startsWith('- ') && indent === 6) {
+      end = index
+      break
+    }
+  }
+  const step = changes.slice(start, end)
+  assert.ok(
+    step.some(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 8 && line.trim() === 'uses: dorny/paths-filter@v4',
+    ),
+    'filter step must use dorny/paths-filter@v4',
+  )
+  assert.deepEqual(
+    step
+      .filter((line) => line.trim() && line.match(/^\s*/u)[0].length === 10)
+      .map((line) => line.trim()),
+    ['filters: |'],
+    'paths-filter must use only the default-some filters input',
+  )
+  assert.equal(
+    step.find(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 8 &&
+        hasBypassControl(line) || hasShellOverride(line),
+    ),
+    undefined,
+    'projected paths-filter step must not be bypassable',
+  )
+  return step
+}
+
+function assertCliJobWiring(workflow) {
+  const changes = jobBlock(workflow, 'changes')
+  assert.equal(
+    changes.find(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 4 &&
+        hasBypassControl(line) || hasShellOverride(line),
+    ),
+    undefined,
+    'changes job must not be bypassable',
+  )
+  const outputsIndex = changes.findIndex(
+    (line) => line.match(/^\s*/u)[0].length === 4 && line.trim() === 'outputs:',
+  )
+  assert.notEqual(outputsIndex, -1, 'changes job must expose outputs')
+  assert.equal(
+    changes[outputsIndex + 1]?.trim(),
+    'cli: ${{ steps.filter.outputs.cli }}',
+    'changes.outputs.cli must project the paths-filter cli result',
+  )
+
+  const cli = jobBlock(workflow, 'cli')
+  assertDirectJobProperty(cli, 'needs', 'changes')
+  assertDirectJobProperty(cli, 'if', "needs.changes.outputs.cli == 'true'")
+  assert.equal(
+    cli.find(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 4 && hasMappingKey(line, 'continue-on-error'),
+    ),
+    undefined,
+    'cli job must not ignore failures',
+  )
+  assert.equal(
+    cli.find(hasShellOverride),
+    undefined,
+    'cli job must not override run-command execution',
+  )
+  filterStepBlock(workflow)
+}
+
+function runBlock(workflow, name) {
+  const { lines, start, end } = stepBlock(workflow, name)
   const runIndex = lines.findIndex(
     (line, index) => index > start && index < end && line.trim() === 'run: |',
   )
@@ -40,6 +198,72 @@ function runBlock(workflow, name) {
     .slice(runIndex + 1, end)
     .filter((line) => line.trim() && line.match(/^\s*/u)[0].length > runIndent)
     .map((line) => line.trim())
+}
+
+function assertUnconditionalStep(workflow, name) {
+  const { lines, start, end, stepIndent } = stepBlock(workflow, name)
+  const control = lines
+    .slice(start + 1, end)
+    .find(
+      (line) =>
+        (hasBypassControl(line) || hasShellOverride(line)) &&
+        line.match(/^\s*/u)[0].length === stepIndent + 2,
+    )
+  assert.equal(control, undefined, `required CI step must not be bypassable: ${name}`)
+}
+
+function assertNoWorkflowShellOverride(workflow) {
+  const lines = workflow.split(/\r?\n/)
+  assert.equal(
+    lines.find(hasShellOverride),
+    undefined,
+    'workflow must not override run-command execution',
+  )
+}
+
+function assertNoWorkflowYamlIndirection(workflow) {
+  const indirection = workflow
+    .split(/\r?\n/)
+    .find(
+      (line) =>
+        /(?:^|[\s{[,:])(?:&|\*)[A-Za-z0-9_-]+(?=\s|[,}\]:]|$)/u.test(line) ||
+        /(?:^|[\s{[,:])!(?:!|<)?[A-Za-z0-9_:/.-]+>?/u.test(line) ||
+        /(?:^|[\s{[,:])!(?=\s)/u.test(line),
+    )
+  assert.equal(
+    indirection,
+    undefined,
+    'required CI workflow must not use YAML anchors, aliases, or tags',
+  )
+}
+
+function assertCliPathFilter(workflow, requiredGlob) {
+  const lines = filterStepBlock(workflow)
+  const filtersIndex = lines.findIndex((line) => line.trim() === 'filters: |')
+  assert.notEqual(filtersIndex, -1, 'missing paths-filter filters block')
+  const filtersIndent = lines[filtersIndex].match(/^\s*/u)[0].length
+  const cliIndex = lines.findIndex(
+    (line, index) =>
+      index > filtersIndex &&
+      line.trim() === 'cli:' &&
+      line.match(/^\s*/u)[0].length > filtersIndent,
+  )
+  assert.notEqual(cliIndex, -1, 'missing cli paths-filter block')
+  const cliIndent = lines[cliIndex].match(/^\s*/u)[0].length
+  let end = lines.length
+  for (let index = cliIndex + 1; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim()
+    const indent = lines[index].match(/^\s*/u)[0].length
+    if (trimmed && indent <= cliIndent) {
+      end = index
+      break
+    }
+  }
+  const entries = lines.slice(cliIndex + 1, end).map((line) => line.trim())
+  assert.ok(
+    entries.includes(`- "${requiredGlob}"`),
+    `cli paths-filter must include ${requiredGlob}`,
+  )
 }
 
 function assertReleaseSmokeContract(workflow) {
@@ -56,8 +280,27 @@ function assertReleaseSmokeContract(workflow) {
   assert.ok(buildIndex < smokeIndex, 'source CLI build must execute before published smoke')
 }
 
+function assertAssetParityCiContract(workflow) {
+  assertNoWorkflowShellOverride(workflow)
+  assertNoWorkflowYamlIndirection(workflow)
+  assertCliJobWiring(workflow)
+  assertCliPathFilter(workflow, 'plugin/assets/**')
+  assertCliPathFilter(workflow, 'assets/**')
+  const cliJob = jobBlock(workflow, 'cli').join('\n')
+  assertUnconditionalStep(cliJob, 'Validate authored asset parity')
+  const commands = runBlock(cliJob, 'Validate authored asset parity')
+    .filter((line) => !line.startsWith('#'))
+  assert.deepEqual(
+    commands,
+    [assetParityCommand],
+    'required CI must execute authored asset parity unconditionally',
+  )
+}
+
 const workflow = readFileSync(workflowPath, 'utf8')
 assertReleaseSmokeContract(workflow)
+const ciWorkflow = readFileSync(ciWorkflowPath, 'utf8')
+assertAssetParityCiContract(ciWorkflow)
 
 for (const [name, mutation] of [
   ['commented build', workflow.replace(buildCommand, `# ${buildCommand}`)],
@@ -79,4 +322,247 @@ for (const [name, mutation] of [
   assert.throws(() => assertReleaseSmokeContract(mutation), undefined, name)
 }
 
-console.log('Release workflow source-build contract passed.')
+
+for (const [name, mutation] of [
+  ['commented asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          # ${assetParityCommand}`)],
+  ['echoed asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          echo ${assetParityCommand}`)],
+  ['unreachable asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          if false; then\n            ${assetParityCommand}\n          fi`)],
+  [
+    'dry-run make substitution',
+    ciWorkflow.replace(
+      `      - name: Validate authored asset parity\n        run: |\n          ${assetParityCommand}`,
+      '      - name: Validate authored asset parity\n        env: { MAKEFLAGS: "-n" }\n        run: |\n          make validate-asset-sync',
+    ),
+  ],
+  [
+    'relative comparison in alternate working directory',
+    ciWorkflow.replace(
+      `        run: |\n          ${assetParityCommand}`,
+      '        working-directory: ${{ runner.temp }}\n        run: |\n          /usr/bin/env -i /usr/bin/diff -qr plugin/assets assets',
+    ),
+  ],
+  [
+    'disabled asset parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        if: false\n',
+    ),
+  ],
+  [
+    'quoted disabled asset parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        "if": false\n',
+    ),
+  ],
+  [
+    'escaped quoted disabled asset parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        "\\u0069f": false\n',
+    ),
+  ],
+  [
+    'yaml hex escaped disabled asset parity step',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        "\\x69f": false\n`,
+    ),
+  ],
+  [
+    'yaml long-unicode escaped disabled asset parity step',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        "\\U00000069f": false\n`,
+    ),
+  ],
+  [
+    'explicit mapping-key disabled asset parity step',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? "if"\n        : false\n`,
+    ),
+  ],
+  [
+    'ignored asset parity failure',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        continue-on-error: true\n',
+    ),
+  ],
+  [
+    'custom parity shell',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        shell: /bin/true {0}\n',
+    ),
+  ],
+  [
+    'explicit mapping-key parity shell',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? "shell"\n        : "/bin/true {0}"\n`,
+    ),
+  ],
+  [
+    'commented explicit mapping-key parity shell',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? "shell" # explicit key comment\n        : "/bin/true {0}"\n`,
+    ),
+  ],
+  [
+    'colon-commented plain explicit parity shell',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? shell # comment: colon\n        : "/bin/true {0}"\n`,
+    ),
+  ],
+  [
+    'block-scalar explicit parity shell',
+    ciWorkflow.replace(
+      '        run: |\n',
+      '        ? >-\n          shell\n        : "/bin/true {0}"\n        run: |\n',
+    ),
+  ],
+  [
+    'escaped flow-style workflow shell',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'defaults: { run: { "\\u0073hell": "/bin/true {0}" } }\n\njobs:\n',
+    ),
+  ],
+  [
+    'aliased workflow shell key',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'env:\n  SHELL_KEY: &shell_key shell\ndefaults: { run: { *shell_key: "/bin/true {0}" } }\n\njobs:\n',
+    ),
+  ],
+  [
+    'tagged disabled parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        !!str if: false\n',
+    ),
+  ],
+  [
+    'bare-tag disabled parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        ! if: false\n',
+    ),
+  ],
+  [
+    'missing canonical asset filter',
+    ciWorkflow.replace('              - "plugin/assets/**"\n', ''),
+  ],
+  [
+    'missing packaged asset filter',
+    ciWorkflow.replace('              - "assets/**"\n', ''),
+  ],
+  [
+    'disconnected cli output',
+    ciWorkflow.replace(
+      '      cli: ${{ steps.filter.outputs.cli }}',
+      '      cli: false',
+    ),
+  ],
+  [
+    'disabled cli job',
+    ciWorkflow.replace(
+      "    if: needs.changes.outputs.cli == 'true'",
+      '    if: false',
+    ),
+  ],
+  [
+    'ignored cli job failure',
+    ciWorkflow.replace(
+      "    if: needs.changes.outputs.cli == 'true'\n",
+      "    if: needs.changes.outputs.cli == 'true'\n    continue-on-error: true\n",
+    ),
+  ],
+  [
+    'custom cli job shell',
+    ciWorkflow.replace(
+      '  cli:\n',
+      '  cli:\n    defaults:\n      run:\n        shell: /bin/true {0}\n',
+    ),
+  ],
+  [
+    'flow-style cli job shell',
+    ciWorkflow.replace(
+      '  cli:\n',
+      '  cli:\n    defaults: { run: { shell: "/bin/true {0}" } }\n',
+    ),
+  ],
+  [
+    'custom workflow shell',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'defaults:\n  run:\n    shell: /bin/true {0}\n\njobs:\n',
+    ),
+  ],
+  [
+    'flow-style workflow shell',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'defaults: { run: { "shell": "/bin/true {0}" } }\n\njobs:\n',
+    ),
+  ],
+  [
+    'post-jobs workflow shell',
+    `${ciWorkflow}\ndefaults: { run: { "shell": "/bin/true {0}" } }\n`,
+  ],
+  [
+    'cli job no longer needs changes',
+    ciWorkflow.replace('    needs: changes', '    needs: pluxx'),
+  ],
+  [
+    'renamed paths filter step',
+    ciWorkflow.replace('      - id: filter', '      - id: filter2'),
+  ],
+  [
+    'replaced paths filter action',
+    ciWorkflow.replace('        uses: dorny/paths-filter@v4', '        uses: actions/checkout@v4'),
+  ],
+  [
+    'every-pattern paths filter',
+    ciWorkflow.replace(
+      '          filters: |\n',
+      '          predicate-quantifier: every\n          filters: |\n',
+    ),
+  ],
+  [
+    'disabled paths filter step',
+    ciWorkflow.replace('      - id: filter\n', '      - id: filter\n        if: false\n'),
+  ],
+  [
+    'quoted disabled paths filter step',
+    ciWorkflow.replace('      - id: filter\n', '      - id: filter\n        "if": false\n'),
+  ],
+  [
+    'disabled changes job',
+    ciWorkflow.replace('  changes:\n    runs-on:', '  changes:\n    if: false\n    runs-on:'),
+  ],
+  [
+    'quoted disabled changes job',
+    ciWorkflow.replace('  changes:\n    runs-on:', '  changes:\n    "if": false\n    runs-on:'),
+  ],
+  [
+    'parity step moved to disabled job',
+    ciWorkflow
+      .replace(
+        `      - name: Validate authored asset parity\n        run: |\n          ${assetParityCommand}\n`,
+        '',
+      )
+      .replace(
+        '  mcp-macos:\n',
+        `  dead-parity:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - name: Validate authored asset parity\n        run: |\n          ${assetParityCommand}\n\n  mcp-macos:\n`,
+      ),
+  ],
+]) {
+  assert.throws(() => assertAssetParityCiContract(mutation), undefined, name)
+}
+
+console.log('Release workflow and authored-asset CI contracts passed.')
