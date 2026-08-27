@@ -154,10 +154,16 @@ It exposes one canonical four-stage path:
 
 Configure the local server with explicit `MDP_MCP_PACK_ROOTS`,
 `MDP_MCP_INPUT_ROOTS`, `MDP_MCP_WORK_ROOTS`, and `MDP_MCP_OUTPUT_ROOTS` before
-startup. The prepare-to-run handoff stays under the `work` role; it is not
-re-authorized as an input file. These tools do not accept inline source text,
-credentials, or an enable flag. Only a parsed generative request may inherit
-the key and native-call permission that were present when the server started.
+startup. Generative runs also require `MDP_MCP_CONSENT_ROOTS`: the operator
+creates an out-of-band, one-shot consent record there, bound to the provider,
+purpose, exact prepared request and declared-source hashes, output root,
+expiry, and nonce, then passes only its `consent_id` to `mdp_run`. Tool
+arguments cannot manufacture consent or authorize provider access. The
+prepare-to-run handoff stays under the `work` role; it is not re-authorized as
+an input file. These tools do not accept inline source text, credentials, or an
+enable flag. Only a parsed generative request with valid one-shot consent may
+inherit the key and native-call permission that were present when the server
+started.
 
 MCP is transport only. It invokes the same CLI and returns canonical CLI data
 unchanged; it adds no execution, validation, or isolation authority.

@@ -145,18 +145,39 @@ impl Drop for SigtermMaskGuard {
     }
 }
 
-fn remove_if_identity(
+fn remove_if_identity_with_hook<F: FnOnce()>(
     dir_fd: RawFd,
     name: &CString,
     expected_file_dev: u64,
     expected_file_ino: u64,
+    after_quarantine: F,
 ) -> Result<()> {
+    let target_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if target_fd < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let target = unsafe { File::from_raw_fd(target_fd) };
+    let opened = opened_identity(target_fd)?;
+    if opened != (expected_file_dev, expected_file_ino) || named_identity(dir_fd, name)? != opened {
+        bail!("secure remove file identity mismatch");
+    }
     let quarantine = quarantine_name()?;
     // SIGTERM may arrive from the bounded supervisor, but must not interrupt
     // the finite rename -> identity check -> unlink/restore transaction. The
     // caller reserves a termination grace window before any SIGKILL.
     let _sigterm_guard = SigtermMaskGuard::block()?;
+    if named_identity(dir_fd, name)? != opened {
+        bail!("secure remove file identity changed before quarantine");
+    }
     rename_no_replace(dir_fd, name, &quarantine)?;
+    drop(target);
+    after_quarantine();
     let moved = named_identity(dir_fd, &quarantine);
     match moved {
         Ok((dev, ino)) if dev == expected_file_dev && ino == expected_file_ino => {
@@ -176,6 +197,15 @@ fn remove_if_identity(
             }
         }
     }
+}
+
+fn remove_if_identity(
+    dir_fd: RawFd,
+    name: &CString,
+    expected_file_dev: u64,
+    expected_file_ino: u64,
+) -> Result<()> {
+    remove_if_identity_with_hook(dir_fd, name, expected_file_dev, expected_file_ino, || {})
 }
 
 fn secure_install_with_hook<F: FnOnce()>(
@@ -345,6 +375,7 @@ pub(crate) fn secure_install(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::io::Write;
     use std::os::fd::{AsRawFd, IntoRawFd};
     use std::os::unix::fs::{MetadataExt, symlink};
@@ -569,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn remove_quarantines_then_restores_a_concurrent_replacement() {
+    fn remove_rejects_a_preexisting_identical_replacement_before_quarantine() {
         let root = std::env::temp_dir().join(format!(
             "mdp-secure-remove-race-{}-{}",
             std::process::id(),
@@ -583,23 +614,30 @@ mod tests {
         std::fs::write(&target, b"owned").unwrap();
         let owned = target.metadata().unwrap();
         std::fs::rename(&target, root.join("owned-moved.json")).unwrap();
-        std::fs::write(&target, b"concurrent replacement").unwrap();
+        std::fs::write(&target, b"owned").unwrap();
+        let replacement = target.metadata().unwrap();
         let directory = File::open(&root).unwrap();
+        let hook_called = Cell::new(false);
 
-        let result = secure_install(
-            "remove",
-            None,
-            "request.json",
+        let result = remove_if_identity_with_hook(
             directory.as_raw_fd(),
-            directory.metadata().unwrap().dev(),
-            directory.metadata().unwrap().ino(),
-            Some(owned.dev()),
-            Some(owned.ino()),
-            None,
+            &CString::new("request.json").unwrap(),
+            owned.dev(),
+            owned.ino(),
+            || hook_called.set(true),
         );
 
         assert!(result.is_err());
-        assert_eq!(std::fs::read(&target).unwrap(), b"concurrent replacement");
+        assert!(
+            !hook_called.get(),
+            "mismatch must be rejected before rename"
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"owned");
+        let after = target.metadata().unwrap();
+        assert_eq!(
+            (after.dev(), after.ino()),
+            (replacement.dev(), replacement.ino())
+        );
         assert!(std::fs::read_dir(&root).unwrap().all(|entry| {
             !entry
                 .unwrap()
@@ -607,6 +645,55 @@ mod tests {
                 .to_string_lossy()
                 .contains("mdp-quarantine")
         }));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn sigterm_is_blocked() -> bool {
+        let mut current = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        let status = unsafe {
+            libc::pthread_sigmask(libc::SIG_BLOCK, std::ptr::null(), current.as_mut_ptr())
+        };
+        assert_eq!(status, 0);
+        unsafe { libc::sigismember(current.as_ptr(), libc::SIGTERM) == 1 }
+    }
+
+    #[test]
+    fn remove_masks_sigterm_only_during_quarantine_transaction() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-remove-signal-mask-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let target = root.join("request.json");
+        std::fs::write(&target, b"owned").unwrap();
+        let owned = target.metadata().unwrap();
+        let directory = File::open(&root).unwrap();
+        let before = sigterm_is_blocked();
+        let observed = Cell::new(false);
+
+        remove_if_identity_with_hook(
+            directory.as_raw_fd(),
+            &CString::new("request.json").unwrap(),
+            owned.dev(),
+            owned.ino(),
+            || observed.set(sigterm_is_blocked()),
+        )
+        .unwrap();
+
+        assert!(
+            observed.get(),
+            "SIGTERM must be masked after quarantine rename"
+        );
+        assert_eq!(
+            sigterm_is_blocked(),
+            before,
+            "prior signal mask must be restored"
+        );
+        assert!(!target.exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
