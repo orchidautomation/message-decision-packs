@@ -380,16 +380,10 @@ fn inspect_marked_region(
 /// offsets. Quoted, inline, indented, or fenced marker text remains human prose.
 fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usize)> {
     let mut offsets = Vec::new();
-    let mut fence: Option<(char, usize)> = None;
+    let mut scanner = MarkdownFenceScanner::default();
     for (start, content_end, line_end) in markdown_line_offsets(readme) {
         let line = &readme[start..content_end];
-        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
-            if closing {
-                fence = None;
-            } else if fence.is_none() {
-                fence = Some((character, length));
-            }
-        } else if fence.is_none() && line == marker {
+        if !scanner.line_is_fenced(line) && line == marker {
             offsets.push((start, line_end));
         }
     }
@@ -397,18 +391,200 @@ fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usi
 }
 
 fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
-    let mut fence = None;
+    let mut scanner = MarkdownFenceScanner::default();
     for (start, content_end, _) in markdown_line_offsets(readme) {
-        let line = &readme[start..content_end];
-        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
-            if closing {
-                fence = None;
-            } else if fence.is_none() {
-                fence = Some((character, length));
+        scanner.line_is_fenced(&readme[start..content_end]);
+    }
+    scanner
+        .fence
+        .map(|(character, length, _)| (character, length))
+}
+
+#[derive(Default)]
+struct MarkdownFenceScanner {
+    fence: Option<(char, usize, (usize, Option<usize>))>,
+    list_container: Option<(usize, usize)>,
+    list_blank_lines: usize,
+}
+
+impl MarkdownFenceScanner {
+    fn line_is_fenced(&mut self, line: &str) -> bool {
+        let (quote_depth, quoted_content) = strip_blockquote_prefixes(line);
+        if self
+            .list_container
+            .is_some_and(|(depth, _)| depth != quote_depth)
+        {
+            self.list_container = None;
+            self.list_blank_lines = 0;
+        }
+        let quoted_blank = quoted_content
+            .bytes()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
+        let fenced_content = self
+            .fence
+            .and_then(|(_, _, (opening_quote, opening_list))| {
+                if opening_quote != quote_depth {
+                    return None;
+                }
+                match opening_list {
+                    Some(_) if quoted_blank => Some(""),
+                    Some(indent) => strip_indent_columns(quoted_content, indent),
+                    None => Some(quoted_content),
+                }
+            });
+        if self.fence.is_some() && fenced_content.is_none() {
+            self.fence = None;
+        }
+        let block_content = if let Some(content) = fenced_content {
+            content
+        } else if let Some((content_indent, item_content)) = list_item_content(quoted_content) {
+            self.list_container = Some((quote_depth, content_indent));
+            self.list_blank_lines = 0;
+            item_content
+        } else if let Some((_, content_indent)) = self.list_container {
+            if quoted_blank {
+                self.list_blank_lines += 1;
+                if self.list_blank_lines >= 2 {
+                    self.list_container = None;
+                    self.list_blank_lines = 0;
+                }
+                ""
+            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
+            {
+                self.list_blank_lines = 0;
+                continuation
+            } else {
+                self.list_container = None;
+                self.list_blank_lines = 0;
+                quoted_content
             }
+        } else {
+            quoted_content
+        };
+        let container = (
+            quote_depth,
+            self.list_container
+                .and_then(|(depth, indent)| (depth == quote_depth).then_some(indent)),
+        );
+        if self
+            .fence
+            .is_some_and(|(_, _, opening_container)| opening_container != container)
+        {
+            self.fence = None;
+        }
+        let open = self.fence.map(|(character, length, _)| (character, length));
+        if let Some((character, length, closing)) = fence_delimiter(block_content, open) {
+            if closing {
+                self.fence = None;
+                return false;
+            }
+            if self.fence.is_none() {
+                self.fence = Some((character, length, container));
+            }
+            return true;
+        }
+        self.fence.is_some()
+    }
+}
+
+fn strip_blockquote_prefixes(mut line: &str) -> (usize, &str) {
+    let mut depth = 0;
+    loop {
+        let bytes = line.as_bytes();
+        let spaces = bytes
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte == b' ')
+            .count();
+        if bytes.get(spaces) != Some(&b'>') {
+            return (depth, line);
+        }
+        let mut consumed = spaces + 1;
+        if matches!(bytes.get(consumed), Some(b' ' | b'\t')) {
+            consumed += 1;
+        }
+        line = &line[consumed..];
+        depth += 1;
+    }
+}
+
+fn list_item_content(line: &str) -> Option<(usize, &str)> {
+    let bytes = line.as_bytes();
+    let leading = bytes
+        .iter()
+        .take(3)
+        .take_while(|byte| **byte == b' ')
+        .count();
+    let marker_end = match bytes.get(leading)? {
+        b'-' | b'+' | b'*' => leading + 1,
+        byte if byte.is_ascii_digit() => {
+            let mut cursor = leading;
+            while bytes.get(cursor).is_some_and(u8::is_ascii_digit) && cursor - leading < 9 {
+                cursor += 1;
+            }
+            if !matches!(bytes.get(cursor), Some(b'.' | b')')) {
+                return None;
+            }
+            cursor + 1
+        }
+        _ => return None,
+    };
+    let mut whitespace_end = marker_end;
+    let marker_column = markdown_indent_columns(&line[..marker_end]);
+    let mut content_column = marker_column;
+    while let Some(byte @ (b' ' | b'\t')) = bytes.get(whitespace_end) {
+        content_column = advance_markdown_column(content_column, *byte);
+        whitespace_end += 1;
+    }
+    if whitespace_end == marker_end {
+        return None;
+    }
+    let padding = content_column - marker_column;
+    let (content_start, content_indent) = if padding <= 4 || whitespace_end == bytes.len() {
+        (whitespace_end, content_column)
+    } else {
+        let first = bytes[marker_end];
+        (
+            marker_end + 1,
+            advance_markdown_column(marker_column, first),
+        )
+    };
+    Some((content_indent, &line[content_start..]))
+}
+
+fn strip_indent_columns(line: &str, required: usize) -> Option<&str> {
+    let mut columns = 0;
+    for (index, byte) in line.bytes().enumerate() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - (columns % 4),
+            _ => return (columns >= required).then_some(&line[index..]),
+        }
+        if columns >= required {
+            return Some(&line[index + 1..]);
         }
     }
-    fence
+    (columns >= required).then_some("")
+}
+
+fn markdown_indent_columns(line: &str) -> usize {
+    let mut columns = 0;
+    for byte in line.bytes() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - (columns % 4),
+            _ => break,
+        }
+    }
+    columns
+}
+
+fn advance_markdown_column(column: usize, byte: u8) -> usize {
+    if byte == b'\t' {
+        column + 4 - (column % 4)
+    } else {
+        column + 1
+    }
 }
 
 /// Return byte ranges `(start, content_end, line_end)` for every Markdown line.
@@ -899,6 +1075,19 @@ mod tests {
             twice, once,
             "bare-CR fenced marker prose must not duplicate regions"
         );
+    }
+
+    #[test]
+    fn list_container_exit_closes_fence_before_owned_markers() {
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let readme = format!(
+            "- example\n  ```markdown\n  unclosed list fence\nRoot prose.\n\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&readme).is_ok());
+        assert_eq!(extract_ownership_block(&readme), Some(ownership));
+        assert_eq!(extract_inventory_block(&readme), Some(inventory));
+        assert!(open_fence_at_eof(&readme).is_none());
     }
 
     #[test]

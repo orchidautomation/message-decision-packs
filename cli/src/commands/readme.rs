@@ -317,9 +317,22 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         let quoted_blank = quoted_content
             .bytes()
             .all(|byte| matches!(byte, b' ' | b'\t'));
-        let block_content = if let Some((content_indent, item_content)) =
-            list_item_content(quoted_content)
-        {
+        let fenced_content = fence.and_then(|(_, _, (opening_quote, opening_list))| {
+            if opening_quote != quote_depth {
+                return None;
+            }
+            match opening_list {
+                Some(_) if quoted_blank => Some(""),
+                Some(indent) => strip_indent_columns(quoted_content, indent),
+                None => Some(quoted_content),
+            }
+        });
+        if fence.is_some() && fenced_content.is_none() {
+            fence = None;
+        }
+        let block_content = if let Some(content) = fenced_content {
+            content
+        } else if let Some((content_indent, item_content)) = list_item_content(quoted_content) {
             list_container = Some((quote_depth, content_indent));
             list_blank_lines = 0;
             item_content
@@ -566,15 +579,72 @@ fn normalize_code_span(content: &str) -> String {
 
 fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut in_sources = false;
-    let mut fence: Option<(char, usize)> = None;
+    let mut fence: Option<(char, usize, (usize, Option<usize>))> = None;
+    let mut list_container: Option<(usize, usize)> = None;
+    let mut list_blank_lines = 0;
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
+        let (quote_depth, quoted_content) = strip_blockquote_prefixes(line);
+        if list_container.is_some_and(|(depth, _)| depth != quote_depth) {
+            list_container = None;
+            list_blank_lines = 0;
+        }
+        let quoted_blank = quoted_content
+            .bytes()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
+        let fenced_content = fence.and_then(|(_, _, (opening_quote, opening_list))| {
+            if opening_quote != quote_depth {
+                return None;
+            }
+            match opening_list {
+                Some(_) if quoted_blank => Some(""),
+                Some(indent) => strip_indent_columns(quoted_content, indent),
+                None => Some(quoted_content),
+            }
+        });
+        if fence.is_some() && fenced_content.is_none() {
+            fence = None;
+        }
+        let block_content = if let Some(content) = fenced_content {
+            content
+        } else if let Some((content_indent, item_content)) = list_item_content(quoted_content) {
+            list_container = Some((quote_depth, content_indent));
+            list_blank_lines = 0;
+            item_content
+        } else if let Some((_, content_indent)) = list_container {
+            if quoted_blank {
+                list_blank_lines += 1;
+                if list_blank_lines >= 2 {
+                    list_container = None;
+                    list_blank_lines = 0;
+                }
+                ""
+            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
+            {
+                list_blank_lines = 0;
+                continuation
+            } else {
+                list_container = None;
+                list_blank_lines = 0;
+                quoted_content
+            }
+        } else {
+            quoted_content
+        };
+        let container = (
+            quote_depth,
+            list_container.and_then(|(depth, indent)| (depth == quote_depth).then_some(indent)),
+        );
+        if fence.is_some_and(|(_, _, opening_container)| opening_container != container) {
+            fence = None;
+        }
+        let open = fence.map(|(character, length, _)| (character, length));
+        if let Some((character, length, closing)) = fence_delimiter(block_content, open) {
             if closing {
                 fence = None;
             } else if fence.is_none() {
-                fence = Some((character, length));
+                fence = Some((character, length, container));
             }
             continue;
         }
@@ -1202,6 +1272,12 @@ Inline `inline-code` must be ignored.
 - `outside-section`: ignored
 "#;
         assert_eq!(source_reference_ids(markdown), vec!["declared-source"]);
+
+        let list_fence = "- ```text\n  list-fenced body\n  ```\n\n## Sources\n- `visible-after-list-fence`: accepted\n";
+        assert_eq!(
+            source_reference_ids(list_fence),
+            vec!["visible-after-list-fence"]
+        );
     }
 
     #[test]
