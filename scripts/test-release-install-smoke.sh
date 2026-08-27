@@ -10,6 +10,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+node - "$ROOT/.github/workflows/release.yml" <<'NODE'
+const { readFileSync } = require('node:fs')
+const workflow = readFileSync(process.argv[2], 'utf8')
+const smokeStep = workflow.indexOf('- name: Install and smoke-test the published release')
+const sourceBuild = workflow.indexOf('cargo build --manifest-path cli/Cargo.toml', smokeStep)
+const smokeCall = workflow.indexOf('scripts/release-install-smoke.sh "$version"', smokeStep)
+if (smokeStep < 0 || sourceBuild < smokeStep || smokeCall < sourceBuild) {
+  throw new Error('release workflow must build the exact source CLI before published install smoke')
+}
+NODE
+
 mdp_bin="$ROOT/cli/target/debug/mdp"
 if [ ! -x "$mdp_bin" ]; then
   cargo build --manifest-path "$ROOT/cli/Cargo.toml" >/dev/null
