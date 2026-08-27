@@ -311,15 +311,13 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let definition_title_continuation =
-            definition_title_pending && is_link_title_continuation(line);
+        let pending_definition_title = definition_title_pending;
         definition_title_pending = false;
-        if definition_title_continuation {
-            paragraph_open = false;
-        }
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
+        let definition_title_continuation =
+            pending_definition_title && is_link_title_continuation(block_content);
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
             indented_code_can_start = true;
@@ -805,15 +803,13 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let definition_title_continuation =
-            definition_title_pending && is_link_title_continuation(line);
+        let pending_definition_title = definition_title_pending;
         definition_title_pending = false;
-        if definition_title_continuation {
-            paragraph_open = false;
-        }
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
+        let definition_title_continuation =
+            pending_definition_title && is_link_title_continuation(block_content);
         if fence
             .as_ref()
             .is_some_and(|(_, _, opening_container)| *opening_container != container)
@@ -1588,6 +1584,13 @@ Inline `inline-code` must be ignored.
             vec!["cards/multiline-definition-visible.yaml"],
             "an optional title continuation remains part of the definition block"
         );
+        assert_eq!(
+            inline_code_tokens(
+                "> [ref]: /url\n>   \"title\"\n> 2. ```markdown\n>    `cards/quoted-definition-hidden.yaml`\n>    ```\nRoot `cards/quoted-definition-visible.yaml`.\n"
+            ),
+            vec!["cards/quoted-definition-visible.yaml"],
+            "definition title continuations are projected through their container"
+        );
     }
 
     #[test]
@@ -1607,7 +1610,7 @@ Inline `inline-code` must be ignored.
         let readme_path = root.join(".mdp/README.md");
         let mut readme = std::fs::read_to_string(&readme_path).expect("README");
         readme.push_str(
-            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\n# Heading\n2. ```markdown\n   `cards/after-heading-hidden.yaml`\n   ```\nRoot `cards/after-heading-visible.yaml`.\n\n[ref]: /url\n2. ```markdown\n   `cards/after-definition-hidden.yaml`\n   ```\nRoot `cards/after-definition-visible.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
+            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\n# Heading\n2. ```markdown\n   `cards/after-heading-hidden.yaml`\n   ```\nRoot `cards/after-heading-visible.yaml`.\n\n[ref]: /url\n2. ```markdown\n   `cards/after-definition-hidden.yaml`\n   ```\nRoot `cards/after-definition-visible.yaml`.\n\n> [ref]: /url\n>   \"title\"\n> 2. ```markdown\n>    `cards/quoted-definition-hidden.yaml`\n>    ```\nRoot `cards/quoted-definition-visible.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         std::fs::write(&readme_path, readme).expect("write human examples");
 
@@ -1629,6 +1632,7 @@ Inline `inline-code` must be ignored.
                 "cards/non-one-ordered-visible.yaml",
                 "cards/after-heading-visible.yaml",
                 "cards/after-definition-visible.yaml",
+                "cards/quoted-definition-visible.yaml",
                 "cards/visible-missing.yaml"
             ]
         );
@@ -1648,6 +1652,7 @@ Inline `inline-code` must be ignored.
                 "cards/non-one-ordered-visible.yaml",
                 "cards/after-heading-visible.yaml",
                 "cards/after-definition-visible.yaml",
+                "cards/quoted-definition-visible.yaml",
                 "cards/visible-missing.yaml"
             ]
         );

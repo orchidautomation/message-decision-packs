@@ -420,12 +420,8 @@ struct MarkdownFenceScanner {
 
 impl MarkdownFenceScanner {
     fn line_is_fenced(&mut self, line: &str) -> bool {
-        let definition_title_continuation =
-            self.definition_title_pending && is_link_title_continuation(line);
+        let pending_definition_title = self.definition_title_pending;
         self.definition_title_pending = false;
-        if definition_title_continuation {
-            self.paragraph_open = false;
-        }
         let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
         let opening = self
             .fence
@@ -468,6 +464,8 @@ impl MarkdownFenceScanner {
             self.container = container.clone();
             (content, container)
         };
+        let definition_title_continuation =
+            pending_definition_title && is_link_title_continuation(block_content);
         if self
             .fence
             .as_ref()
@@ -1342,6 +1340,15 @@ mod tests {
             extract_inventory_block(&multiline_definition),
             Some(inventory)
         );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let quoted_definition = format!(
+            "> [ref]: /url\n>   \"title\"\n> 2. ```markdown\n>    body\n>    ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&quoted_definition).is_ok());
+        assert!(open_fence_at_eof(&quoted_definition).is_none());
+        assert_eq!(extract_ownership_block(&quoted_definition), Some(ownership));
+        assert_eq!(extract_inventory_block(&quoted_definition), Some(inventory));
     }
 
     #[test]
