@@ -22,6 +22,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_RE = re.compile(r"tokens used\s*\n\s*([0-9,]+)", re.I)
+MODEL_RE = re.compile(r"^model:\s*(\S+)", re.M)
 
 
 def load(path: Path) -> Any:
@@ -71,13 +72,21 @@ def materialize(args: argparse.Namespace) -> None:
 
 def skill_material(skill_root: Path, skill_id: str) -> tuple[str, list[dict[str, str]]]:
     root = skill_root / skill_id
-    paths = [root / "SKILL.md"]
-    text = paths[0].read_text(encoding="utf-8")
-    # Progressive-disclosure skills may load their direct references. Supply the
-    # complete self-contained skill directory but never files outside it.
-    for path in sorted((root / "references").glob("*.md")):
+    entry = root / "SKILL.md"
+    entry_text = entry.read_text(encoding="utf-8")
+    paths = [entry]
+    skills_root = skill_root.resolve()
+    reference_pattern = r"(?<![A-Za-z0-9_./-])(?:\.\./)*[A-Za-z0-9_.-]*/?references/[A-Za-z0-9_.-]+\.md"
+    for reference in sorted(set(re.findall(reference_pattern, entry_text))):
+        path = (root / reference).resolve()
+        if path != skills_root and skills_root not in path.parents:
+            raise ValueError(f"skill reference escapes canonical root: {reference}")
+        if not path.is_file():
+            raise ValueError(f"skill direct reference is missing: {reference}")
         paths.append(path)
-        text += f"\n\n--- {path.relative_to(root)} ---\n" + path.read_text(encoding="utf-8")
+    text = entry_text
+    for path in paths[1:]:
+        text += f"\n\n--- {path.relative_to(skill_root)} ---\n" + path.read_text(encoding="utf-8")
     inputs = [
         {"path": path.relative_to(skill_root).as_posix(), "sha256": digest(path.read_bytes())}
         for path in paths
@@ -94,28 +103,28 @@ def catalog(skill_root: Path) -> str:
     return "\n".join(rows)
 
 
-def schema_file(directory: Path) -> Path:
+def schema_file(directory: Path, grader: bool = False) -> Path:
+    if grader:
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+            "additionalProperties": False, "required": ["assertion_evidence"],
+            "properties": {"assertion_evidence": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["assertion_id", "passed", "evidence"],
+                "properties": {"assertion_id": {"type": "string"}, "passed": {"type": "boolean"}, "evidence": {"type": "string"}}
+            }}}
+        }
+        path = directory / "grader.schema.json"
+        path.write_bytes(canonical_bytes(schema))
+        return path
     schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "additionalProperties": False,
-        "required": ["selected_skill_id", "response", "assertion_evidence"],
+        "required": ["selected_skill_id", "response"],
         "properties": {
             "selected_skill_id": {"type": ["string", "null"]},
-            "response": {"type": "string"},
-            "assertion_evidence": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["assertion_id", "passed", "evidence"],
-                    "properties": {
-                        "assertion_id": {"type": "string"},
-                        "passed": {"type": "boolean"},
-                        "evidence": {"type": "string"}
-                    }
-                }
-            }
+            "response": {"type": "string"}
         }
     }
     path = directory / "response.schema.json"
@@ -135,7 +144,6 @@ def prompt_for(case: dict[str, Any], kind: str, mode: str, skills: Path, previou
         else:
             instruction, inputs = skill_material(skill_root, case["skill_id"])
             instruction = f"Agent Skill `{case['skill_id']}`:\n{instruction}"
-    assertions = case.get("assertions", []) if kind == "output" else []
     fixture_text = []
     for relative in case.get("_input_files", []):
         path = ROOT / relative
@@ -150,13 +158,11 @@ def prompt_for(case: dict[str, Any], kind: str, mode: str, skills: Path, previou
         f"Bound synthetic/public inputs:\n{chr(10).join(fixture_text) or '(none)'}\n\n"
         f"User request:\n{case.get('query') or case.get('prompt')}\n\n"
         "Return the one canonical selected_skill_id, or null when no MDP skill owns the request. "
-        "Write a concise useful response. Grade every supplied assertion against that response; "
-        "evidence must cite a short response fragment or a specific omission. Do not invent assertion IDs.\n"
-        f"Assertions:\n{json.dumps(assertions, indent=2)}"
+        "Write a concise useful response."
     ), inputs
 
 
-def run_codex(prompt: str, schema: Path, workdir: Path, model: str | None, codex_home: Path | None) -> tuple[dict[str, Any], int, int]:
+def run_codex(prompt: str, schema: Path, workdir: Path, model: str | None, codex_home: Path | None) -> tuple[dict[str, Any], int, int, str]:
     output = workdir / "last-message.json"
     command = ["codex", "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "-s", "read-only", "-C", str(workdir), "--output-schema", str(schema), "--output-last-message", str(output)]
     if model:
@@ -171,7 +177,19 @@ def run_codex(prompt: str, schema: Path, workdir: Path, model: str | None, codex
     if result.returncode != 0:
         raise RuntimeError(f"codex exec failed ({result.returncode}): {result.stderr[-1000:]}")
     usage = TOKEN_RE.search(result.stderr)
-    return load(output), elapsed, int(usage.group(1).replace(",", "")) if usage else 0
+    resolved = MODEL_RE.search(result.stderr)
+    return load(output), elapsed, int(usage.group(1).replace(",", "")) if usage else 0, resolved.group(1) if resolved else (model or "host-default")
+
+
+def grade_response(case: dict[str, Any], response: str, schema: Path, workdir: Path, model: str | None, codex_home: Path | None) -> tuple[list[dict[str, Any]], int, int, str]:
+    assertions = [row for row in case.get("assertions", []) if row.get("required") is True]
+    prompt = (
+        "You are an isolated evaluator. Do not use tools. Grade only the supplied response against every assertion. "
+        "Do not reward claims absent from the response. Return one result per assertion ID.\n\n"
+        f"Response:\n{response}\n\nAssertions:\n{json.dumps(assertions, indent=2)}"
+    )
+    result, elapsed, tokens, resolved = run_codex(prompt, schema, workdir, model, codex_home)
+    return result.get("assertion_evidence", []), elapsed, tokens, resolved
 
 
 def run(args: argparse.Namespace) -> None:
@@ -193,11 +211,14 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError("--previous-skills is required by this suite")
     args.out.mkdir(parents=True, exist_ok=False)
     schema = schema_file(args.out)
+    grader_schema = schema_file(args.out, grader=True)
     records = []
     jobs = []
     for case in trigger_cases:
-        for repeat in range(suite["trigger_repeats"]):
-            jobs.append(("trigger", "with-skill", case, repeat + 1))
+        for mode in suite["comparison_modes"]:
+            repeats = suite["trigger_repeats"] if mode == "with-skill" else 1
+            for repeat in range(repeats):
+                jobs.append(("trigger", mode, case, repeat + 1))
     for case in output_cases:
         for mode in suite["comparison_modes"]:
             jobs.append(("output", mode, case, 1))
@@ -205,10 +226,19 @@ def run(args: argparse.Namespace) -> None:
         trial_dir = args.out / f"trial-{number:03d}"
         trial_dir.mkdir()
         prompt, inputs = prompt_for(case, kind, mode, args.skills, args.previous_skills)
-        result, elapsed, tokens = run_codex(prompt, schema, trial_dir, args.model, args.codex_home)
+        result, elapsed, tokens, resolved_model = run_codex(prompt, schema, trial_dir, args.model, args.codex_home)
         expected = case.get("expected_skill_id") if kind == "trigger" else case["skill_id"]
         required = {row["id"] for row in case.get("assertions", []) if row.get("required") is True}
-        evidence = {row.get("assertion_id"): row for row in result.get("assertion_evidence", [])}
+        grader_elapsed = grader_tokens = 0
+        evidence_rows: list[dict[str, Any]] = []
+        grader_model = None
+        if kind == "output":
+            grader_dir = trial_dir / "grader"
+            grader_dir.mkdir()
+            evidence_rows, grader_elapsed, grader_tokens, grader_model = grade_response(
+                case, result.get("response", ""), grader_schema, grader_dir, args.grader_model or args.model, args.codex_home
+            )
+        evidence = {row.get("assertion_id"): row for row in evidence_rows}
         passed = result.get("selected_skill_id") == expected and required == set(evidence) and all(row.get("passed") is True for row in evidence.values())
         skill_version = (
             "none"
@@ -221,9 +251,10 @@ def run(args: argparse.Namespace) -> None:
             "trial_id": f"{case['id']}:{mode}:{repeat}", "case_id": case["id"], "kind": kind,
             "comparison_mode": mode, "repeat": repeat, "prompt": prompt,
             "inputs": inputs, "skill_version": skill_version,
-            "host": "codex-exec", "model_id": args.model or "host-default",
+            "host": "codex-exec", "model_id": resolved_model, "grader_model_id": grader_model,
             "output": result, "elapsed_ms": elapsed, "total_tokens": tokens,
-            "assertion_evidence": result.get("assertion_evidence", []), "passed": passed
+            "grader_elapsed_ms": grader_elapsed, "grader_total_tokens": grader_tokens,
+            "assertion_evidence": evidence_rows, "passed": passed
         }
         (trial_dir / "record.json").write_bytes(canonical_bytes(record))
         records.append(record)
@@ -239,18 +270,31 @@ def aggregate(args: argparse.Namespace) -> None:
         grouped.setdefault(trial["comparison_mode"], []).append(trial)
     modes = {}
     for mode, rows in sorted(grouped.items()):
+        input_digests = sorted({item["sha256"] for row in rows for item in row.get("inputs", [])})
+        by_kind = {}
+        for kind in ("trigger", "output"):
+            kind_rows = [row for row in rows if row["kind"] == kind]
+            if kind_rows:
+                by_kind[kind] = {"trials": len(kind_rows), "passed": sum(row["passed"] for row in kind_rows), "pass_rate": sum(row["passed"] for row in kind_rows) / len(kind_rows)}
         modes[mode] = {
             "trials": len(rows), "passed": sum(row["passed"] for row in rows),
             "pass_rate": sum(row["passed"] for row in rows) / len(rows),
             "elapsed_ms": sum(row["elapsed_ms"] for row in rows),
             "total_tokens": sum(row["total_tokens"] for row in rows),
+            "grader_elapsed_ms": sum(row.get("grader_elapsed_ms", 0) for row in rows),
+            "grader_total_tokens": sum(row.get("grader_total_tokens", 0) for row in rows),
+            "skill_versions": sorted({row.get("skill_version", "unknown") for row in rows}),
+            "model_ids": sorted({row.get("model_id", "unknown") for row in rows}),
+            "grader_model_ids": sorted({row["grader_model_id"] for row in rows if row.get("grader_model_id")}),
+            "input_sha256": input_digests,
+            "by_kind": by_kind,
             "case_results": [{"case_id": row["case_id"], "kind": row["kind"], "repeat": row["repeat"], "passed": row["passed"]} for row in rows]
         }
     report = {
         "model": "mdp.skill-behavioral-report.v1", "observed": True,
         "source": {"trial_manifest_sha256": digest(args.results.read_bytes()), "raw_records_committed": False},
         "host": "codex-exec", "modes": modes,
-        "limitations": ["One host/model snapshot; results do not generalize to other hosts or model versions.", "Assertion evidence is model-reported and requires the documented blind human review before product claims."],
+        "limitations": ["One host/model snapshot; results do not generalize to other hosts or model versions.", "Assertion evidence is produced by a separate isolated model grader and still requires the documented blind human review before product claims."],
         "human_review": {"status": "required", "procedure": "docs/skill-behavioral-evals.md#blind-human-review"},
         "static_validation_separate": True
     }
@@ -274,6 +318,7 @@ def main() -> int:
     execute.add_argument("--previous-skills", type=Path)
     execute.add_argument("--codex-home", type=Path)
     execute.add_argument("--model")
+    execute.add_argument("--grader-model")
     execute.add_argument("--skill-version", help="Exact current skill commit/release (defaults to suite revision)")
     execute.add_argument("--previous-skill-version", default="operator-supplied-previous-tree", help="Exact previous skill commit/release")
     execute.add_argument("--case-id", action="append", help="Run only a selected suite case (repeatable)")

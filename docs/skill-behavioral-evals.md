@@ -33,9 +33,11 @@ runtime instructions.
 
 Use a fresh temporary `CODEX_HOME` containing authentication only. The runner
 uses ephemeral, read-only, no-resume Codex invocations in a sterile trial
-directory. Each private record includes the exact prompt, input file digests,
-skill revision, host/model label, output, elapsed time, token usage when the
-host reports it, assertion evidence, and result. Never commit the raw directory:
+directory. Each private record includes the exact uncoached subject prompt,
+input file digests, skill revision, resolved host/model label, output, elapsed
+time, token usage when the host reports it, separately generated assertion
+evidence and grader metadata, and result. The subject never receives the rubric.
+Never commit the raw directory:
 it can contain model output, prompts, local paths, or other host metadata.
 
 ## Blind human review

@@ -26,6 +26,7 @@ class BehavioralEvalTests(unittest.TestCase):
         self.assertTrue(collisions & set(suite["trigger_case_ids"]))
         self.assertTrue(any(row["split"] == "validation" for row in cases))
         self.assertTrue(suite["input_files"]["null-gtm-on-proposal-validation"])
+        self.assertEqual(set(suite["comparison_modes"]), MOD.COMPARISON_MODES if hasattr(MOD, "COMPARISON_MODES") else {"with-skill", "baseline", "previous-version"})
 
     def test_aggregate_excludes_raw_prompt_and_output(self) -> None:
         raw = {"trials": [{"comparison_mode": "with-skill", "case_id": "x", "kind": "output", "repeat": 1, "passed": True, "elapsed_ms": 10, "total_tokens": 20, "prompt": "private", "output": {"response": "private"}}]}
@@ -52,6 +53,19 @@ class BehavioralEvalTests(unittest.TestCase):
                 view = MOD.load(out / skill_id / "evals.json")
                 self.assertEqual(view["skill_name"], skill_id)
                 self.assertEqual(view["source_model"], "mdp.skill-output-corpus.v1")
+
+    def test_subject_prompt_is_not_coached_by_assertions(self) -> None:
+        outputs = MOD.load(ROOT / "plugin/skill-evals/output-cases.json")
+        case = next(row for row in outputs["cases"] if row["id"] == "gtm-fit-validation")
+        prompt, _ = MOD.prompt_for(case, "output", "baseline", ROOT / "plugin/skills", None)
+        self.assertNotIn(case["assertions"][0]["criterion"], prompt)
+        self.assertNotIn("Assertions:", prompt)
+
+    def test_direct_shared_skill_references_are_loaded(self) -> None:
+        _, inputs = MOD.skill_material(ROOT / "plugin/skills", "mdp-gtm-brief")
+        paths = {row["path"] for row in inputs}
+        self.assertIn("mdp/references/communication-contract.md", paths)
+        self.assertIn("mdp/references/workflow-bundle-handoff.md", paths)
 
 
 if __name__ == "__main__":
