@@ -310,6 +310,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut paragraph_open = false;
     let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut definition_destination_pending: Option<MarkdownContainer> = None;
+    let mut open_definition_title: Option<(MarkdownContainer, char)> = None;
     let mut raw_html_end_tag = None;
     let mut raw_html_container: Option<MarkdownContainer> = None;
     let mut visible = String::with_capacity(markdown.len());
@@ -317,6 +318,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         let line = &markdown[start..content_end];
         let pending_definition_title = definition_title_pending.take();
         let pending_definition_destination = definition_destination_pending.take();
+        let pending_open_definition_title = open_definition_title.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container, exited_container) =
             container_state.project(line, opening_container, paragraph_open);
@@ -341,6 +343,17 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         if raw_html_end_tag.is_some() && raw_html_container.as_ref() != Some(&container) {
             raw_html_end_tag = None;
             raw_html_container = None;
+        }
+        if let Some((opening_container, closing)) = pending_open_definition_title
+            && opening_container == container
+            && let Some(closed) = multiline_title_line_state(block_content, closing)
+        {
+            if !closed {
+                open_definition_title = Some((opening_container, closing));
+            }
+            visible.push('\n');
+            paragraph_open = false;
+            continue;
         }
         let continuing_raw_html = raw_html_end_tag.is_some();
         if (raw_html_end_tag.is_some() || fence.is_none())
@@ -429,9 +442,16 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // CommonMark indented code cannot interrupt a paragraph. A blank line
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
-        definition_title_pending = ((definition_can_start
+        let pending_title_closer = ((definition_can_start
             && link_reference_title_state(block_content) == Some(false))
             || definition_destination_continuation == Some(false))
+        .then(|| incomplete_link_title_closer(block_content))
+        .flatten();
+        open_definition_title = pending_title_closer.map(|closing| (container.clone(), closing));
+        definition_title_pending = (pending_title_closer.is_none()
+            && ((definition_can_start
+                && link_reference_title_state(block_content) == Some(false))
+                || definition_destination_continuation == Some(false)))
         .then_some(container.clone());
         definition_destination_pending = (definition_can_start
             && is_link_reference_destination_pending(block_content))
@@ -718,6 +738,20 @@ fn line_continues_paragraph(line: &str, paragraph_open: bool) -> bool {
         && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
 }
 
+fn line_interrupts_container_paragraph(line: &str) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    if markdown_indent_columns(line) > 3 {
+        return false;
+    }
+    let mut raw_html = None;
+    trimmed.starts_with('>')
+        || is_atx_heading(line)
+        || list_item_content(line, false).is_some()
+        || fence_delimiter(line, None).is_some()
+        || is_thematic_or_setext_line(line, false)
+        || line_is_raw_html(line, &mut raw_html, false)
+}
+
 fn is_atx_heading(line: &str) -> bool {
     let trimmed = line.trim_start_matches(' ');
     if line.len() - trimmed.len() > 3 {
@@ -856,6 +890,8 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
     let trailing = rest[destination_end..].trim_matches([' ', '\t']);
     if trailing.is_empty() {
         Some(false)
+    } else if incomplete_link_title_closer(trailing).is_some() {
+        Some(false)
     } else {
         valid_link_title(trailing).then_some(true)
     }
@@ -891,6 +927,53 @@ fn valid_link_title(title: &str) -> bool {
         }
     }
     false
+}
+
+fn incomplete_link_title_closer(line: &str) -> Option<char> {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let mut candidates = Vec::new();
+    for (index, character) in trimmed.char_indices() {
+        if matches!(character, '"' | '\'' | '(')
+            && (index == 0
+                || trimmed[..index]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|previous| matches!(previous, ' ' | '\t')))
+        {
+            candidates.push((index, character));
+        }
+    }
+    let (index, opening) = candidates.into_iter().next_back()?;
+    let closing = if opening == '(' { ')' } else { opening };
+    let mut escaped = false;
+    for character in trimmed[index + opening.len_utf8()..].chars() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            character if character == closing && !escaped => return None,
+            _ => escaped = false,
+        }
+    }
+    Some(closing)
+}
+
+fn multiline_title_line_state(line: &str, closing: char) -> Option<bool> {
+    if markdown_indent_columns(line) > 3 || line.trim_matches([' ', '\t']).is_empty() {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, character) in line.char_indices() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            character if character == closing && !escaped => {
+                return line[index + character.len_utf8()..]
+                    .trim_matches([' ', '\t'])
+                    .is_empty()
+                    .then_some(true);
+            }
+            _ => escaped = false,
+        }
+    }
+    Some(false)
 }
 
 fn is_link_title_continuation(line: &str) -> bool {
@@ -944,12 +1027,20 @@ impl MarkdownContainerState {
         self.blank_lines = 0;
 
         let mut container = self.active.clone();
-        let exited_container =
-            !container.is_empty() && project_container_path(line, &container).is_none();
+        let projection = (!container.is_empty())
+            .then(|| project_container_path(line, &container))
+            .flatten();
+        let lazy_continuation = !container.is_empty()
+            && projection.is_none()
+            && paragraph_open
+            && !line_interrupts_container_paragraph(line);
+        let exited_container = !container.is_empty() && projection.is_none() && !lazy_continuation;
         let content = if container.is_empty() {
             line
-        } else if let Some(content) = project_container_path(line, &container) {
+        } else if let Some(content) = projection {
             content
+        } else if lazy_continuation {
+            line
         } else {
             container.clear();
             line
@@ -1156,6 +1247,7 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut paragraph_open = false;
     let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut definition_destination_pending: Option<MarkdownContainer> = None;
+    let mut open_definition_title: Option<(MarkdownContainer, char)> = None;
     let mut raw_html_end_tag = None;
     let mut raw_html_container: Option<MarkdownContainer> = None;
     let mut ids = Vec::new();
@@ -1163,6 +1255,7 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
         let line = &markdown[start..content_end];
         let pending_definition_title = definition_title_pending.take();
         let pending_definition_destination = definition_destination_pending.take();
+        let pending_open_definition_title = open_definition_title.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container, exited_container) =
             container_state.project(line, opening_container, paragraph_open);
@@ -1187,6 +1280,16 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
         if raw_html_end_tag.is_some() && raw_html_container.as_ref() != Some(&container) {
             raw_html_end_tag = None;
             raw_html_container = None;
+        }
+        if let Some((opening_container, closing)) = pending_open_definition_title
+            && opening_container == container
+            && let Some(closed) = multiline_title_line_state(block_content, closing)
+        {
+            if !closed {
+                open_definition_title = Some((opening_container, closing));
+            }
+            paragraph_open = false;
+            continue;
         }
         let continuing_raw_html = raw_html_end_tag.is_some();
         if (raw_html_end_tag.is_some() || fence.is_none())
@@ -1228,9 +1331,16 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             continue;
         }
         let definition_can_start = !paragraph_open;
-        definition_title_pending = ((definition_can_start
+        let pending_title_closer = ((definition_can_start
             && link_reference_title_state(block_content) == Some(false))
             || definition_destination_continuation == Some(false))
+        .then(|| incomplete_link_title_closer(block_content))
+        .flatten();
+        open_definition_title = pending_title_closer.map(|closing| (container.clone(), closing));
+        definition_title_pending = (pending_title_closer.is_none()
+            && ((definition_can_start
+                && link_reference_title_state(block_content) == Some(false))
+                || definition_destination_continuation == Some(false)))
         .then_some(container.clone());
         definition_destination_pending = (definition_can_start
             && is_link_reference_destination_pending(block_content))
@@ -1972,6 +2082,18 @@ Inline `inline-code` must be ignored.
         );
         assert_eq!(
             inline_code_tokens(
+                "[ref]: /url \"multi\nline\"\n2. ```markdown\n   `cards/multiline-title-hidden.yaml`\n   ```\nRoot `cards/multiline-title-visible.yaml`.\n"
+            ),
+            vec!["cards/multiline-title-visible.yaml"],
+            "multiline definition titles close before later root blocks"
+        );
+        assert_eq!(
+            inline_code_tokens("- paragraph\n<x>\nRoot `cards/lazy-list-visible.yaml`.\n"),
+            vec!["cards/lazy-list-visible.yaml"],
+            "type-7 HTML stays a lazy list-paragraph continuation"
+        );
+        assert_eq!(
+            inline_code_tokens(
                 "Paragraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n"
             ),
             vec!["cards/non-one-ordered-visible.yaml"],
@@ -2342,6 +2464,39 @@ Inline `inline-code` must be ignored.
         assert!(refreshed.contains("<![cdata[\n"));
         assert!(refreshed.ends_with("]]>\n"));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn multiline_definition_and_lazy_list_prose_keep_check_refresh_consistent() {
+        for human_prefix in [
+            "[ref]: /url \"multi\nline\"\n2. ```markdown\n   human body\n   ```",
+            "- paragraph\n<x>",
+        ] {
+            let root = std::env::temp_dir().join(format!("mdp-readme-block-state-{}", nonce()));
+            init_pack(&root, "Block State Pack", "gtm", true, false)
+                .expect("pack should initialize");
+            let readme_path = root.join(".mdp/README.md");
+            let readme = std::fs::read_to_string(&readme_path).expect("README");
+            let adversarial = readme.replacen(
+                crate::pack_readme::README_OWNERSHIP_BEGIN,
+                &format!(
+                    "{human_prefix}\n{}",
+                    crate::pack_readme::README_OWNERSHIP_BEGIN
+                ),
+                1,
+            );
+            std::fs::write(&readme_path, &adversarial).expect("write README");
+
+            let checked = check_readme(&root).expect("check README");
+            assert_eq!(checked["status"], "fresh", "{human_prefix}: {checked}");
+            let dry_run = refresh_readme(&root, None, true).expect("dry-run refresh");
+            assert_eq!(dry_run["status"], "dry-run");
+            assert_eq!(
+                std::fs::read_to_string(&readme_path).expect("README after dry run"),
+                adversarial
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]

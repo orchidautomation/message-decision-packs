@@ -426,6 +426,7 @@ struct MarkdownFenceScanner {
     paragraph_open: bool,
     definition_title_pending: Option<MarkdownContainer>,
     definition_destination_pending: Option<MarkdownContainer>,
+    open_definition_title: Option<(MarkdownContainer, char)>,
     raw_html_end: Option<RawHtmlEnd>,
     raw_html_container: Option<MarkdownContainer>,
 }
@@ -434,6 +435,7 @@ impl MarkdownFenceScanner {
     fn line_is_fenced(&mut self, line: &str) -> bool {
         let pending_definition_title = self.definition_title_pending.take();
         let pending_definition_destination = self.definition_destination_pending.take();
+        let open_definition_title = self.open_definition_title.take();
         let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
         let opening = self
             .fence
@@ -463,12 +465,21 @@ impl MarkdownFenceScanner {
         } else {
             self.blank_lines = 0;
             let mut container = self.container.clone();
+            let projection = (!container.is_empty())
+                .then(|| project_container_path(line, &container))
+                .flatten();
+            let lazy_continuation = !container.is_empty()
+                && projection.is_none()
+                && self.paragraph_open
+                && !line_interrupts_container_paragraph(line);
             let exited_container =
-                !container.is_empty() && project_container_path(line, &container).is_none();
+                !container.is_empty() && projection.is_none() && !lazy_continuation;
             let content = if container.is_empty() {
                 line
-            } else if let Some(content) = project_container_path(line, &container) {
+            } else if let Some(content) = projection {
                 content
+            } else if lazy_continuation {
+                line
             } else {
                 container.clear();
                 line
@@ -484,6 +495,16 @@ impl MarkdownFenceScanner {
         if self.raw_html_end.is_some() && self.raw_html_container.as_ref() != Some(&container) {
             self.raw_html_end = None;
             self.raw_html_container = None;
+        }
+        if let Some((opening_container, closing)) = open_definition_title
+            && opening_container == container
+            && let Some(closed) = multiline_title_line_state(block_content, closing)
+        {
+            if !closed {
+                self.open_definition_title = Some((opening_container, closing));
+            }
+            self.paragraph_open = false;
+            return false;
         }
         let canonical_owned_marker = self.raw_html_end.is_none()
             && container.is_empty()
@@ -549,9 +570,17 @@ impl MarkdownFenceScanner {
             true
         } else {
             let definition_can_start = !self.paragraph_open;
-            self.definition_title_pending = ((definition_can_start
+            let pending_title_closer = ((definition_can_start
                 && link_reference_title_state(block_content) == Some(false))
                 || definition_destination_continuation == Some(false))
+            .then(|| incomplete_link_title_closer(block_content))
+            .flatten();
+            self.open_definition_title =
+                pending_title_closer.map(|closing| (container.clone(), closing));
+            self.definition_title_pending = (pending_title_closer.is_none()
+                && ((definition_can_start
+                    && link_reference_title_state(block_content) == Some(false))
+                    || definition_destination_continuation == Some(false)))
             .then_some(container.clone());
             self.definition_destination_pending = (definition_can_start
                 && is_link_reference_destination_pending(block_content))
@@ -958,6 +987,20 @@ fn line_continues_paragraph(line: &str, paragraph_open: bool) -> bool {
         && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
 }
 
+fn line_interrupts_container_paragraph(line: &str) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    if markdown_indent_columns(line) > 3 {
+        return false;
+    }
+    let mut raw_html = None;
+    trimmed.starts_with('>')
+        || is_atx_heading(line)
+        || list_item_content(line, false).is_some()
+        || fence_delimiter(line, None).is_some()
+        || is_thematic_or_setext_line(line, false)
+        || line_is_raw_html(line, &mut raw_html, false)
+}
+
 fn is_atx_heading(line: &str) -> bool {
     let trimmed = line.trim_start_matches(' ');
     if line.len() - trimmed.len() > 3 {
@@ -1096,6 +1139,8 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
     let trailing = rest[destination_end..].trim_matches([' ', '\t']);
     if trailing.is_empty() {
         Some(false)
+    } else if incomplete_link_title_closer(trailing).is_some() {
+        Some(false)
     } else {
         valid_link_title(trailing).then_some(true)
     }
@@ -1131,6 +1176,53 @@ fn valid_link_title(title: &str) -> bool {
         }
     }
     false
+}
+
+fn incomplete_link_title_closer(line: &str) -> Option<char> {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let mut candidates = Vec::new();
+    for (index, character) in trimmed.char_indices() {
+        if matches!(character, '"' | '\'' | '(')
+            && (index == 0
+                || trimmed[..index]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|previous| matches!(previous, ' ' | '\t')))
+        {
+            candidates.push((index, character));
+        }
+    }
+    let (index, opening) = candidates.into_iter().next_back()?;
+    let closing = if opening == '(' { ')' } else { opening };
+    let mut escaped = false;
+    for character in trimmed[index + opening.len_utf8()..].chars() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            character if character == closing && !escaped => return None,
+            _ => escaped = false,
+        }
+    }
+    Some(closing)
+}
+
+fn multiline_title_line_state(line: &str, closing: char) -> Option<bool> {
+    if markdown_indent_columns(line) > 3 || line.trim_matches([' ', '\t']).is_empty() {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, character) in line.char_indices() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            character if character == closing && !escaped => {
+                return line[index + character.len_utf8()..]
+                    .trim_matches([' ', '\t'])
+                    .is_empty()
+                    .then_some(true);
+            }
+            _ => escaped = false,
+        }
+    }
+    Some(false)
 }
 
 fn is_link_title_continuation(line: &str) -> bool {
@@ -1854,6 +1946,27 @@ mod tests {
         assert!(open_fence_at_eof(&exited_paragraph).is_none());
         assert_eq!(extract_ownership_block(&exited_paragraph), Some(ownership));
         assert_eq!(extract_inventory_block(&exited_paragraph), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let multiline_title = format!(
+            "[ref]: /url \"multi\nline\"\n2. ```markdown\n   human fence body\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&multiline_title).is_ok());
+        assert!(open_fence_at_eof(&multiline_title).is_none());
+        assert_eq!(extract_ownership_block(&multiline_title), Some(ownership));
+        assert_eq!(extract_inventory_block(&multiline_title), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let lazy_list_paragraph = format!("- paragraph\n<x>\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&lazy_list_paragraph).is_ok());
+        assert_eq!(
+            extract_ownership_block(&lazy_list_paragraph),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&lazy_list_paragraph),
+            Some(inventory)
+        );
         for opener in ["> <div>", "- <div>"] {
             let ownership = render_ownership_block();
             let inventory =
