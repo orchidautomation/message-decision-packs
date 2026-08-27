@@ -223,7 +223,45 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             })
         }
         SchemaTarget::Skills => skills_schema(),
+        SchemaTarget::ReadinessV1 => readiness_v1_schema(),
     }
+}
+
+fn readiness_v1_schema() -> Value {
+    let gate = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "authority", "reason_code"],
+        "properties": {
+            "state": {"enum": ["true", "false", "unknown", "not-applicable"]},
+            "authority": {"type": "string", "minLength": 1},
+            "reason_code": {"type": "string", "minLength": 1}
+        }
+    });
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Readiness v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "status", "read_only", "offline", "runtime", "selection", "structurally_valid", "job_ready", "input_ready", "safe_to_draft_or_act", "gates", "first_blocker", "next_action", "contributors", "diagnostics"],
+        "properties": {
+            "contract": {"const": "mdp.readiness.v1"},
+            "status": {"enum": ["ready", "blocked", "unknown"]},
+            "read_only": {"const": true},
+            "offline": {"const": true},
+            "runtime": {"type": "object", "required": ["tool", "version"]},
+            "selection": {"type": "object"},
+            "structurally_valid": gate.clone(),
+            "job_ready": gate.clone(),
+            "input_ready": gate.clone(),
+            "safe_to_draft_or_act": gate,
+            "gates": {"type": "array", "minItems": 4, "maxItems": 7},
+            "first_blocker": {"type": ["object", "null"]},
+            "next_action": {"type": "string", "minLength": 1},
+            "contributors": {"type": "array", "minItems": 1, "maxItems": 8},
+            "diagnostics": {"type": "array", "maxItems": 32}
+        }
+    })
 }
 
 fn run_request_compile_v1_schema() -> Value {

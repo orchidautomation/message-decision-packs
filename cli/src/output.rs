@@ -1023,6 +1023,24 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                 }
             }
         }
+        "check" => {
+            println!("check: {}", data["status"].as_str().unwrap_or("unknown"));
+            if let Some(blocker) = data["first_blocker"].as_object() {
+                println!(
+                    "first blocker: {}",
+                    blocker
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("readiness is blocked")
+                );
+            }
+            println!(
+                "next: {}",
+                data["next_action"]
+                    .as_str()
+                    .unwrap_or("Review the readiness JSON.")
+            );
+        }
         "brief" | "emit-brief" | "pack" | "author-proof-output"
             if data["dry_run"].as_bool() == Some(true) =>
         {
