@@ -520,6 +520,51 @@ fn committed_cleanup_restarts_after_staging_workspace_was_removed() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn retry_recognizes_commit_after_state_was_archived() {
+    let (root, live, candidate, plan) = fixture("archived-state-recovery");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_CRASH_AFTER_STATE_ARCHIVE", "1");
+    let crashed = command.output().expect("crashing author child should run");
+    assert!(!crashed.status.success());
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    assert!(fs::read_dir(&root).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".mdp.author.evidence-state.")
+    }));
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(
+        recovered.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    let result = data(&recovered);
+    assert_eq!(result["status"], "applied");
+    let reasons = result["reason_codes"].as_array().unwrap();
+    assert!(
+        reasons
+            .iter()
+            .any(|code| code == "interrupted-commit-recovered"),
+        "retry must report recovered commit: {result}"
+    );
+    assert!(
+        reasons
+            .iter()
+            .any(|code| code == "recovery-evidence-retained"),
+        "retry must report retained recovery evidence: {result}"
+    );
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
 #[cfg(unix)]
 #[test]
 fn validation_snapshot_is_private_while_validation_runs() {

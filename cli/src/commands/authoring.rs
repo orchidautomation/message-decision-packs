@@ -200,6 +200,7 @@ impl BoundaryFault {
 struct TransactionState {
     contract: String,
     phase: u8,
+    change_set_sha256: String,
     live_root_sha256: String,
     live_root_dev: u64,
     live_root_ino: u64,
@@ -350,7 +351,7 @@ pub(crate) fn apply_pack_change_set(
             ));
         }
     };
-    let recovered = recover_pending_transaction(&live_root)?;
+    let recovered = recover_pending_transaction(&live_root, &change_set.change_set_sha256)?;
 
     let captured_candidate = capture_inventory(&candidate_root)?;
     let validation = validation_summary_for_snapshot(&captured_candidate)?;
@@ -597,6 +598,7 @@ fn publish(
         let mut transaction = TransactionState {
             contract: "mdp.pack-authoring-transaction.v1".to_string(),
             phase: 0,
+            change_set_sha256: change_set.change_set_sha256.clone(),
             live_root_sha256: root_binding(live_root),
             live_root_dev: file_identity(&root)?.0,
             live_root_ino: file_identity(&root)?.1,
@@ -698,7 +700,12 @@ fn publish(
                 message: format!("author rollback test handshake failed: {pause}"),
             });
         }
-        return match recover_or_cleanup_transaction(live_root, &staging_name, &backup_name) {
+        return match recover_or_cleanup_transaction(
+            live_root,
+            &change_set.change_set_sha256,
+            &staging_name,
+            &backup_name,
+        ) {
             Ok(recovery) => {
                 if recovery.outcome == RecoveryOutcome::Committed {
                     Ok(recovery.evidence_retained)
@@ -1322,6 +1329,11 @@ fn validate_transaction_state(
     let backup_suffix = state.backup_name.strip_prefix(".mdp.author.backup.");
     if state.contract != "mdp.pack-authoring-transaction.v1"
         || state.phase > 1
+        || validate_hash(
+            &state.change_set_sha256,
+            "author transaction change-set digest",
+        )
+        .is_err()
         || state.live_root_sha256 != root_binding(live_root)
         || (state.live_root_dev, state.live_root_ino) != file_identity(root)?
         || (state.parent_dev, state.parent_ino) != file_identity(parent)?
@@ -1463,18 +1475,68 @@ fn archive_transaction_state(
     let (_, expected) = read_transaction_state(parent, live_root)?
         .ok_or_else(|| anyhow!("durable author transaction state disappeared before archival"))?;
     let from = component_name(&state_leaf(live_root))?;
-    let suffix = state
-        .staging_name
-        .rsplit('.')
-        .next()
-        .ok_or_else(|| anyhow!("author transaction suffix is absent"))?;
-    let evidence = component_name(&format!(".mdp.author.evidence-state.{suffix}"))?;
+    let evidence = component_name(&archived_state_leaf(state)?)?;
     rename_no_replace_between(parent, &from, parent, &evidence)?;
     if named_identity(parent, &evidence)?.map(|(dev, ino, _)| (dev, ino)) != Some(expected) {
         return Err(anyhow!("retained author evidence state identity mismatch"));
     }
     parent.sync_all()?;
+    if cfg!(debug_assertions)
+        && std::env::var_os("MDP_TEST_AUTHOR_CRASH_AFTER_STATE_ARCHIVE").is_some()
+    {
+        std::process::abort();
+    }
     Ok(())
+}
+
+#[cfg(unix)]
+fn archived_state_leaf(state: &TransactionState) -> Result<String> {
+    let suffix = state
+        .staging_name
+        .rsplit('.')
+        .next()
+        .ok_or_else(|| anyhow!("author transaction suffix is absent"))?;
+    Ok(format!(".mdp.author.evidence-state.{suffix}"))
+}
+
+#[cfg(unix)]
+fn read_archived_committed_state(
+    parent: &File,
+    live_root: &Path,
+    change_set_sha256: &str,
+) -> Result<Option<TransactionState>> {
+    let binding = root_binding(live_root);
+    let mut matched = None;
+    for entry in fs::read_dir(descriptor_path(parent))? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(".mdp.author.evidence-state.") {
+            continue;
+        }
+        let Some((state, _)) = read_transaction_state_named(parent, name)? else {
+            continue;
+        };
+        if state.live_root_sha256 != binding || state.change_set_sha256 != change_set_sha256 {
+            continue;
+        }
+        let root = open_verified_directory(live_root)?;
+        validate_transaction_state(&state, live_root, parent, &root)?;
+        if archived_state_leaf(&state)? != name {
+            return Err(anyhow!("invalid archived author transaction state name"));
+        }
+        if state.phase != 1 {
+            continue;
+        }
+        if matched.replace(state).is_some() {
+            return Err(anyhow!(
+                "multiple archived committed author transaction states match the change set"
+            ));
+        }
+    }
+    Ok(matched)
 }
 
 #[cfg(unix)]
@@ -1708,7 +1770,10 @@ fn published_backup_state(item: &PublishedBackupState) -> FileState {
 }
 
 #[cfg(unix)]
-fn recover_pending_transaction(live_root: &Path) -> Result<RecoveryResult> {
+fn recover_pending_transaction(
+    live_root: &Path,
+    change_set_sha256: &str,
+) -> Result<RecoveryResult> {
     let parent = open_verified_directory(live_root.parent().unwrap_or(live_root))?;
     if read_transaction_state(&parent, live_root)?.is_none() {
         let pending_name = pending_state_leaf(live_root);
@@ -1739,6 +1804,12 @@ fn recover_pending_transaction(live_root: &Path) -> Result<RecoveryResult> {
         }
     }
     let Some((state, _)) = read_transaction_state(&parent, live_root)? else {
+        if read_archived_committed_state(&parent, live_root, change_set_sha256)?.is_some() {
+            return Ok(RecoveryResult {
+                outcome: RecoveryOutcome::Committed,
+                evidence_retained: true,
+            });
+        }
         return Ok(RecoveryResult {
             outcome: RecoveryOutcome::None,
             evidence_retained: false,
@@ -1761,12 +1832,14 @@ fn recover_pending_transaction(live_root: &Path) -> Result<RecoveryResult> {
 #[cfg(unix)]
 fn recover_or_cleanup_transaction(
     live_root: &Path,
+    change_set_sha256: &str,
     staging_name: &str,
     backup_name: &str,
 ) -> Result<RecoveryResult> {
     let parent = open_verified_directory(live_root.parent().unwrap_or(live_root))?;
-    if read_transaction_state(&parent, live_root)?.is_some() {
-        return recover_pending_transaction(live_root);
+    let recovered = recover_pending_transaction(live_root, change_set_sha256)?;
+    if recovered.outcome != RecoveryOutcome::None {
+        return Ok(recovered);
     }
     for name in [staging_name, backup_name] {
         match open_child_directory(&parent, name) {
@@ -1800,14 +1873,14 @@ fn remove_incomplete_pending_state(parent: &File, name: &str) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn recover_pending_transaction(_: &Path) -> Result<RecoveryResult> {
+fn recover_pending_transaction(_: &Path, _: &str) -> Result<RecoveryResult> {
     Err(anyhow!(
         "identity-bound pack authoring is unsupported on this platform"
     ))
 }
 
 #[cfg(not(unix))]
-fn recover_or_cleanup_transaction(_: &Path, _: &str, _: &str) -> Result<RecoveryResult> {
+fn recover_or_cleanup_transaction(_: &Path, _: &str, _: &str, _: &str) -> Result<RecoveryResult> {
     Err(anyhow!(
         "identity-bound pack authoring is unsupported on this platform"
     ))
