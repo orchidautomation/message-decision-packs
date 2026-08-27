@@ -809,6 +809,63 @@ esac
   assert.equal(existsSync(request), true, 'failed cleanup must not be reported as recovered')
 })
 
+test('prepare and run never claim success when private workspace cleanup refuses', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound cleanup requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-private-cleanup-refusal-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  const output = join(root, 'output')
+  for (const path of [pack, work, output]) mkdirSync(path)
+  const wrapper = join(root, 'secure-private-cleanup-refusal.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action remove-directory-tree "*) exit 73 ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const roleEnv = {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+  }
+  const request = join(work, 'request.json')
+  const [blockedPrepare] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack, job: 'prospect-fit-or-brief', model: 'fixture-model', out: request,
+  })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: wrapper })
+  assert.equal(blockedPrepare.result.structuredContent.status, 'blocked', JSON.stringify(blockedPrepare))
+  assert.equal(blockedPrepare.result.structuredContent.diagnostics[0].code, 'mcp-cleanup-incomplete')
+  assert.doesNotMatch(JSON.stringify(blockedPrepare), /mdp-owned-run-mcp-prepare/)
+
+  const preparedRequest = join(work, 'run-request.json')
+  const [prepared] = await rpc(fixtureCli(root), [toolCall(2, 'mdp_prepare_run', {
+    dir: pack, job: 'prospect-fit-or-brief', model: 'fixture-model', out: preparedRequest,
+  })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: realCli })
+  assert.equal(prepared.result.structuredContent.status, 'ready', JSON.stringify(prepared))
+  const [blockedConstruction] = await rpc(fixtureCli(root), [toolCall(3, 'mdp_run', {
+    request_path: preparedRequest,
+    request_sha256: prepared.result.structuredContent.request_sha256,
+    output_dir: join(output, 'construction-run'),
+  })], {
+    ...roleEnv,
+    MDP_SECURE_INSTALL_BIN: wrapper,
+    MDP_TEST_FREEZE_WRITE_FAILURE: '1',
+  })
+  assert.equal(blockedConstruction.result.structuredContent.code, 'mcp-cleanup-incomplete', JSON.stringify(blockedConstruction))
+  assert.equal(blockedConstruction.result.isError, true)
+  assert.equal(blockedConstruction.error, undefined, 'cleanup refusal must remain a tool result, not JSON-RPC invalid params')
+  assert.doesNotMatch(JSON.stringify(blockedConstruction), /mdp-owned-run-mcp-freeze/)
+
+  const [blockedRun] = await rpc(fixtureCli(root), [toolCall(4, 'mdp_run', {
+    request_path: preparedRequest,
+    request_sha256: prepared.result.structuredContent.request_sha256,
+    output_dir: join(output, 'run'),
+  })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: wrapper })
+  assert.equal(blockedRun.result.structuredContent.code, 'mcp-cleanup-incomplete', JSON.stringify(blockedRun))
+  assert.equal(blockedRun.result.isError, true)
+  assert.doesNotMatch(JSON.stringify(blockedRun), /mdp-owned-run-mcp-freeze/)
+})
+
 test('cleanup timeout restores a quarantined concurrent replacement before escalation', async (t) => {
   if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
   if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')

@@ -260,6 +260,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             action,
             source,
             name,
+            to_name,
             dir_fd,
             expected_dev,
             expected_ino,
@@ -280,6 +281,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 expected_file_dev,
                 expected_file_ino,
                 receipt_fd,
+                to_name.as_deref(),
             )?,
         ),
         Commands::RebindSyntheticChain {

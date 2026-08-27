@@ -137,6 +137,8 @@ pub(crate) enum Commands {
         #[arg(long)]
         name: String,
         #[arg(long)]
+        to_name: Option<String>,
+        #[arg(long)]
         dir_fd: i32,
         #[arg(long)]
         expected_dev: u64,
