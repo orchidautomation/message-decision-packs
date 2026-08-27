@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto'
 import {
   closeSync,
   constants,
-  copyFileSync,
   existsSync,
   fstatSync,
   lstatSync,
@@ -22,7 +21,6 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
-import { resolveIdentityBoundDirectory } from './lib/identity-bound-directory.mjs'
 
 import { superviseProcess } from './lib/process-supervisor.mjs'
 import {
@@ -448,9 +446,7 @@ const pinOutputParent = (reservation) => {
     if (!opened.isDirectory() || opened.dev !== BigInt(reservation.parentIdentity.dev) || opened.ino !== BigInt(reservation.parentIdentity.ino)) {
       throw Object.assign(new Error('work output parent changed while being pinned'), { code: 'mcp-output-denied' })
     }
-    if (process.platform === 'darwin') return { ...reservation, fd, securePath: null }
-    const pinnedParent = resolveIdentityBoundDirectory({ fd, identity: reservation.parentIdentity })
-    return { ...reservation, fd, securePath: join(pinnedParent, basename(reservation.path)) }
+    return { ...reservation, fd }
   } catch (error) {
     if (fd !== undefined) closeSync(fd)
     throw error
@@ -467,6 +463,11 @@ const invokeSecureInstaller = (output, action) => {
     '--expected-ino', output.parentIdentity.ino.toString(),
   ]
   if (action === 'install') args.push('--source', output.cliPath)
+  else if (action === 'verify') args.push(
+    '--source', output.cliPath,
+    '--expected-file-dev', output.installedIdentity.dev.toString(),
+    '--expected-file-ino', output.installedIdentity.ino.toString(),
+  )
   else args.push(
     '--expected-file-dev', output.installedIdentity.dev.toString(),
     '--expected-file-ino', output.installedIdentity.ino.toString(),
@@ -483,31 +484,29 @@ const invokeSecureInstaller = (output, action) => {
 }
 
 const publishPinnedOutput = async (output) => {
-  if (output.securePath) {
-    copyFileSync(output.cliPath, output.securePath, constants.COPYFILE_EXCL)
-    const installed = lstatSync(output.securePath, { bigint: true })
-    if (!installed.isFile() || installed.isSymbolicLink()) throw new Error('prepared output publication was not a regular file')
-    return { dev: installed.dev, ino: installed.ino }
-  }
   const invocation = await invokeSecureInstaller(output, 'install')
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output installer returned invalid data') }
-  if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1' || envelope.data?.status !== 'installed') {
+  const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
+  if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1' || envelope.data?.status !== 'installed' || envelope.data?.sha256 !== stagedSha256) {
     throw new Error('secure output installer refused publication')
   }
   return { dev: BigInt(envelope.data.dev), ino: BigInt(envelope.data.ino) }
 }
 
+const verifyPinnedOutput = async (output) => {
+  const invocation = await invokeSecureInstaller(output, 'verify')
+  let envelope
+  try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output verifier returned invalid data') }
+  const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
+  if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1' || envelope.data?.status !== 'verified' || envelope.data?.sha256 !== stagedSha256) {
+    throw new Error('secure output verifier refused publication')
+  }
+}
+
 const removePinnedOutput = async (output) => {
   if (!output.installedIdentity) return
-  if (!output.securePath) {
-    try { await invokeSecureInstaller(output, 'remove') } catch { /* preserve unknown or concurrently replaced nodes */ }
-    return
-  }
-  try {
-    const current = lstatSync(output.securePath, { bigint: true })
-    if (current.dev === output.installedIdentity.dev && current.ino === output.installedIdentity.ino) rmSync(output.securePath)
-  } catch { /* preserve unknown or concurrently replaced nodes */ }
+  try { await invokeSecureInstaller(output, 'remove') } catch { /* preserve unknown or concurrently replaced nodes */ }
 }
 
 const normalizePreparedOutputPaths = (data, outputs) => {
@@ -515,7 +514,6 @@ const normalizePreparedOutputPaths = (data, outputs) => {
   for (const key of ['request_path', 'manifest_path', 'next_command']) {
     if (typeof normalized[key] !== 'string') continue
     for (const output of outputs) {
-      if (output.securePath) normalized[key] = normalized[key].replaceAll(output.securePath, output.path)
       if (output.cliPath) normalized[key] = normalized[key].replaceAll(output.cliPath, output.path)
     }
   }
@@ -593,6 +591,7 @@ const callPrepareRunValidated = async (args) => {
     if (manifestOut) policy.existing('work', manifestOut, 'file')
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
     if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    for (const output of pinnedOutputs) await verifyPinnedOutput(output)
     published = true
     return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
   } finally {

@@ -157,12 +157,16 @@ node scripts/mdp-run-mcp-server.mjs
 node "${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs"
 ```
 
-It exposes `mdp_run_tools`, `mdp_run`, and read-only `mdp_verify_run`.
-`mdp_run` accepts only `request_path`, a new `output_dir`, and an optional
-bounded `timeout_ms`. `mdp_verify_run` accepts existing bundle and receipt paths,
-an optional artifact root, and the same bounded deadline. Each tool spawns the
-matching CLI command as a separate process with a bounded environment, stdin,
-output buffer, and deadline, then returns the canonical CLI data object unchanged.
+It exposes the canonical four-stage path: inspect with `mdp_run_tools`, compile
+and persist an `mdp.run-request.v1` with `mdp_prepare_run`, execute that exact
+work-root request with `mdp_run`, then inspect the output-root bundle and receipt
+with read-only `mdp_verify_run`. Preparation requires `out` under an approved
+work root and optionally writes `manifest_out` there. `mdp_run` accepts only
+that `request_path`, a new `output_dir`, and an optional bounded `timeout_ms`.
+`mdp_verify_run` accepts the resulting bundle and receipt paths, an optional
+artifact root, and the same bounded deadline. Each tool spawns the matching CLI
+command as a separate process with a bounded environment, stdin, output buffer,
+and deadline, then returns the canonical CLI data object unchanged.
 It does not accept inline requests, raw source bodies, ambient chat, provider
 credentials, native-call enable flags, or assurance overrides. For a parsed
 generative request only, it may inherit `OPENAI_API_KEY` and

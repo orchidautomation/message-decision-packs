@@ -62,6 +62,7 @@ jobs:
               - "scripts/mdp-native-model-openai.mjs"
               - "scripts/mdp-native-normalize-openai.mjs"
               - "scripts/lib/deadline-policy.mjs"
+              - "scripts/lib/identity-bound-directory.mjs"
               - "scripts/lib/process-supervisor.mjs"
               - "scripts/lib/proposal-*.mjs"
 

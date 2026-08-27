@@ -308,7 +308,7 @@ test('denies a generative request without consent before any provider spawn', as
 })
 
 const waitForFile = async (path) => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
     if (existsSync(path)) return
     await new Promise((resolveWait) => setTimeout(resolveWait, 5))
   }
@@ -431,6 +431,60 @@ test('prepare refuses request and manifest parent swaps without escaped or parti
     assert.equal(existsSync(join(renamedParent, attacked === 'request' ? 'request.json' : 'manifest.json')), false)
     assert.equal(existsSync(attacked === 'request' ? manifest : request), false)
   }
+})
+
+test('prepare rejects a replaced published leaf and preserves concurrent bytes', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-leaf-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  const output = join(root, 'output')
+  const consent = join(root, 'consent')
+  for (const path of [pack, work, output, consent]) mkdirSync(path)
+  const ready = join(root, 'install.ready')
+  const continuePath = join(root, 'install.continue')
+  const wrapper = join(root, 'secure-install-wrapper.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+tmp="${join(root, 'capture')}.$$"
+"${realCli}" "$@" >"$tmp"
+status=$?
+case " $* " in
+  *" --action install "*)
+    : >"${ready}"
+    while [ ! -e "${continuePath}" ]; do sleep 0.01; done
+    ;;
+esac
+cat "$tmp"
+rm -f "$tmp"
+exit "$status"
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const displaced = join(work, 'request.displaced.json')
+  const pending = rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+  })], {
+    MDP_MCP_PACK_ROOTS: pack,
+    MDP_MCP_INPUT_ROOTS: root,
+    MDP_MCP_WORK_ROOTS: work,
+    MDP_MCP_OUTPUT_ROOTS: output,
+    MDP_MCP_CONSENT_ROOTS: consent,
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  await waitForFile(ready)
+  renameSync(request, displaced)
+  writeFileSync(request, 'concurrent replacement')
+  writeFileSync(continuePath, '')
+  const [reply] = await pending
+  assert.equal(reply.result.structuredContent.status, 'blocked', JSON.stringify(reply))
+  assert.equal(readFileSync(request, 'utf8'), 'concurrent replacement')
+  assert.equal(existsSync(displaced), true)
+  assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
 })
 
 test('real CLI completes canonical GTM and proposal handoffs across disjoint roots', async (t) => {
