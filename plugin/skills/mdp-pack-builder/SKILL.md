@@ -70,11 +70,12 @@ mdp --json author preview --dir PACK_ROOT \
   --candidate CANDIDATE_ROOT --out CHANGE_SET_JSON
 ```
 
-`author preview` uses the normal pack validator, writes no live-pack files but
-always creates the required `--out` change-set file,
-and returns bounded `created`, `changed`, `unchanged`, and `deleted` path lists
-without file bodies. Review those lists and the candidate itself. Do not treat
-a generated candidate or a successful preview as reviewed authority.
+`author preview` uses the normal pack validator and writes no live-pack files.
+A successful preview creates the required `--out` change-set file; a refused
+preview creates no plan. The result contains bounded `created`, `changed`,
+`unchanged`, and `deleted` path lists without file bodies. Review those lists
+and the candidate itself. Do not treat a generated candidate or a successful
+preview as reviewed authority.
 
 Only after review, apply that exact sealed change set:
 

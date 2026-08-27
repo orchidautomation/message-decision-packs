@@ -1089,6 +1089,25 @@ mod tests {
         assert_eq!(summary["refused_sample"].as_array().unwrap().len(), 8);
         assert_eq!(summary["rolled_back_sample"].as_array().unwrap().len(), 8);
         assert!(summary.get("created").is_none());
+
+        let preview = summarize(
+            "author-preview",
+            &json!({
+                "contract": "mdp.pack-authoring-result.v1",
+                "status": "previewed",
+                "valid": true,
+                "created": (0..100).map(|index| format!(".mdp/new/{index}.yaml")).collect::<Vec<_>>(),
+                "changed": [],
+                "unchanged": [],
+                "deleted": [],
+                "refused": [],
+                "rolled_back": [],
+                "reason_codes": [],
+                "private_content_included": false
+            }),
+        );
+        assert_eq!(preview["created_count"], 100);
+        assert!(preview.get("created").is_none());
     }
 
     #[test]
