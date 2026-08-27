@@ -29,7 +29,9 @@ function hasMappingKey(line, key) {
     try {
       return JSON.parse(doubleQuoted[1]) === key
     } catch {
-      return false
+      // YAML accepts additional escapes (for example \xNN and \UNNNNNNNN).
+      // Fail closed on any double-quoted mapping key that JSON cannot decode.
+      return doubleQuoted[1].includes('\\')
     }
   }
   const singleQuoted = trimmed.match(/^'((?:''|[^'])*)'\s*:/u)
@@ -319,6 +321,20 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       '      - name: Validate authored asset parity\n',
       '      - name: Validate authored asset parity\n        "\\u0069f": false\n',
+    ),
+  ],
+  [
+    'yaml hex escaped disabled asset parity step',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        "\\x69f": false\n`,
+    ),
+  ],
+  [
+    'yaml long-unicode escaped disabled asset parity step',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        "\\U00000069f": false\n`,
     ),
   ],
   [
