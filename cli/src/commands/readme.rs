@@ -281,28 +281,84 @@ fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Va
 
 fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut fence: Option<(char, usize)> = None;
-    let mut tokens = Vec::new();
-    for raw_line in markdown.lines() {
-        let line = raw_line.trim_end_matches('\r');
+    let mut visible = String::with_capacity(markdown.len());
+    for raw_line in markdown.split_inclusive('\n') {
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
         if let Some((character, length, closing)) = fence_delimiter(line, fence) {
             if closing {
                 fence = None;
             } else if fence.is_none() {
                 fence = Some((character, length));
             }
+            // Preserve a block boundary without exposing fence delimiters as
+            // inline code or joining prose from opposite sides of the block.
+            visible.push('\n');
             continue;
         }
         if fence.is_some() {
+            visible.push('\n');
             continue;
         }
-        tokens.extend(
-            line.split('`')
-                .enumerate()
-                .filter_map(|(index, token)| (index % 2 == 1).then(|| token.trim().to_string()))
-                .filter(|token| !token.is_empty()),
-        );
+        visible.push_str(raw_line);
+    }
+    code_span_tokens(&visible)
+}
+
+/// Project CommonMark-style backtick code spans in bounded linear time.
+/// Delimiters close only on a later run of exactly the same length; line
+/// endings inside a span normalize to spaces, and one surrounding ASCII space
+/// is removed when both are present and the content is not all spaces.
+fn code_span_tokens(markdown: &str) -> Vec<String> {
+    let bytes = markdown.as_bytes();
+    let mut runs = Vec::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if bytes[cursor] != b'`' {
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        while cursor < bytes.len() && bytes[cursor] == b'`' {
+            cursor += 1;
+        }
+        runs.push((start, cursor, cursor - start));
+    }
+
+    let mut next_same = vec![None; runs.len()];
+    let mut next_by_length = std::collections::BTreeMap::new();
+    for (index, (_, _, length)) in runs.iter().enumerate().rev() {
+        next_same[index] = next_by_length.insert(*length, index);
+    }
+
+    let mut tokens = Vec::new();
+    let mut run_index = 0;
+    while run_index < runs.len() {
+        let Some(close_index) = next_same[run_index] else {
+            run_index += 1;
+            continue;
+        };
+        let (_, open_end, _) = runs[run_index];
+        let (close_start, _, _) = runs[close_index];
+        let normalized = normalize_code_span(&markdown[open_end..close_start]);
+        if !normalized.is_empty() {
+            tokens.push(normalized);
+        }
+        run_index = close_index + 1;
     }
     tokens
+}
+
+fn normalize_code_span(content: &str) -> String {
+    let normalized = content.replace("\r\n", "\n").replace(['\r', '\n'], " ");
+    if normalized.starts_with(' ')
+        && normalized.ends_with(' ')
+        && normalized.chars().any(|character| character != ' ')
+    {
+        normalized[1..normalized.len() - 1].to_string()
+    } else {
+        normalized
+    }
 }
 
 fn source_reference_ids(markdown: &str) -> Vec<String> {
@@ -739,6 +795,41 @@ mod tests {
     }
 
     #[test]
+    fn refresh_repeatedly_refuses_unterminated_fences_without_changing_bytes() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-open-fence-{}", nonce()));
+        init_pack(&root, "Open Fence Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        for human in [
+            "# Human README\n\n```markdown\nkeep backtick bytes\n",
+            "# Human README\n\n~~~text\nkeep tilde bytes\n",
+        ] {
+            std::fs::write(&readme_path, human).expect("write open-fence README");
+            let before = check_readme(&root).expect("check legacy open-fence README");
+            assert_eq!(before["status"], "unassessed");
+
+            for _ in 0..2 {
+                let error = refresh_readme(&root, None, false)
+                    .expect_err("refresh must refuse an unsafe EOF insertion");
+                assert_eq!(
+                    error.to_string(),
+                    crate::pack_readme::README_FENCE_DIAGNOSTIC
+                );
+                assert_eq!(
+                    std::fs::read(&readme_path).expect("README after refusal"),
+                    human.as_bytes(),
+                    "every human byte must survive repeated refusal"
+                );
+            }
+
+            let after = check_readme(&root).expect("check after refused refresh");
+            assert_eq!(after["status"], "unassessed");
+            assert_eq!(after["has_ownership_region"], false);
+            assert_eq!(after["has_inventory_region"], false);
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn malformed_markers_fail_repeated_refresh_without_changing_human_bytes() {
         let root = std::env::temp_dir().join(format!("mdp-readme-malformed-{}", nonce()));
         init_pack(&root, "Malformed Readme Pack", "gtm", true, false)
@@ -927,10 +1018,23 @@ Inline `inline-code` must be ignored.
     }
 
     #[test]
+    fn card_reference_parser_supports_matching_multi_backtick_and_multiline_spans() {
+        let markdown = "Double ``cards/double.yaml``. Embedded ``cards/with`tick.yaml``.\nMultiline `\ncards/multiline.yaml\n`.\nMismatched ``cards/not-code.yaml` remains prose.";
+        assert_eq!(
+            inline_code_tokens(markdown),
+            vec![
+                "cards/double.yaml",
+                "cards/with`tick.yaml",
+                "cards/multiline.yaml"
+            ]
+        );
+    }
+
+    #[test]
     fn invalid_backtick_fence_info_does_not_hide_card_references() {
-        let markdown = "```markdown`invalid\n`cards/visible.yaml`\n```\n";
-        // The invalid opener is ordinary prose. Its own paired backticks are
-        // mechanically visible, as is the card reference on the next line.
+        let markdown = "```markdown`invalid\n``cards/visible.yaml``\n";
+        // The invalid opener is ordinary prose rather than a block fence. Its
+        // unmatched delimiter runs do not suppress a later valid code span.
         assert!(
             inline_code_tokens(markdown)
                 .iter()

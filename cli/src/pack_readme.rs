@@ -9,6 +9,7 @@ pub(crate) const README_OWNERSHIP_END: &str = "<!-- mdp:readme-ownership v1 end 
 pub(crate) const README_INVENTORY_BEGIN: &str = "<!-- mdp:readme-inventory v1 begin -->";
 pub(crate) const README_INVENTORY_END: &str = "<!-- mdp:readme-inventory v1 end -->";
 pub(crate) const README_MARKER_DIAGNOSTIC: &str = "README machine-owned markers are malformed; expected zero or exactly one non-overlapping begin/end pair for each generated region";
+pub(crate) const README_FENCE_DIAGNOSTIC: &str = "README refresh cannot append a missing machine-owned region after an unterminated Markdown fence";
 
 pub(crate) fn render_pack_readme(
     manifest: &Manifest,
@@ -305,6 +306,13 @@ pub(crate) fn replace_readme_regions(
     fresh_inventory: &str,
 ) -> Result<String, &'static str> {
     validate_readme_regions(readme)?;
+    if extract_inventory_block(readme).is_none() && open_fence_at_eof(readme).is_some() {
+        // Inventory migration appends after every existing human-owned byte.
+        // Appending while a valid fence is open would hide the generated
+        // markers inside human code and make every later refresh append again.
+        // Refuse before constructing or writing a changed README instead.
+        return Err(README_FENCE_DIAGNOSTIC);
+    }
     let ownership = render_ownership_block();
     let with_ownership = if extract_ownership_block(readme).is_some() {
         replace_marked_block(
@@ -389,6 +397,22 @@ fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usi
         offset += raw_line.len();
     }
     offsets
+}
+
+fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
+    let mut fence = None;
+    for raw_line in readme.split_inclusive('\n') {
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
+            if closing {
+                fence = None;
+            } else if fence.is_none() {
+                fence = Some((character, length));
+            }
+        }
+    }
+    fence
 }
 
 pub(crate) fn fence_delimiter(
@@ -747,6 +771,28 @@ mod tests {
         let extracted = extract_ownership_block(&readme).expect("visible ownership region");
         assert!(extracted.starts_with(README_OWNERSHIP_BEGIN));
         assert!(extracted.ends_with(&format!("{README_OWNERSHIP_END}\n")));
+    }
+
+    #[test]
+    fn missing_inventory_refuses_append_after_unterminated_fence() {
+        let manifest = manifest_with("Open Fence Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        for human in [
+            "# Human\n\n```markdown\nkeep these bytes\n",
+            "# Human\n\n~~~text\nkeep these bytes\n",
+        ] {
+            for _ in 0..2 {
+                assert_eq!(
+                    replace_readme_regions(human, &fresh),
+                    Err(README_FENCE_DIAGNOSTIC),
+                    "an open fence must fail closed on every refresh"
+                );
+            }
+            assert!(extract_ownership_block(human).is_none());
+            assert!(extract_inventory_block(human).is_none());
+        }
     }
 
     #[test]
