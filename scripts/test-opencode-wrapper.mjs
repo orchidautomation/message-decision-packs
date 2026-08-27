@@ -3,6 +3,7 @@
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -316,6 +317,33 @@ try {
       finalizedChecksums.get('install.sh') !== generatedInstallChecksum,
     'Finalized plugin checksums must independently match the replaced install.sh.',
   )
+  assert(
+    finalizedChecksums.get('install-codex.sh') === sha256(join(releaseRoot, 'install-codex.sh')),
+    'Finalized checksums must bind the patched native Codex installer.',
+  )
+  const omittedChecksumRoot = join(tempRoot, 'omitted-codex-installer-checksum')
+  cpSync(releaseRoot, omittedChecksumRoot, { recursive: true })
+  copyFileSync(
+    join(remoteReleaseRoot, 'install-codex.sh'),
+    join(omittedChecksumRoot, 'install-codex.sh'),
+  )
+  writeFileSync(
+    join(omittedChecksumRoot, 'SHA256SUMS.txt'),
+    readFileSync(join(omittedChecksumRoot, 'SHA256SUMS.txt'), 'utf8')
+      .split(/\r?\n/u)
+      .filter((line) => !line.endsWith('  install-codex.sh'))
+      .join('\n'),
+  )
+  const omittedChecksum = spawnSync(
+    'bash',
+    [join(root, 'scripts/finalize-release-assets.sh'), omittedChecksumRoot],
+    { cwd: root, encoding: 'utf8' },
+  )
+  assert(
+    omittedChecksum.status !== 0 &&
+      omittedChecksum.stderr.includes('Release checksum inventory is missing: install-codex.sh'),
+    'Release finalization must reject an unbound patched Codex installer.',
+  )
   const cliChecksums = parseChecksums(join(releaseRoot, 'MDP_CLI_SHA256SUMS.txt'))
   const expectedCliAssets = [
     'mdp-aarch64-apple-darwin',
@@ -400,6 +428,48 @@ try {
     marketplace: readFileSync(codexMarketplacePath, 'utf8'),
     runner: sha256(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')),
   }
+  const traversalSentinel = join(codexHome, '.codex/plugins/escape-target/sentinel')
+  mkdirSync(dirname(traversalSentinel), { recursive: true })
+  writeFileSync(traversalSentinel, 'unrelated cache-adjacent bytes')
+  const traversalRegistration = spawnSync('bash', [join(releaseRoot, 'install-codex.sh')], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      HOME: codexHome,
+      CODEX_HOME: join(codexHome, '.codex'),
+      MDP_SKIP_CLI_UPDATE: '1',
+      PLUXX_CODEX_BUNDLE_PATH: join(
+        releaseRoot,
+        'message-decision-packs-codex-latest.tar.gz',
+      ),
+      PLUXX_CODEX_CONFIG_PATH: codexConfigPath,
+      PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+      PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
+      PLUXX_CODEX_MARKETPLACE_PATH: codexMarketplacePath,
+      PLUXX_CODEX_MARKETPLACE_NAME: '../../escape-target',
+      PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
+      PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
+      PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
+    },
+    encoding: 'utf8',
+  })
+  assert(
+    traversalRegistration.status !== 0 &&
+      traversalRegistration.stderr.includes('Refusing unsafe Codex plugin or marketplace identifier.'),
+    'Unsafe marketplace traversal must fail before native cache backup.',
+  )
+  assert(
+    readFileSync(traversalSentinel, 'utf8') === 'unrelated cache-adjacent bytes',
+    'Unsafe marketplace traversal must preserve unrelated bytes.',
+  )
+  assert(
+    readFileSync(codexConfigPath, 'utf8') === beforeFailedRegistration.config &&
+      readFileSync(codexMarketplacePath, 'utf8') === beforeFailedRegistration.marketplace &&
+      sha256(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')) ===
+        beforeFailedRegistration.runner,
+    'Unsafe marketplace traversal must roll back installer-owned state.',
+  )
   const failedRegistration = spawnSync('bash', [join(releaseRoot, 'install-codex.sh')], {
     cwd: root,
     env: {

@@ -31,7 +31,25 @@ if ! command -v codex >/dev/null 2>&1; then
 fi
 
 plugin_selector="$PLUGIN_NAME@$MARKETPLACE_NAME"
-native_cache_path="$CODEX_HOME_DIR/plugins/cache/$MARKETPLACE_NAME/$PLUGIN_NAME"
+export CODEX_HOME_DIR PLUGIN_NAME MARKETPLACE_NAME
+native_cache_path="$(node <<'NODE'
+const path = require('path')
+const pluginName = process.env.PLUGIN_NAME ?? ''
+const marketplaceName = process.env.MARKETPLACE_NAME ?? ''
+const safeIdentifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+if (!safeIdentifier.test(pluginName) || !safeIdentifier.test(marketplaceName)) {
+  console.error('Refusing unsafe Codex plugin or marketplace identifier.')
+  process.exit(1)
+}
+const cacheRoot = path.resolve(process.env.CODEX_HOME_DIR, 'plugins', 'cache')
+const target = path.resolve(cacheRoot, marketplaceName, pluginName)
+if (!target.startsWith(cacheRoot + path.sep)) {
+  console.error('Refusing a native Codex cache path outside the cache root.')
+  process.exit(1)
+}
+process.stdout.write(target)
+NODE
+)"
 pluxx_tx_backup_owned_path "$native_cache_path"
 if ! codex plugin add "$plugin_selector" --json >/dev/null; then
   echo "Failed to register $plugin_selector with the native Codex plugin manager." >&2
