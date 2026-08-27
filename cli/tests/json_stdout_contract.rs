@@ -182,6 +182,56 @@ fn strict_validate_keeps_readme_mechanical_warning_advisory_in_json_and_exit() {
 }
 
 #[test]
+fn validate_and_strict_fail_closed_on_malformed_readme_markers() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-validate-readme-markers-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create fixture root");
+    let init = Command::new(mdp_bin())
+        .args(["--json", "init", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("initialize fixture pack");
+    assert!(init.status.success(), "init failed: {:?}", init.stdout);
+
+    let readme_path = root.join(".mdp/README.md");
+    let mut readme = std::fs::read_to_string(&readme_path).expect("read starter README");
+    readme.push_str("<!-- mdp:readme-ownership v1 begin -->");
+    std::fs::write(&readme_path, readme).expect("write malformed marker layout");
+
+    for strict in [false, true] {
+        let mut command = Command::new(mdp_bin());
+        command.args(["--json", "validate"]);
+        if strict {
+            command.arg("--strict");
+        }
+        let output = command
+            .arg("--dir")
+            .arg(&root)
+            .output()
+            .expect("validate fixture pack");
+        assert_eq!(output.status.code(), Some(1), "stdout: {:?}", output.stdout);
+        assert!(output.stderr.is_empty());
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("one JSON validation envelope");
+        assert_eq!(envelope["ok"], true);
+        assert_eq!(envelope["data"]["valid"], false);
+        assert!(envelope["data"]["issues"].as_array().is_some_and(|issues| {
+            issues.iter().any(|issue| {
+                issue["code"] == "readme_marker_layout_invalid" && issue["severity"] == "error"
+            })
+        }));
+    }
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn help_and_version_wrap_as_one_parseable_json_value() {
     let (help_code, _, help_stderr, help_value) = run(&["--json", "--help"], Case::Ok);
     assert_eq!(help_code, 0);

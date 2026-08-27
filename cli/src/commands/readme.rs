@@ -132,11 +132,22 @@ pub(crate) fn refresh_readme(root: &Path, out: Option<&Path>, dry_run: bool) -> 
     Ok(data)
 }
 
-/// Validate-pack integration hook. Returns a blocking issue only when the owned
-/// block exists and is stale. Missing README, legacy prose without the marker,
-/// unreadable manifest/cards, or a fresh block all return `None`; the ordinary
-/// validate paths already surface manifest/card/read failures.
+/// Validate-pack integration hook. Malformed generated-region markers are a
+/// stable blocking validation error. Inventory drift remains warning-first;
+/// missing README, legacy prose without markers, unrelated authority-read
+/// failures, and a fresh block add no README-owned blocker.
 pub(crate) fn readme_validation_issues(root: &Path) -> Vec<Value> {
+    let readme_path = root.join(DEFAULT_DIR).join("README.md");
+    if let Ok(existing) = fs::read_to_string(&readme_path)
+        && let Err(message) = validate_readme_regions(&existing)
+    {
+        return vec![issue(
+            "readme_marker_layout_invalid",
+            "error",
+            readme_path.display().to_string(),
+            message,
+        )];
+    }
     let Some(result) = check_readme(root).ok() else {
         return vec![];
     };
@@ -605,6 +616,30 @@ mod tests {
                 );
             }
         }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn malformed_markers_are_a_stable_validate_blocker() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-validate-markers-{}", nonce()));
+        init_pack(&root, "Marker Validation Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let mut readme = std::fs::read_to_string(&readme_path).expect("readme");
+        readme.push_str(crate::pack_readme::README_OWNERSHIP_BEGIN);
+        std::fs::write(&readme_path, readme).expect("write malformed readme");
+
+        let validation = crate::commands::health::validate_pack(&root).expect("validate");
+        assert_eq!(validation["valid"], false);
+        assert_eq!(validation["error_count"], 1);
+        let marker = validation["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .find(|issue| issue["code"] == "readme_marker_layout_invalid")
+            .expect("marker layout diagnostic");
+        assert_eq!(marker["severity"], "error");
+        assert_eq!(marker["path"], readme_path.display().to_string());
         let _ = std::fs::remove_dir_all(root);
     }
 
