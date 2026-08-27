@@ -15,8 +15,8 @@ use crate::commands::{
     emit_brief_scoped, eval_pack, explain, gaps, init_pack_targeted, init_pack_targeted_dry_run,
     pack, preview_pack_change_set, project_conformance_file, project_conformance_report,
     project_prompt_output_validation_file, project_run_files, project_source_file,
-    prospect_brief_with_context, readiness, rebind_synthetic_chain, refresh_readme,
-    render_human_brief_file, render_human_brief_markdown, render_mermaid,
+    prospect_brief_with_context, readiness, rebind_synthetic_chain, recover_run_output,
+    refresh_readme, render_human_brief_file, render_human_brief_markdown, render_mermaid,
     render_readable_prospect_brief, requirements, route_budget_preflight_command,
     route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
     run_request_file_with_transport, sample_leads, schema, skills, validate_behavioral_files,
@@ -524,6 +524,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             json_mode,
             summary_mode,
             run_request_file_with_transport(&request, &out_dir, transport_timeout_ms)?,
+        ),
+        Commands::RecoverRun { out_dir, apply } => print_checked(
+            json_mode,
+            summary_mode,
+            "recover-run",
+            recover_run_output(&out_dir, apply)?,
         ),
         Commands::RunPreflight {
             request,

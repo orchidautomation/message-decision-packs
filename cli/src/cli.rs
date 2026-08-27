@@ -384,6 +384,19 @@ pub(crate) enum Commands {
         )]
         transport_timeout_ms: Option<u64>,
     },
+    #[command(about = "Diagnose or explicitly remove one stale MDP-owned run transaction")]
+    RecoverRun {
+        #[arg(
+            long,
+            help = "Final run output directory whose hidden transaction is stranded"
+        )]
+        out_dir: PathBuf,
+        #[arg(
+            long,
+            help = "Remove only the validated stale MDP claim and its exact bound transaction"
+        )]
+        apply: bool,
+    },
     #[command(about = "Read-only preflight for one clean-run request and optional transport guard")]
     RunPreflight {
         #[arg(long, help = "mdp.run-request.v1 JSON file")]

@@ -53,6 +53,7 @@ const MAX_PACK_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_EXECUTION_ID_BYTES: usize = 128;
 const MAX_OUTPUT_LEAF_BYTES: usize = 120;
 const MAX_RECOVERY_CLAIM_BYTES: usize = 512;
+const MIN_RECOVERY_AGE_SECONDS: u64 = 300;
 const MAX_POLICY_INPUT_BYTES: u64 = 100 * 1024 * 1024;
 // Native requests also contain the prompt envelope and projected provider
 // schema. Keep the public generative input budget well below the driver's
@@ -539,11 +540,17 @@ struct TransactionGuard {
     claim_path: PathBuf,
 }
 
-#[derive(Serialize)]
-struct RunRecoveryClaim<'a> {
-    contract: &'static str,
-    execution_id: &'a str,
-    transaction_leaf: &'a str,
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RunRecoveryClaim {
+    contract: String,
+    execution_id: String,
+    transaction_leaf: String,
+    created_unix_seconds: u64,
+    owner_uid: u32,
+    process_id: u32,
+    transaction_dev: u64,
+    transaction_ino: u64,
 }
 
 impl Drop for TransactionGuard {
@@ -1429,40 +1436,19 @@ where
     let transaction_leaf = format!(".{leaf}.tmp-{:032x}", unique_suffix());
     let transaction_dir = parent.join(&transaction_leaf);
     let claim_path = parent.join(format!(".{leaf}.mdp-run.claim"));
-    let claim_value = RunRecoveryClaim {
-        contract: "mdp.run-recovery-claim.v1",
-        execution_id: &request.execution_id,
-        transaction_leaf: &transaction_leaf,
-    };
-    let mut claim_bytes = serde_json::to_vec(&claim_value)?;
-    claim_bytes.push(b'\n');
-    if claim_bytes.len() > MAX_RECOVERY_CLAIM_BYTES {
-        return Err(run_failure(
-            RunFailureKind::Preflight,
-            "output-claim-invalid",
-        ));
+    let mut claim_options = OpenOptions::new();
+    claim_options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        claim_options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
-    let mut claim = OpenOptions::new()
-        .write(true)
-        .create_new(true)
+    let mut claim = claim_options
         .open(&claim_path)
         .map_err(|_| run_failure(RunFailureKind::Preflight, "output-directory-claimed"))?;
-    if claim
-        .write_all(&claim_bytes)
-        .and_then(|_| claim.sync_all())
-        .is_err()
-    {
-        drop(claim);
-        let _ = fs::remove_file(&claim_path);
-        return Err(run_failure(
-            RunFailureKind::RunnerFailed,
-            "output-claim-failed",
-        ));
-    }
-    drop(claim);
     let transaction_guard = TransactionGuard {
         transaction_dir: transaction_dir.clone(),
-        claim_path,
+        claim_path: claim_path.clone(),
     };
     fs::create_dir(&transaction_dir).with_context(|| {
         format!(
@@ -1471,6 +1457,33 @@ where
         )
     })?;
     set_private_directory(&transaction_dir)?;
+    let transaction_metadata = fs::symlink_metadata(&transaction_dir)?;
+    let (owner_uid, transaction_dev, transaction_ino) = recovery_identity(&transaction_metadata);
+    let claim_value = RunRecoveryClaim {
+        contract: "mdp.run-recovery-claim.v2".into(),
+        execution_id: request.execution_id.clone(),
+        transaction_leaf: transaction_leaf.clone(),
+        created_unix_seconds: unix_seconds_now(),
+        owner_uid,
+        process_id: std::process::id(),
+        transaction_dev,
+        transaction_ino,
+    };
+    let mut claim_bytes = serde_json::to_vec(&claim_value)?;
+    claim_bytes.push(b'\n');
+    if claim_bytes.len() > MAX_RECOVERY_CLAIM_BYTES
+        || claim
+            .write_all(&claim_bytes)
+            .and_then(|_| claim.sync_all())
+            .is_err()
+    {
+        drop(claim);
+        return Err(run_failure(
+            RunFailureKind::RunnerFailed,
+            "output-claim-failed",
+        ));
+    }
+    drop(claim);
     deadline.check_phase(DeadlinePhase::Staging)?;
 
     let TransactionOutcome {
@@ -1586,6 +1599,256 @@ fn classify_execution_error(error: anyhow::Error) -> anyhow::Error {
     } else {
         run_failure(RunFailureKind::RunnerFailed, "run-execution-failed")
     }
+}
+
+/// Diagnose or explicitly remove one stale run transaction. Recovery is
+/// intentionally scoped by the *final* output directory: only MDP's hidden
+/// claim and the exact transaction inode bound by that claim can be removed.
+/// The final output, pack, and customer-controlled workdirs are never removal
+/// candidates.
+#[cfg(unix)]
+pub(crate) fn recover_run_output(output_root: &Path, apply: bool) -> Result<Value> {
+    use std::os::unix::fs::MetadataExt;
+
+    let parent = output_root
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let leaf = match output_root.file_name().and_then(|name| name.to_str()) {
+        Some(leaf) if validate_output_leaf(leaf).is_ok() => leaf,
+        _ => return Ok(recovery_refusal("recovery-output-name-invalid")),
+    };
+    let parent_metadata = match fs::symlink_metadata(parent) {
+        Ok(metadata) if metadata.file_type().is_dir() => metadata,
+        _ => return Ok(recovery_refusal("recovery-parent-unsafe")),
+    };
+    if parent_metadata.uid() != unsafe { libc::geteuid() }
+        && parent_metadata.mode() & (libc::S_ISVTX as u32) == 0
+    {
+        return Ok(recovery_refusal("recovery-parent-owner-unsafe"));
+    }
+    match fs::symlink_metadata(output_root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return Ok(recovery_refusal("recovery-destination-present")),
+    }
+
+    let claim_path = parent.join(format!(".{leaf}.mdp-run.claim"));
+    let (claim, claim_metadata) = match read_recovery_claim(&claim_path) {
+        Ok(value) => value,
+        Err(code) => return Ok(recovery_refusal(code)),
+    };
+    let expected_prefix = format!(".{leaf}.tmp-");
+    if claim.contract != "mdp.run-recovery-claim.v2"
+        || claim.execution_id.is_empty()
+        || claim.execution_id.len() > MAX_EXECUTION_ID_BYTES
+        || !claim
+            .execution_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        || !claim.transaction_leaf.starts_with(&expected_prefix)
+        || claim.transaction_leaf.len() != expected_prefix.len() + 32
+        || !claim.transaction_leaf[expected_prefix.len()..]
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || claim.transaction_leaf.contains(['/', '\\'])
+    {
+        return Ok(recovery_refusal("recovery-claim-metadata-invalid"));
+    }
+    let current_uid = unsafe { libc::geteuid() };
+    if claim.owner_uid != current_uid
+        || claim_metadata.uid() != current_uid
+        || claim_metadata.mode() & 0o777 != 0o600
+        || claim_metadata.nlink() != 1
+    {
+        return Ok(recovery_refusal("recovery-claim-authority-unsafe"));
+    }
+    let transaction_path = parent.join(&claim.transaction_leaf);
+    let transaction_metadata = match fs::symlink_metadata(&transaction_path) {
+        Ok(metadata) if metadata.file_type().is_dir() => metadata,
+        _ => return Ok(recovery_refusal("recovery-transaction-type-unsafe")),
+    };
+    if transaction_metadata.uid() != current_uid
+        || transaction_metadata.mode() & 0o777 != 0o700
+        || transaction_metadata.dev() != claim.transaction_dev
+        || transaction_metadata.ino() != claim.transaction_ino
+    {
+        return Ok(recovery_refusal("recovery-transaction-authority-unsafe"));
+    }
+    let now = unix_seconds_now();
+    let logical_age = match now.checked_sub(claim.created_unix_seconds) {
+        Some(age) => age,
+        None => return Ok(recovery_refusal("recovery-claim-age-invalid")),
+    };
+    let claim_age = match metadata_age_seconds(&claim_metadata, now) {
+        Some(age) => age,
+        None => return Ok(recovery_refusal("recovery-claim-age-invalid")),
+    };
+    let transaction_age = match metadata_age_seconds(&transaction_metadata, now) {
+        Some(age) => age,
+        None => return Ok(recovery_refusal("recovery-transaction-age-invalid")),
+    };
+    if logical_age < MIN_RECOVERY_AGE_SECONDS
+        || claim_age < MIN_RECOVERY_AGE_SECONDS
+        || transaction_age < MIN_RECOVERY_AGE_SECONDS
+    {
+        return Ok(recovery_refusal("recovery-claim-recent"));
+    }
+    if process_is_live(claim.process_id) != Some(false) {
+        return Ok(recovery_refusal("recovery-process-live-or-unknown"));
+    }
+
+    let would_remove = json!([
+        {"kind": "transaction-directory", "path": transaction_path},
+        {"kind": "claim-file", "path": claim_path}
+    ]);
+    if !apply {
+        return Ok(json!({
+            "contract": "mdp.run-recovery.v1",
+            "valid": true,
+            "status": "ready",
+            "applied": false,
+            "stale_after_seconds": MIN_RECOVERY_AGE_SECONDS,
+            "claim_age_seconds": claim_age,
+            "transaction_age_seconds": transaction_age,
+            "process_state": "not-running",
+            "would_remove": would_remove,
+            "removed": [],
+            "diagnostics": []
+        }));
+    }
+
+    // Recheck the destination and both filesystem identities immediately
+    // before deletion. remove_dir_all does not follow a symlink at its root;
+    // an identity change is nevertheless treated as ambiguity and refused.
+    if fs::symlink_metadata(output_root).is_ok() {
+        return Ok(recovery_refusal("recovery-destination-present"));
+    }
+    let transaction_recheck = fs::symlink_metadata(&transaction_path)?;
+    if !transaction_recheck.file_type().is_dir()
+        || transaction_recheck.dev() != claim.transaction_dev
+        || transaction_recheck.ino() != claim.transaction_ino
+        || transaction_recheck.uid() != current_uid
+        || transaction_recheck.mode() & 0o777 != 0o700
+    {
+        return Ok(recovery_refusal("recovery-transaction-changed"));
+    }
+    fs::remove_dir_all(&transaction_path)
+        .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "recovery-removal-failed"))?;
+    let claim_recheck = fs::symlink_metadata(&claim_path)?;
+    if !claim_recheck.file_type().is_file()
+        || claim_recheck.dev() != claim_metadata.dev()
+        || claim_recheck.ino() != claim_metadata.ino()
+        || claim_recheck.uid() != current_uid
+        || claim_recheck.mode() & 0o777 != 0o600
+        || claim_recheck.nlink() != 1
+    {
+        return Ok(recovery_refusal("recovery-claim-changed"));
+    }
+    fs::remove_file(&claim_path)
+        .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "recovery-removal-failed"))?;
+    Ok(json!({
+        "contract": "mdp.run-recovery.v1",
+        "valid": true,
+        "status": "recovered",
+        "applied": true,
+        "stale_after_seconds": MIN_RECOVERY_AGE_SECONDS,
+        "claim_age_seconds": claim_age,
+        "transaction_age_seconds": transaction_age,
+        "process_state": "not-running",
+        "would_remove": would_remove,
+        "removed": [
+            {"kind": "transaction-directory", "path": transaction_path},
+            {"kind": "claim-file", "path": claim_path}
+        ],
+        "diagnostics": []
+    }))
+}
+
+#[cfg(not(unix))]
+pub(crate) fn recover_run_output(_output_root: &Path, _apply: bool) -> Result<Value> {
+    Ok(recovery_refusal("recovery-platform-unsupported"))
+}
+
+fn recovery_refusal(code: &'static str) -> Value {
+    json!({
+        "contract": "mdp.run-recovery.v1",
+        "valid": false,
+        "status": "refused",
+        "applied": false,
+        "would_remove": [],
+        "removed": [],
+        "diagnostics": [{"code": code}]
+    })
+}
+
+#[cfg(unix)]
+fn read_recovery_claim(
+    path: &Path,
+) -> std::result::Result<(RunRecoveryClaim, fs::Metadata), &'static str> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|_| "recovery-claim-unavailable")?;
+    let metadata = file.metadata().map_err(|_| "recovery-claim-unavailable")?;
+    if !metadata.file_type().is_file()
+        || metadata.len() == 0
+        || metadata.len() > MAX_RECOVERY_CLAIM_BYTES as u64
+        || metadata.nlink() != 1
+    {
+        return Err("recovery-claim-type-unsafe");
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.read_to_end(&mut bytes)
+        .map_err(|_| "recovery-claim-unreadable")?;
+    let claim = serde_json::from_slice(&bytes).map_err(|_| "recovery-claim-metadata-invalid")?;
+    Ok((claim, metadata))
+}
+
+#[cfg(unix)]
+fn metadata_age_seconds(metadata: &fs::Metadata, now: u64) -> Option<u64> {
+    let modified = metadata
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    now.checked_sub(modified)
+}
+
+#[cfg(unix)]
+fn process_is_live(process_id: u32) -> Option<bool> {
+    let process_id = i32::try_from(process_id).ok()?;
+    let result = unsafe { libc::kill(process_id, 0) };
+    if result == 0 {
+        Some(true)
+    } else {
+        match std::io::Error::last_os_error().raw_os_error() {
+            Some(libc::ESRCH) => Some(false),
+            Some(libc::EPERM) => Some(true),
+            _ => None,
+        }
+    }
+}
+
+fn unix_seconds_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+#[cfg(unix)]
+fn recovery_identity(metadata: &fs::Metadata) -> (u32, u64, u64) {
+    use std::os::unix::fs::MetadataExt;
+    (metadata.uid(), metadata.dev(), metadata.ino())
+}
+
+#[cfg(not(unix))]
+fn recovery_identity(_metadata: &fs::Metadata) -> (u32, u64, u64) {
+    (0, 0, 0)
 }
 
 fn cleanup_failed_transaction(transaction_dir: &Path) -> Result<()> {
@@ -6163,7 +6426,7 @@ mod tests {
             assert!(bytes.len() <= 512);
             assert!(bytes.ends_with(b"\n"));
             let value: serde_json::Value = serde_json::from_slice(&bytes)?;
-            assert_eq!(value["contract"], "mdp.run-recovery-claim.v1");
+            assert_eq!(value["contract"], "mdp.run-recovery-claim.v2");
             assert_eq!(value["execution_id"], "run-1");
             let transaction_leaf = value["transaction_leaf"].as_str().unwrap();
             assert!(transaction_leaf.starts_with(".run.tmp-"));
@@ -6176,7 +6439,12 @@ mod tests {
             );
             assert!(!transaction_leaf.contains(['/', '\\']));
             assert!(root.join(transaction_leaf).is_dir());
-            assert_eq!(value.as_object().unwrap().len(), 3);
+            assert_eq!(value["owner_uid"], unsafe { libc::geteuid() });
+            assert_eq!(value["process_id"], std::process::id());
+            assert!(value["created_unix_seconds"].as_u64().unwrap() > 0);
+            assert!(value["transaction_dev"].as_u64().unwrap() > 0);
+            assert!(value["transaction_ino"].as_u64().unwrap() > 0);
+            assert_eq!(value.as_object().unwrap().len(), 8);
             Ok(())
         })
         .unwrap();
