@@ -5,7 +5,8 @@
   "trigger_case_ids": [
     "builder-source-plan-train", "builder-source-extract-train", "builder-gtm-train", "builder-proposal-train",
     "builder-source-plan-validation", "builder-source-extract-validation", "builder-gtm-validation", "builder-proposal-validation",
-    "builder-source-typo-train", "builder-gtm-indirect-train", "builder-source-typo-validation", "builder-proposal-indirect-validation"
+    "builder-source-typo-train", "builder-gtm-indirect-train", "builder-source-typo-validation", "builder-proposal-indirect-validation",
+    "builder-named-mdp-train", "builder-named-mdp-validation"
   ],
   "output_case_ids": [
     "builder-source-plan-train", "builder-source-extract-train", "builder-gtm-train", "builder-proposal-train",
