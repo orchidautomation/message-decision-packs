@@ -174,9 +174,17 @@ fn prepare_run_argument_errors_share_the_actionable_code_across_presentations() 
     assert!(json_stderr.is_empty());
     let value = value.expect("JSON prepare-run error envelope");
     assert_eq!(
-        value["data"]["actionable_diagnostics"][0]["code"],
+        value["actionable_diagnostics"][0]["code"],
         "invalid_argument"
     );
+    assert_eq!(value["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    assert!(value["data"].get("diagnostic_contract").is_none());
+    assert!(value["data"].get("actionable_diagnostics").is_none());
+
+    let (_, _, _, schema) = run(&["--json", "schema", "run-request-compile-v1"], Case::Ok);
+    let schema = schema.expect("compile schema envelope");
+    jsonschema::draft202012::validate(&schema["data"], &value["data"])
+        .expect("argument-error data must satisfy the closed compile schema");
 
     let output = Command::new(mdp_bin())
         .args(["prepare-run", "--definitely-unsupported"])
@@ -739,16 +747,37 @@ fn unknown_subcommand_in_json_mode_writes_one_json_envelope() {
 
 #[test]
 fn prepare_run_blocked_envelope_preserves_single_json_value() {
-    let (code, stdout, _stderr, value) = run(&["--json", "prepare-run"], Case::Ok);
+    let (code, stdout, _stderr, value) = run(
+        &[
+            "--json",
+            "prepare-run",
+            "--job",
+            "missing-job",
+            "--model",
+            "test-model",
+        ],
+        Case::Ok,
+    );
     let parsed = value.expect("prepare-run blocked parses as JSON");
     assert_eq!(parsed["ok"], serde_json::json!(false));
     assert_eq!(parsed["command"], "prepare-run");
     assert_eq!(parsed["data"]["contract"], "mdp.run-request-compile.v1");
     assert_eq!(parsed["data"]["status"], "blocked");
+    let blocked_code = parsed["data"]["diagnostics"][0]["code"]
+        .as_str()
+        .expect("bounded blocked diagnostic code");
     assert_eq!(
-        parsed["data"]["diagnostics"][0]["code"],
-        "cli-arguments-invalid"
+        parsed["diagnostic_contract"],
+        "mdp.actionable-diagnostic.v1"
     );
+    assert_eq!(parsed["actionable_diagnostics"][0]["code"], blocked_code);
+    assert!(parsed["data"].get("diagnostic_contract").is_none());
+    assert!(parsed["data"].get("actionable_diagnostics").is_none());
+
+    let (_, _, _, schema) = run(&["--json", "schema", "run-request-compile-v1"], Case::Ok);
+    let schema = schema.expect("compile schema envelope");
+    jsonschema::draft202012::validate(&schema["data"], &parsed["data"])
+        .expect("blocked data must satisfy the closed compile schema");
     assert!(!stdout.contains("error:"));
     let _ = code;
 }
