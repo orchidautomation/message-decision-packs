@@ -46,6 +46,7 @@ const GTM_OPTIONS: &[&str] = &[
 const PROPOSAL_OPTIONS: &[&str] = &["name"];
 const GTM_DIRS: &[&str] = &[
     ".mdp",
+    ".mdp/briefs",
     ".mdp/cards",
     ".mdp/evals",
     ".mdp/prompts",
@@ -53,6 +54,7 @@ const GTM_DIRS: &[&str] = &[
 ];
 const PROPOSAL_DIRS: &[&str] = &[
     ".mdp",
+    ".mdp/briefs",
     ".mdp/cards",
     ".mdp/evals",
     ".mdp/prompts",
@@ -176,13 +178,27 @@ fn validate_registry(
             }
         }
         for required in descriptor.required_directories {
-            let Some(entry) = inventory.iter().find(|entry| entry.relative == *required) else {
+            if required.is_empty()
+                || required.starts_with('/')
+                || required.contains('\\')
+                || required
+                    .split('/')
+                    .any(|part| part.is_empty() || part == "." || part == "..")
+                || descriptor
+                    .required_directories
+                    .iter()
+                    .filter(|candidate| **candidate == *required)
+                    .count()
+                    != 1
+            {
                 return Err(format!(
-                    "template '{}' is missing directory '{}',",
-                    descriptor.id, required
+                    "template '{}' has invalid required-directory metadata",
+                    descriptor.id
                 ));
-            };
-            if !entry.is_directory {
+            }
+            if let Some(entry) = inventory.iter().find(|entry| entry.relative == *required)
+                && !entry.is_directory
+            {
                 return Err(format!(
                     "template '{}' requires directory '{}',",
                     descriptor.id, required

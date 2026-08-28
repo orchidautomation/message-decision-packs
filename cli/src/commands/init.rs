@@ -172,6 +172,7 @@ fn run_init(request: InitRequest<'_>) -> Result<Value> {
         }
     };
     append_required_directories(request.descriptor, &mut inventory);
+    validate_generated_inventory(request.descriptor, &inventory)?;
     if request.dry_run {
         let plan = tx_dry_run(request.root, &inventory, request.force)?;
         let mut payload = match request.descriptor.postprocess {
@@ -386,7 +387,6 @@ fn proposal_inventory(
     name: &str,
 ) -> Result<Vec<GeneratedArtifact>> {
     let mut inventory = template_registry::inventory(descriptor);
-    append_required_directories(descriptor, &mut inventory);
     if name != descriptor.default_name {
         let manifest = inventory
             .iter_mut()
@@ -435,12 +435,44 @@ fn append_required_directories(
             inventory.push(GeneratedArtifact::directory(*directory));
         }
     }
-    if !inventory
-        .iter()
-        .any(|artifact| artifact.relative == ".mdp/briefs")
-    {
-        inventory.push(GeneratedArtifact::directory(".mdp/briefs"));
+}
+
+fn validate_generated_inventory(
+    descriptor: &crate::template_registry::TemplateDescriptor,
+    inventory: &[GeneratedArtifact],
+) -> Result<()> {
+    let mut paths = std::collections::BTreeSet::new();
+    for artifact in inventory {
+        let path = artifact.relative.as_str();
+        if path.is_empty()
+            || path.starts_with('/')
+            || path.contains('\\')
+            || path
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+            || !paths.insert(path)
+        {
+            return Err(anyhow!(
+                "generated inventory contains unsafe or duplicate path '{path}'"
+            ));
+        }
     }
+    for directory in descriptor.required_directories {
+        let Some(artifact) = inventory
+            .iter()
+            .find(|artifact| artifact.relative == *directory)
+        else {
+            return Err(anyhow!(
+                "generated inventory is missing required directory '{directory}'"
+            ));
+        };
+        if !artifact.is_directory {
+            return Err(anyhow!(
+                "generated inventory requires directory '{directory}'"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Render a complete GTM starter tree as a list of generated artifacts.
@@ -458,8 +490,7 @@ fn build_gtm_inventory(
 ) -> Result<Vec<GeneratedArtifact>> {
     let _ = (root, force);
     if target.is_none() && !governed && !include_output_schemas && name == "Basic MDP Template" {
-        let mut inventory = template_registry::inventory(descriptor);
-        append_required_directories(descriptor, &mut inventory);
+        let inventory = template_registry::inventory(descriptor);
         return Ok(inventory);
     }
     let slug = slugify(name);
@@ -586,7 +617,6 @@ fn build_gtm_inventory(
         eligible_for_force: true,
         is_directory: false,
     });
-    append_required_directories(descriptor, &mut inventory);
     Ok(inventory)
 }
 
@@ -1862,5 +1892,26 @@ mod tests {
         assert!(!manifest.contains("name: Company B"));
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn generated_inventory_requires_descriptor_declared_briefs_directory() {
+        let descriptor = template_registry::lookup("gtm").expect("gtm descriptor");
+        let root = Path::new(".");
+        let mut inventory = build_gtm_inventory(
+            root,
+            "Basic MDP Template",
+            "gtm",
+            descriptor,
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("canonical inventory");
+        append_required_directories(descriptor, &mut inventory);
+        validate_generated_inventory(descriptor, &inventory).expect("appended inventory");
+        inventory.retain(|artifact| artifact.relative != ".mdp/briefs");
+        assert!(validate_generated_inventory(descriptor, &inventory).is_err());
     }
 }
