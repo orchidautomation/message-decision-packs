@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-28
 **Issue:** MDP-273
-**Status:** Proposed pending Brandon approval
+**Status:** Approved by Brandon on 2026-08-28
 **Decision type:** Public architecture and compatibility authority
 
 ## Decision
@@ -134,7 +134,7 @@ machine paths.
 
 ## Approval gate
 
-**Proposed pending Brandon approval.** Brandon's explicit acceptance of this
-decision is required before MDP-274 becomes ready. Approval accepts the closed
+**Approved by Brandon on 2026-08-28.** Brandon explicitly accepted the closed
 ten-primitive core, the two-profile registry, the neutral test-only fixture
-boundary, and every matrix disposition above.
+boundary, and every matrix disposition above. The architecture gate is clear;
+MDP-274 may proceed without reopening these decisions.
