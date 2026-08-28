@@ -24,6 +24,13 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
   boundaries, output contracts, routing/jobs, gaps, and evals.
 - **Profile** — a domain-specific mapping of vocabulary and jobs onto the
   primitives. GTM and proposal review are profiles, not separate engines.
+- **Template** — an authored starter tree for one already registered profile;
+  it is not a profile and does not add runtime vocabulary.
+- **Skill** — an authored instruction surface for a supported operator or
+  profile job. The packaged skill registry, not pack prose, determines routes.
+- **Host** — the customer-controlled environment that owns connectors,
+  credentials, model/provider execution, sequencing, and external side
+  effects. Hosts do not extend MDP primitives or promote compatibility proof.
 - **Card** — a reviewed, typed collection of decision entries.
 - **Job** — a closed profile-owned routing intent bound to an eligible skill.
 - **Product-foundation facet** — a profile-owned index of exact existing card
@@ -134,3 +141,6 @@ scraper, BI tool, proposal management system, compliance approval system, or
 fully automated proposal writer. Do not position it as a graph database, agent
 runtime, orchestration framework, persistent memory layer, or universal company
 graph, and do not claim that its hashes or traces prove source truth.
+
+See [Extension boundary](docs/extension-boundary.md) for the ownership table
+and reviewed template/profile checklist.

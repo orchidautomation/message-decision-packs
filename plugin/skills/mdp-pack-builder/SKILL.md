@@ -11,6 +11,10 @@ Own the mutation phase of **Author and maintain**. Build evidence-grounded
 `.mdp/` decision context from approved material; never take a read-only review
 request from `$mdp-pack-review` or infer edit permission from a usage gap.
 
+Read [profile and template extension boundary](references/profile-template-extension.md)
+when a request sounds like it needs a new profile, template, or shipped skill.
+Pack editing uses an existing profile and is not registration work.
+
 ## Communicate The Work
 
 Follow the shared [Orient, Plan, Progress, Translate, Close contract](references/communication-contract.md).

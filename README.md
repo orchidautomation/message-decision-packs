@@ -6,6 +6,9 @@ MDP is a decision/context layer: it produces deterministic decisions and bounded
 
 See [CONCEPTS.md](CONCEPTS.md) for the canonical vocabulary and assurance-state
 boundaries used across the CLI, docs, and agent skills.
+Maintainers extending shipped profiles or templates should follow the
+[extension boundary](docs/extension-boundary.md); editing a `.mdp/` pack is not
+registration work.
 
 ```text
 message-decision-packs/
@@ -303,6 +306,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Distribution](docs/distribution.md): releases, Pluxx bundles, installers, and updates.
 - [Skill Evals](docs/skill-evals.md): trigger and output-eval fixtures.
 - [CLI Usage](cli/USAGE.md): detailed command workflows; `mdp --json capabilities` is the current machine-readable command contract.
+- [Extension boundary](docs/extension-boundary.md): definitions, ownership, compatibility, and the reviewed extension checklist.
 
 Agents can use [llms.txt](llms.txt) for a short briefing or [llms-full.txt](llms-full.txt) for fuller operating context. Released copies are also available at `https://mdp.orchidlabs.dev/llms.txt` and `https://mdp.orchidlabs.dev/llms-full.txt`.
 

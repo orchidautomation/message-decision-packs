@@ -1,5 +1,9 @@
 # Failure-safe pack authoring
 
+Pack authoring operates inside an existing registered profile. It does not
+register a shipped profile, template, or skill; maintainer extensions follow
+the [extension boundary](extension-boundary.md).
+
 Use a complete candidate tree and a sealed change set for any authoring pass
 that changes more than one `.mdp/` file. The live pack is never the scratch
 workspace.
