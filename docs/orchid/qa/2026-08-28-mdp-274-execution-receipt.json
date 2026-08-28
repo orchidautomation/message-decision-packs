@@ -1,0 +1,31 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-274",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-28-002-mdp-274-typed-primitive-core-plan.md",
+    "sha256": "ddd4d8ebf9b0575b84acd30df1ae227bf6e2bd58a409a0a3f3cfb5d2376aabc5",
+    "sourceRef": "codex/mdp-274-primitive-type",
+    "sourceCommit": "f885572e4ebe42601c1a9698bd49050c8d99552c"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "mdp-274-child-of-mdp-272-centralize-typed-primitive-core-recovery1",
+    "dispatchHash": "f1d0e096e9b138533d404b523942f1485b075e789149ed055ddb04b70d7573dc",
+    "implementationHead": "01862170af9e3cd5814a77c21bf05a09fbe9bb6a"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-274-primitive-type",
+    "cumulativeBranch": "codex/mdp-273-primitive-contracts",
+    "targetRef": "main",
+    "pullRequest": 236
+  },
+  "recovery": "An initial dispatch produced partial edits but omitted the required plan binding in its execution receipt. Relay rejected that evidence, retained the uncommitted partial work, and used a fresh plan-pinned Luna turn to inspect, repair, validate, commit, and push the implementation.",
+  "observedAt": "2026-08-28T01:38:00Z"
+}

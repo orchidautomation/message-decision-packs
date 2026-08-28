@@ -33,6 +33,18 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - name: Cache release build inputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+          cache-provider: github
+          # Cache boundaries: runner OS, release matrix target, pinned Rust
+          # toolchain, and the CLI lockfile. The shared release workflow also
+          # shares the cli/ workspace key, so a distinct workflow purpose is
+          # implied by the cache key prefix below.
+          shared-key: release-${{ matrix.os }}-${{ matrix.target }}
+          workspaces: |
+            cli -> cli/target
       - name: Build release binary
         run: cargo build --release --manifest-path cli/Cargo.toml --target "${{ matrix.target }}"
       - name: Package binary asset
@@ -130,7 +142,8 @@ jobs:
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
-          cargo build --manifest-path cli/Cargo.toml
+          chmod +x release-assets/mdp-x86_64-unknown-linux-gnu
           MDP_RELEASE_REQUIRE_STAGED_PARITY=1 \
+            MDP_RELEASE_SOURCE_PARITY_BIN="$GITHUB_WORKSPACE/release-assets/mdp-x86_64-unknown-linux-gnu" \
             MDP_RELEASE_INSTALLER="release-assets/install.sh" \
             scripts/release-install-smoke.sh "$version"

@@ -93,6 +93,9 @@ The normal flow is:
 Agents should load the manifest first and use routed entries instead of reading
 every card. A pack README is secondary navigation; it is not decision authority.
 See [Concepts](CONCEPTS.md) for the canonical vocabulary and assurance states.
+Maintainers extending shipped profiles or templates should follow the
+[extension boundary](docs/extension-boundary.md); editing a `.mdp/` pack is not
+registration work.
 
 ## Examples
 
@@ -128,6 +131,7 @@ hosted MDP service.
 - [Decision Traces](docs/decision-traces.md)
 - [Local MCP](docs/local-mcp.md)
 - [Native Model Runner](docs/native-api-normalization-runner.md)
+- [Extension Boundary](docs/extension-boundary.md)
 - [Distribution](docs/distribution.md)
 - [CLI Usage](cli/USAGE.md)
 

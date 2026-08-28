@@ -5,9 +5,9 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity install-cli demo
+.PHONY: validate validate-cli validate-profile-conformance validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity install-cli demo
 
-VALIDATION_TARGETS := validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity
+VALIDATION_TARGETS := validate validate-cli validate-profile-conformance validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity
 
 ifneq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
 MAKE_OPTION_WORD := $(firstword $(MAKEFLAGS))
@@ -26,7 +26,7 @@ endif
 
 ifeq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
 
-validate: validate-cli validate-authority-conformance validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget
+validate: validate-cli validate-profile-conformance validate-authority-conformance validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget
 
 validate-route-budget:
 	node scripts/build-route-budget-fixtures.mjs
@@ -53,6 +53,9 @@ validate-route-budget-installed-parity:
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
+
+validate-profile-conformance:
+	cd cli && $(CARGO) test profile_conformance -- --nocapture
 
 validate-authority-conformance:
 	cd cli && PROPTEST_CASES=256 PROPTEST_RNG_SEED=4d4450323130617574686f72697479 $(CARGO) test authority::tests
@@ -181,14 +184,16 @@ validate-llms:
 
 validate-installers:
 	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh scripts/test-proposal-runner.sh
-	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh scripts/validate-version-sync.sh scripts/test-version-sync.sh
+	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh scripts/validate-version-sync.sh scripts/test-version-sync.sh scripts/test-authority-mutations.sh
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-model-openai.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
 	node --check scripts/mdp-proposal-evidence-harness.mjs
 	node --check scripts/test-route-budget-installed-parity.mjs
+	node --check scripts/test-authority-mutations-contract.mjs
 	node scripts/test-release-workflow.mjs
+	node scripts/test-authority-mutations-contract.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check scripts/lib/process-supervisor.mjs
 	node --check scripts/mdp-run-mcp-server.mjs

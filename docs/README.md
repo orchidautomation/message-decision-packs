@@ -21,6 +21,7 @@ These are the current public docs:
 - [Skill Evals](skill-evals.md): skill trigger and output-eval fixtures.
 - [CLI Usage](../cli/USAGE.md): detailed commands; `mdp --json capabilities` is the machine-readable source of truth.
 - [Concepts](../CONCEPTS.md): canonical product, evidence, assurance, and public-safety vocabulary.
+- [Extension boundary](extension-boundary.md): canonical template/profile/skill/host ownership, compatibility, and reviewed extension checklist.
 
 The root [README](../README.md) is the product overview. [llms.txt](../llms.txt) and [llms-full.txt](../llms-full.txt) are the curated agent briefings.
 

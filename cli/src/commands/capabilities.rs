@@ -61,7 +61,7 @@ pub(crate) fn capabilities() -> Value {
             "pack_dir": DEFAULT_DIR,
             "offline_by_default": true,
             "auth_required": false,
-            "init_templates": ["gtm", "proposal"]
+            "init_templates": crate::template_registry::ids().collect::<Vec<_>>()
         },
         "prepare_run": {
             "contract": RUN_REQUEST_COMPILE_V1,

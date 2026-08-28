@@ -1,0 +1,32 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-273",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-28-001-mdp-273-primitive-core-contract-plan.md",
+    "sha256": "f91fad4fe6169cd59a2484a9ab4383095bf5802e9557e9cc5e93fe33a3f68634",
+    "sourceRef": "codex/mdp-273-primitive-contracts",
+    "sourceCommit": "21de0b73c9382f3d0a426f7588090c9fde669ebf"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "initialTaskId": "mdp-273-child-of-mdp-272-freeze-primitive-contracts",
+    "retryTaskId": "mdp-273-child-of-mdp-272-freeze-primitive-contracts-retry1",
+    "initialDispatchHash": "5e5b7937aec41a2700b739a3f91b9de3dc1901741e3d02502fbf490af0d7905f",
+    "retryDispatchHash": "ae41c8069052e6dca4178a90f9e5199717e7eb79cb898fdd64e8cda2d6b8af01",
+    "implementationHead": "eb2f1f0edb1e1e184a1a10c48c37bfb1f3382de6"
+  },
+  "delivery": {
+    "branch": "codex/mdp-273-primitive-contracts",
+    "targetRef": "main",
+    "pullRequestState": "pending-human-review-handoff"
+  },
+  "recovery": "The initial execution produced a complete decision but failed focused validation because of trailing whitespace and an incorrect downstream issue-ownership map. A second plan-pinned Luna turn created a new repair commit, preserved history, corrected both findings, reran the focused checks, and pushed the issue branch.",
+  "observedAt": "2026-08-28T00:47:30Z"
+}

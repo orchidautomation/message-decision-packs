@@ -15,6 +15,7 @@ use crate::models::{
     ProductFoundationFacetKind, ProductFoundationRegistry, Profile, ProfileActivation, ProfileEval,
     ProfileJob, Provenance, ValueContract,
 };
+use crate::primitives::PrimitiveId;
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -251,32 +252,21 @@ fn gtm_profile() -> Profile {
 }
 
 fn gtm_required_primitives() -> Vec<String> {
-    strings(&[
-        "actors",
-        "decision-criteria",
-        "source-signals",
-        "needs-requirements",
-        "evidence-proof",
-        "boundaries",
-        "output-contracts",
-        "routing-jobs",
-        "gaps",
-        "evals",
-    ])
+    PrimitiveId::ALL.iter().map(|id| id.to_string()).collect()
 }
 
 fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
     BTreeMap::from([
         (
-            "actors".to_string(),
+            PrimitiveId::Actors.to_string(),
             primitive_mapping(&["personas"], &[], &["prospect"], &[], &[]),
         ),
         (
-            "decision-criteria".to_string(),
+            PrimitiveId::DecisionCriteria.to_string(),
             primitive_mapping(&["fit-rules"], &[], &[], &[], &[]),
         ),
         (
-            "source-signals".to_string(),
+            PrimitiveId::SourceSignals.to_string(),
             primitive_mapping(
                 &["signals"],
                 &["normalize-prospect-row"],
@@ -290,15 +280,15 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
             ),
         ),
         (
-            "needs-requirements".to_string(),
+            PrimitiveId::NeedsRequirements.to_string(),
             primitive_mapping(&["pains"], &[], &[], &[], &[]),
         ),
         (
-            "evidence-proof".to_string(),
+            PrimitiveId::EvidenceProof.to_string(),
             primitive_mapping(&["claims", "positioning"], &[], &[], &[], &[]),
         ),
         (
-            "boundaries".to_string(),
+            PrimitiveId::Boundaries.to_string(),
             primitive_mapping(
                 &["avoid-rules", "objections", "positioning"],
                 &[],
@@ -308,7 +298,7 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
             ),
         ),
         (
-            "output-contracts".to_string(),
+            PrimitiveId::OutputContracts.to_string(),
             primitive_mapping(
                 &[
                     "output-rules",
@@ -325,7 +315,7 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
             ),
         ),
         (
-            "routing-jobs".to_string(),
+            PrimitiveId::RoutingJobs.to_string(),
             primitive_mapping(
                 &["channel-policies", "motions"],
                 &[],
@@ -339,7 +329,7 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
             ),
         ),
         (
-            "gaps".to_string(),
+            PrimitiveId::Gaps.to_string(),
             primitive_mapping(
                 &["gaps"],
                 &[],
@@ -355,7 +345,7 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
             ),
         ),
         (
-            "evals".to_string(),
+            PrimitiveId::Evals.to_string(),
             primitive_mapping(
                 &[],
                 &[],
@@ -3728,6 +3718,31 @@ fn count_constraint_output_schema(description: &str) -> Value {
             "target_max": {"type": "integer", "minimum": 0}
         }
     })
+}
+
+#[cfg(test)]
+mod primitive_tests {
+    use super::generated_starter_manifest;
+    use crate::primitives::PrimitiveId;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn gtm_starter_consumes_the_complete_primitive_authority() {
+        let manifest = generated_starter_manifest("name", "slug", "basic");
+        let expected = PrimitiveId::ALL
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(manifest.required_primitives, expected);
+        assert_eq!(
+            manifest
+                .primitive_map
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            expected.into_iter().collect()
+        );
+    }
 }
 
 pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str, Value)> {

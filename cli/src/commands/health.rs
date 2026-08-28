@@ -17,13 +17,14 @@ use crate::models::{
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
+use crate::primitives::PrimitiveId;
 use crate::product_foundation::{
     ProductFoundationIndex, apply_validation_errors_for_job, resolution_json,
     resolve_product_foundation,
 };
 use crate::routing::select_cards;
 use crate::scope::valid_declared_identifier;
-use crate::skill_catalog::{JOB_ROUTE_SPECS, is_packaged_skill, route_spec};
+use crate::skill_catalog::{is_packaged_skill, job_owner, route_spec};
 use crate::value_contracts::PROSPECT_CONTRACT_FIELDS;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -31,19 +32,6 @@ use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-pub(crate) const KNOWN_PRIMITIVES: &[&str] = &[
-    "actors",
-    "decision-criteria",
-    "source-signals",
-    "needs-requirements",
-    "evidence-proof",
-    "boundaries",
-    "output-contracts",
-    "routing-jobs",
-    "gaps",
-    "evals",
-];
 
 pub(crate) const KNOWN_PROFILE_EVAL_CATEGORIES: &[&str] = &[
     "proceed",
@@ -2203,6 +2191,16 @@ fn validate_profile(profile: Option<&Profile>, issues: &mut Vec<Value>) {
             ".mdp/manifest.yaml#/profile/id",
             "profile.id must not be empty when profile metadata is present",
         ));
+    } else if crate::skill_catalog::profile_descriptor(&profile.id).is_none() {
+        issues.push(issue(
+            "profile_id_unknown",
+            "error",
+            ".mdp/manifest.yaml#/profile/id",
+            format!(
+                "profile.id {} is not in the closed profile registry; expected gtm or proposal",
+                profile.id
+            ),
+        ));
     }
     if profile
         .version
@@ -2322,7 +2320,7 @@ fn validate_profile_mapping(
     }
 
     let starting_issue_count = issues.len();
-    let known_primitives = KNOWN_PRIMITIVES.iter().copied().collect::<BTreeSet<_>>();
+    let known_primitives = PrimitiveId::names().into_iter().collect::<BTreeSet<_>>();
     let required_primitives = validate_primitive_list(
         &manifest.required_primitives,
         ".mdp/manifest.yaml#/required_primitives",
@@ -2362,14 +2360,14 @@ fn validate_profile_mapping(
 
     let mut covered_primitives = BTreeSet::new();
     for (primitive, mapping) in &manifest.primitive_map {
-        if !known_primitives.contains(primitive.as_str()) {
+        if primitive.parse::<PrimitiveId>().is_err() {
             issues.push(issue(
                 "profile_primitive_unknown",
                 "error",
                 format!(".mdp/manifest.yaml#/primitive_map/{primitive}"),
                 format!(
                     "unknown primitive id {primitive}; expected one of {}",
-                    KNOWN_PRIMITIVES.join(", ")
+                    PrimitiveId::names().join(", ")
                 ),
             ));
             continue;
@@ -2409,9 +2407,7 @@ fn validate_profile_mapping(
     for job in &manifest.jobs {
         let mut missing_job_primitives = Vec::new();
         for primitive in &job.required_primitives {
-            if known_primitives.contains(primitive.as_str())
-                && !covered_primitives.contains(primitive)
-            {
+            if primitive.parse::<PrimitiveId>().is_ok() && !covered_primitives.contains(primitive) {
                 missing_job_primitives.push(primitive.clone());
                 issues.push(issue_with_gate(
                     "profile_job_required_primitive_unmapped",
@@ -2536,19 +2532,19 @@ fn validate_primitive_list(
     values: &[String],
     path: &str,
     code_prefix: &str,
-    known_primitives: &BTreeSet<&str>,
+    _known_primitives: &BTreeSet<&str>,
     issues: &mut Vec<Value>,
 ) -> BTreeSet<String> {
     let mut seen = BTreeSet::new();
     for (index, primitive) in values.iter().enumerate() {
-        if !known_primitives.contains(primitive.as_str()) {
+        if !primitive.parse::<PrimitiveId>().is_ok() {
             issues.push(issue(
                 &format!("{code_prefix}_unknown"),
                 "error",
                 format!("{path}/{index}"),
                 format!(
                     "unknown primitive id {primitive}; expected one of {}",
-                    KNOWN_PRIMITIVES.join(", ")
+                    PrimitiveId::names().join(", ")
                 ),
             ));
         } else if !seen.insert(primitive.clone()) {
@@ -2825,7 +2821,7 @@ fn validate_profile_jobs(
                     ),
                 ));
             }
-        } else if JOB_ROUTE_SPECS.iter().any(|route| route.job_id == job.id) {
+        } else if job_owner(&job.id).is_some() {
             issues.push(issue(
                 "profile_job_route_incompatible",
                 "error",
@@ -3250,7 +3246,7 @@ fn validate_profile_eval_string_refs(
                 format!("{path}/{index}"),
                 format!(
                     "profile eval fixture references unknown {label} {value}; expected one of {}",
-                    KNOWN_PRIMITIVES.join(", ")
+                    PrimitiveId::names().join(", ")
                 ),
             ));
         } else if !seen.insert(value) {
@@ -8601,6 +8597,29 @@ expect_load_order_contains:
         assert!(codes.contains(&"profile_job_skill_unknown"));
         assert!(codes.contains(&"profile_job_route_incompatible"));
         assert!(codes.contains(&"profile_job_route_unknown"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_an_unregistered_profile_before_route_projection() {
+        let root = temp_pack("unregistered-profile");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("  id: gtm\n", "  id: support\n"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert_eq!(result["valid"], false);
+        assert!(result["issues"].as_array().is_some_and(|issues| {
+            issues.iter().any(|issue| {
+                issue["code"] == "profile_id_unknown"
+                    && issue["path"] == ".mdp/manifest.yaml#/profile/id"
+            })
+        }));
 
         let _ = std::fs::remove_dir_all(root);
     }

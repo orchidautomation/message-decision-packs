@@ -1,0 +1,37 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-278",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-28-006-mdp-278-template-registry-plan.md",
+    "sha256": "0af35405033ac1934c72fe7b354882faa8eb844729638310db8c9b38d38406e5",
+    "sourceRef": "codex/mdp-278-template-registry",
+    "sourceCommit": "e991ada064aa2361d06332ab86c76e4c29c2c854"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "MDP-278-inline-luna-initial",
+    "threadId": "01a046e5-ba68-7db3-a4bc-103531368618",
+    "initialDispatchHash": "e203d83468a4a7af4f68bdbaf41715ee7deda12207c61c87251ca495c6604f6c",
+    "finalRepairDispatchHash": "5c62fe2500c4d523fc792135ee934d9563a4e2fb583cb5f9cf1f19bbb1f7e047",
+    "implementationHead": "d46e392ca736d14e6b3265c03ddc902ec77b8839"
+  },
+  "validation": {
+    "fullRust": "800 unit tests plus 25 authoring, 12 init, 19 JSON contract, 2 recovery, and 4 inventory-generator integration tests passed on the implementation head",
+    "compatibility": "Canonical GTM and proposal template golden comparisons, transactional init behavior, strict template validation/evals, authored-asset sync, public artifact lint, release workflow contracts, formatting, and git diff checks passed",
+    "boundaries": "The registry remains private and closed; no plugin asset, workflow, Cargo manifest, release, deployment, or installation surface changed"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-278-template-registry",
+    "cumulativeBranch": "codex/mdp-273-primitive-contracts",
+    "targetRef": "main",
+    "pullRequest": 236
+  },
+  "observedAt": "2026-08-28T06:25:00Z"
+}
