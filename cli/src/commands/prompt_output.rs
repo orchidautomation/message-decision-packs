@@ -13,7 +13,7 @@ use crate::runtime_context::validate_runtime_context;
 use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label};
 use crate::value_contracts::normalized_prospect_contract_violations;
 use anyhow::{Result, anyhow};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
@@ -2122,40 +2122,6 @@ fn validate_output_against_prompt(
             &format!("{path}#/normalized_opportunity"),
             issues,
         );
-        // Resolve proposal ownership before shared validation.  The legacy
-        // normalized_prospect member remains the required v0 producer peer;
-        // normalized_opportunity is only its exact readable alias.
-        if manifest
-            .profile
-            .as_ref()
-            .is_some_and(|profile| profile.id == "proposal")
-        {
-            let mut proposal_output = Map::new();
-            if let Some(value) = output.get("normalized_prospect") {
-                proposal_output.insert("normalized_prospect".into(), value.clone());
-            }
-            if let Some(value) = output.get("normalized_opportunity") {
-                proposal_output.insert("normalized_opportunity".into(), value.clone());
-            }
-            if let Err(error) = crate::decision_input::from_proposal_output(&proposal_output) {
-                issues.push(issue(
-                    "prompt_output_decision_input_ownership",
-                    "error",
-                    format!("{path}#/normalized_prospect"),
-                    error.to_string(),
-                ));
-            }
-        } else if let Some(prospect) = output.get("normalized_prospect").and_then(Value::as_object)
-        {
-            if let Err(error) = crate::decision_input::from_gtm_normalized(prospect) {
-                issues.push(issue(
-                    "prompt_output_decision_input_ownership",
-                    "error",
-                    format!("{path}#/normalized_prospect"),
-                    error.to_string(),
-                ));
-            }
-        }
         validate_normalization_trace(
             output.get("normalization_trace"),
             &format!("{path}#/normalization_trace"),

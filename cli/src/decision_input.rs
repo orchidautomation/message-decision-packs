@@ -36,12 +36,6 @@ impl DecisionInput {
     pub(crate) fn field(&self, name: &str) -> Option<&Value> {
         self.fields.get(name)
     }
-    pub(crate) fn has_field(&self, name: &str) -> bool {
-        self.fields.contains_key(name)
-    }
-    pub(crate) fn fields(&self) -> &BTreeMap<String, Value> {
-        &self.fields
-    }
     pub(crate) fn signals(&self) -> &[Value] {
         &self.signals
     }
@@ -313,7 +307,7 @@ mod tests {
             BTreeMap::new(),
         )
         .unwrap();
-        assert!(!input.has_field("title"));
+        assert!(input.field("title").is_none());
         assert_eq!(input.field("status"), Some(&json!("open")));
     }
 
