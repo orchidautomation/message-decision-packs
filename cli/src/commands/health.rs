@@ -2191,6 +2191,16 @@ fn validate_profile(profile: Option<&Profile>, issues: &mut Vec<Value>) {
             ".mdp/manifest.yaml#/profile/id",
             "profile.id must not be empty when profile metadata is present",
         ));
+    } else if crate::skill_catalog::profile_descriptor(&profile.id).is_none() {
+        issues.push(issue(
+            "profile_id_unknown",
+            "error",
+            ".mdp/manifest.yaml#/profile/id",
+            format!(
+                "profile.id {} is not in the closed profile registry; expected gtm or proposal",
+                profile.id
+            ),
+        ));
     }
     if profile
         .version
@@ -8587,6 +8597,29 @@ expect_load_order_contains:
         assert!(codes.contains(&"profile_job_skill_unknown"));
         assert!(codes.contains(&"profile_job_route_incompatible"));
         assert!(codes.contains(&"profile_job_route_unknown"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_an_unregistered_profile_before_route_projection() {
+        let root = temp_pack("unregistered-profile");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("  id: gtm\n", "  id: support\n"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert_eq!(result["valid"], false);
+        assert!(result["issues"].as_array().is_some_and(|issues| {
+            issues.iter().any(|issue| {
+                issue["code"] == "profile_id_unknown"
+                    && issue["path"] == ".mdp/manifest.yaml#/profile/id"
+            })
+        }));
 
         let _ = std::fs::remove_dir_all(root);
     }
