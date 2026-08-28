@@ -1,0 +1,42 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-279",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-28-007-mdp-279-cross-profile-conformance-plan.md",
+    "sha256": "c48d37e73dcc052c941fffde71ea9fdfa4942f51c09cb6bebe46aaab853f9669",
+    "sourceRef": "codex/mdp-279-conformance-gate",
+    "sourceCommit": "e85d1d2df7a476f02bebf32d8412623f065262e5"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "MDP-279-inline-luna-initial",
+    "threadId": "01a047dc-59c5-7f90-a6d3-24d02c72aab3",
+    "initialDispatchHash": "e30d574e4365a7ecf4780d6bd9359c6e35224a16b0166d51fb7a26e166e2e127",
+    "finalRepairDispatchHash": "9aa7fcd7fcd52e992614fd9f3d73c89ff1bdc229b303cff68db2678a435d466f",
+    "implementationHead": "4fe80d8daee3411f66fbcbe05158350e0e5f9910"
+  },
+  "validation": {
+    "sharedGate": "The named focused gate passed for GTM, proposal, the neutral fixture, stable adversarial mutations, and profile-specific findings",
+    "compatibility": "Release workflow contract, release build, canonical template digests, capabilities closure, formatting, and git diff checks passed",
+    "fullRust": "The initial implementation passed 803 Rust tests; after the acceptance repair, one resource-contended duplicate full-suite run timed out in a pre-existing runtime test and that exact test passed immediately in isolation",
+    "authoritativeNext": "Exact final delivery-head GitHub CI is the authoritative complete regression matrix"
+  },
+  "boundaries": {
+    "fixture": "The neutral fixture is cfg(test)-only under cli/tests and is absent from profiles, templates, capabilities, packaged skills, release workflow sources, installers, and plugin assets",
+    "delivery": "No third profile, public CLI contract, merge, release, deployment, or installation was created or performed"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-279-conformance-gate",
+    "cumulativeBranch": "codex/mdp-273-primitive-contracts",
+    "targetRef": "main",
+    "pullRequest": 236
+  },
+  "observedAt": "2026-08-28T11:06:00Z"
+}
