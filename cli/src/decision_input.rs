@@ -309,6 +309,22 @@ mod tests {
         .unwrap();
         assert!(input.field("title").is_none());
         assert_eq!(input.field("status"), Some(&json!("open")));
+
+        let requirements = LeadInputRequirements {
+            required_fields: vec!["status".into()],
+            required_signal_fields: Vec::new(),
+            required_attributes: Vec::new(),
+            value_contracts: BTreeMap::new(),
+            attribute_definitions: BTreeMap::new(),
+            allow_undeclared_attributes: true,
+        };
+        assert!(
+            crate::value_contracts::decision_input_contract_violations(
+                &requirements_view(&requirements),
+                &input,
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -325,6 +341,26 @@ mod tests {
             AdapterKind::ProposalOpportunity
         );
         assert!(select_adapter(&manifest, &["prospect"]).is_err());
+        assert!(matches!(
+            select_adapter(&manifest, &[]),
+            Err(AdapterError::MissingOwnership)
+        ));
+        assert!(matches!(
+            select_adapter(&manifest, &["opportunity", "prospect"]),
+            Err(AdapterError::MixedOwnership)
+        ));
+
+        let unknown = Manifest {
+            profile: Some(Profile {
+                id: "unknown".into(),
+                ..Default::default()
+            }),
+            ..test_manifest()
+        };
+        assert!(matches!(
+            select_adapter(&unknown, &["opportunity"]),
+            Err(AdapterError::UnknownOwnership(_))
+        ));
     }
 
     #[test]
