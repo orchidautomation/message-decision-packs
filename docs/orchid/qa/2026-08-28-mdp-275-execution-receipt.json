@@ -1,0 +1,32 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-275",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid-with-recovery",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-28-003-mdp-275-primitive-driven-routing-plan.md",
+    "sha256": "893e4a120ac067ad570ff57dd15e6370339f8ae203546da8ff9b6beebb34106a",
+    "sourceRef": "codex/mdp-275-primitive-routing",
+    "sourceCommit": "9864e05f6dd69cf75f8639cc8e662f051c689d57"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "01a0466e-c52d-76a1-84de-bf9de10a0963",
+    "dispatchHash": "d6c6fee141eeadee4cb4fe5ff9b7b5324aa88186312b8895184cdb8585a0dfcd",
+    "implementationHead": "ec71471b6bdadd6973410a30382e77a7b546bc57"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-275-primitive-routing",
+    "cumulativeBranch": "codex/mdp-273-primitive-contracts",
+    "targetRef": "main",
+    "pullRequest": 236,
+    "reconciledStandalonePullRequest": 237
+  },
+  "recovery": "The first execution attempt stopped without an implementation commit when repository compatibility tests exposed a plan conflict. Relay revised and repinned the plan, accepted a plan-bound implementation, and routed direct-review authority gaps through bounded Luna repair or recovery lanes. A completed thread that remained writer-locked required a fresh plan pin for the mapped-versus-job-relevant authority fix. Direct review then caught an overcorrection that demoted resolved context guardrails, so a final plan-bound recovery restored that compatibility invariant. A worker-created standalone PR was closed in favor of the authorized cumulative PR.",
+  "observedAt": "2026-08-28T03:44:00Z"
+}

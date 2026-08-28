@@ -14,6 +14,8 @@ const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
 const codexPackCommand = 'npm pack @openai/codex@0.148.0'
 const codexVersionCommand = 'test "$(codex --version)" = "codex-cli 0.148.0"'
 const assetParityCommand = '/usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"'
+const neutralFixturePath = 'cli/tests/fixtures/profile-conformance/'
+const neutralFixtureId = 'neutral'
 const requiredPrefix = [
   'set -euo pipefail',
   'version="${{ steps.version.outputs.version }}"',
@@ -289,6 +291,8 @@ function assertReleaseSmokeContract(workflow) {
     codexPackIndex < codexVersionIndex && codexVersionIndex < smokeStepIndex,
     'pinned native Codex setup must complete before release smoke',
   )
+  assert.equal(workflow.includes(neutralFixturePath), false, 'release sources must exclude test fixtures')
+  assert.equal(workflow.includes(neutralFixtureId), false, 'release sources must exclude neutral fixture IDs')
 }
 
 function assertAssetParityCiContract(workflow) {
@@ -305,6 +309,12 @@ function assertAssetParityCiContract(workflow) {
     commands,
     [assetParityCommand],
     'required CI must execute authored asset parity unconditionally',
+  )
+  assertUnconditionalStep(cliJob, 'Validate cross-profile conformance')
+  assert.deepEqual(
+    runBlock(cliJob, 'Validate cross-profile conformance').filter((line) => !line.startsWith('#')),
+    ['make validate-profile-conformance'],
+    'cross-profile conformance must use the named make gate',
   )
 }
 
@@ -340,6 +350,10 @@ for (const [name, mutation] of [
   ['commented asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          # ${assetParityCommand}`)],
   ['echoed asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          echo ${assetParityCommand}`)],
   ['unreachable asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          if false; then\n            ${assetParityCommand}\n          fi`)],
+  [
+    'missing cross-profile conformance',
+    ciWorkflow.replace('          make validate-profile-conformance', '          make validate-cli'),
+  ],
   [
     'dry-run make substitution',
     ciWorkflow.replace(

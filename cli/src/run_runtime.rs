@@ -2067,6 +2067,8 @@ where
         }
         (outcome.terminal_state, outcome.success)
     } else if request.profile == PROPOSAL_PROFILE && request.operation == VALIDATE_EXISTING_OUTPUT {
+        crate::decision_input::select_adapter(&manifest, &["opportunity"])
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-ingress-invalid"))?;
         let prompt_output = required_typed_input(
             &staged,
             "prompt-output",
@@ -2107,6 +2109,8 @@ where
             (TerminalState::NoDraftOutputInvalid, None)
         }
     } else if request.profile == GTM_PROFILE && request.operation == QUALIFY {
+        crate::decision_input::select_adapter(&manifest, &["prospect"])
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-ingress-invalid"))?;
         let normalized = required_input(&staged, "normalized-decision-input")?;
         if normalized.authority.media_type != "application/json"
             || !matches!(

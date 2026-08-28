@@ -471,6 +471,11 @@ fn fit_prospect_with_signal_authority(
     signal_authority: Option<Value>,
     use_lineage_validated_signal_observations: bool,
 ) -> Result<Value> {
+    // GTM qualification owns the typed prospect-to-neutral conversion.  The
+    // remainder of this function may retain the v0 Prospect renderer, but it
+    // never needs to select an adapter from payload vocabulary.
+    crate::decision_input::from_gtm_prospect(&prospect)
+        .map_err(|error| anyhow!("invalid GTM decision input: {error}"))?;
     let manifest = read_manifest(root)?;
     let company_domain_normalization = normalize_company_domain_for_fit(&mut prospect);
     let fit_cards = read_cards_by_id_or_kind(root, "fit-rules", CardKind::FitRules)?;
@@ -3629,6 +3634,23 @@ optional:
                 .expect("missing array")
                 .iter()
                 .any(|value| value == "attributes.fiscal_year")
+        );
+        assert_eq!(
+            result["context"]["missing_requirements"]
+                .as_array()
+                .expect("missing requirements array")
+                .iter()
+                .filter(|issue| issue["path"] == "attributes.fiscal_year")
+                .count(),
+            1,
+            "required_attributes must remain a readiness diagnostic, not be duplicated as a value-contract violation"
+        );
+        assert!(
+            result["context"]["invalid_requirements"]
+                .as_array()
+                .expect("invalid requirements array")
+                .iter()
+                .all(|issue| issue["path"] != "attributes/fiscal_year")
         );
 
         let _ = std::fs::remove_dir_all(root);

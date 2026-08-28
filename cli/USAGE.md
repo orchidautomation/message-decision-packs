@@ -6,6 +6,10 @@ Canonical `route --entries` and `brief --context` results include the same `mini
 
 `mdp` creates and routes Message Decision Packs.
 
+For the distinction between packs and shipped registrations, see the
+[extension boundary](../docs/extension-boundary.md). The CLI exposes only the
+closed profile/template/skill registries described there.
+
 Card `personas` and entry `applies_to` selectors are structured metadata.
 Empty or blank-only selectors match every persona; non-empty selectors match
 exactly, case-insensitively, with authored values preserved. Prose is not a
@@ -301,6 +305,10 @@ mdp --json eval --strict --dir .
 ```
 
 JSON errors use stable top-level codes where the CLI can classify the failure. Run `mdp --json capabilities` for the current complete command, side-effect, and error-code inventory instead of relying on a copied partial list.
+
+Profiles and templates are closed shipped registrations; pack authoring does
+not add either. See [Extension boundary](../docs/extension-boundary.md) before
+authoring a new profile-shaped workflow.
 
 `profile.id` and canonical `jobs[].skill_id` bindings are skill-routing metadata. Use `mdp --json skills --dir .` for pack eligibility and `mdp --json skills --dir . --job <job-id>` for one deterministic recommendation. A profile is activation-ready only when `mdp --json validate --dir .` reports `data.profile.activation_ready: true`. Profile-aware manifests declare `required_primitives`, `primitive_map`, `input_contracts`, closed profile jobs, and `profile_eval.required_categories`; validation rejects unknown primitive IDs, unknown or profile-incompatible job/skill pairs, and missing mapped card, prompt, input contract, job, or eval references. Missing required primitive or eval-category coverage is warning-first by default and fails with `--strict`, but the shared `profile_activation` runtime decision still blocks `skills` pack readiness, `requirements` draft permission, route/context/brief output, conformance qualification, and `run` before the driver boundary. Eval fixtures can run `command: validate-prompt-output` with `prompt_id` or `prompt` plus inline `prompt_output` and optional `source_audit`, so profile activation can prove normalization contracts before rows reach `mdp fit` or `mdp brief`.
 

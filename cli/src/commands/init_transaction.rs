@@ -119,6 +119,7 @@ pub(crate) fn stage_artifacts(
     artifacts: &[GeneratedArtifact],
     nonce: &str,
 ) -> Result<PathBuf> {
+    validate_artifacts(artifacts)?;
     let staging_root = parent.join(format!(".mdp.init.staging.{nonce}"));
     if staging_root.exists() {
         let _ = remove_quietly(&staging_root);
@@ -150,6 +151,7 @@ pub(crate) fn preflight(
     artifacts: &[GeneratedArtifact],
     force: bool,
 ) -> Result<Vec<DryRunEntry>> {
+    validate_artifacts(artifacts)?;
     let mut entries = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
         let absolute = artifact.absolute(destination);
@@ -220,6 +222,26 @@ pub(crate) fn preflight(
         entries.push(entry);
     }
     Ok(entries)
+}
+
+fn validate_artifacts(artifacts: &[GeneratedArtifact]) -> Result<()> {
+    let mut paths = std::collections::BTreeSet::new();
+    for artifact in artifacts {
+        let path = artifact.relative.as_str();
+        if path.is_empty()
+            || path.starts_with('/')
+            || path.contains('\\')
+            || path
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+            || !paths.insert(path)
+        {
+            return Err(anyhow!(
+                "refusing unsafe or duplicate generated artifact path '{path}'"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Publish a validated staging tree into the destination with one of

@@ -7,12 +7,14 @@ mod cli;
 mod commands;
 mod conformance;
 mod constants;
+mod decision_input;
 mod diagnostics;
 mod model_steps;
 mod models;
 mod output;
 mod pack_io;
 mod pack_readme;
+mod primitives;
 mod product_foundation;
 mod prospect_validation;
 mod routing;
@@ -25,8 +27,12 @@ mod scope;
 mod skill_catalog;
 mod starter;
 mod target_starter;
+mod template_registry;
 mod utils;
 mod value_contracts;
+
+#[cfg(test)]
+mod profile_conformance;
 
 use crate::cli::Cli;
 use crate::output::{DisplayKind, print_error};

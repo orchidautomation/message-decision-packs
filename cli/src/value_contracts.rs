@@ -3,6 +3,109 @@ use crate::utils::resolve_pack_persona_label;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Validate the profile-neutral value against the manifest view.  Adapters are
+/// responsible for deciding which public fields enter `DecisionInput`; this
+/// function intentionally has no persona or product-profile behavior.
+pub(crate) fn decision_input_contract_violations(
+    requirements: &crate::decision_input::RequirementsView<'_>,
+    input: &crate::decision_input::DecisionInput,
+) -> Vec<ContractViolation> {
+    let mut violations = Vec::new();
+    for field in requirements.required_fields() {
+        let present = if field == "signals" {
+            !input.signals().is_empty()
+        } else {
+            input.field(field).is_some_and(meaningful_json_value)
+        };
+        if !present {
+            violations.push(required_violation("decision_input", field, field));
+        }
+    }
+    for field in requirements.required_signal_fields() {
+        // Legacy GTM semantics require every signal to carry every declared
+        // field.  `all` is intentionally false for an empty signal list.
+        if input.signals().is_empty()
+            || !input
+                .signals()
+                .iter()
+                .all(|signal| signal.get(field).is_some_and(meaningful_json_value))
+        {
+            violations.push(required_violation(
+                "signal",
+                field,
+                &format!("signals/{field}"),
+            ));
+        }
+    }
+    for name in requirements.required_attributes() {
+        if !input
+            .attributes()
+            .get(name)
+            .is_some_and(meaningful_json_value)
+        {
+            violations.push(required_violation(
+                "attribute",
+                name,
+                &format!("attributes/{name}"),
+            ));
+        }
+    }
+    violations.extend(decision_input_value_contract_violations(
+        requirements,
+        input,
+        "decision_input",
+        "",
+        true,
+    ));
+    violations
+}
+
+/// Shared scalar/attribute checks used by both compatibility adapters.  The
+/// caller supplies the legacy diagnostic scope/path so the public rendering
+/// remains unchanged while the value being checked is the neutral input.
+pub(crate) fn decision_input_value_contract_violations(
+    requirements: &crate::decision_input::RequirementsView<'_>,
+    input: &crate::decision_input::DecisionInput,
+    scope: &'static str,
+    path_prefix: &str,
+    include_required: bool,
+) -> Vec<ContractViolation> {
+    let mut violations = Vec::new();
+    for (name, contract) in requirements.value_contracts() {
+        if name == "persona" {
+            continue;
+        }
+        if let Some(value) = input
+            .field(name)
+            .filter(|value| meaningful_json_value(value))
+        {
+            validate_value(
+                name,
+                value,
+                contract,
+                &join_path(path_prefix, name),
+                scope,
+                &mut violations,
+            );
+        } else if include_required && contract.required {
+            violations.push(required_violation(
+                scope,
+                name,
+                &join_path(path_prefix, name),
+            ));
+        }
+    }
+    let attributes = input.attributes().iter().collect::<Vec<_>>();
+    collect_attribute_contract_violations(
+        requirements.attribute_definitions(),
+        requirements.allow_undeclared_attributes(),
+        &attributes,
+        &join_path(path_prefix, "attributes"),
+        &mut violations,
+    );
+    violations
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ContractViolation {
     pub(crate) code: &'static str,
@@ -32,6 +135,11 @@ pub(crate) fn prospect_contract_violations(
     prospect: &Prospect,
     effective_persona: Option<&str>,
 ) -> Vec<ContractViolation> {
+    let Ok(input) = crate::decision_input::from_gtm_prospect(prospect) else {
+        // The closed adapter owns wire validity.  Do not fall back to a
+        // second interpretation of an input that the adapter rejected.
+        return Vec::new();
+    };
     let mut violations = Vec::new();
     let explicit_persona = prospect.persona.as_deref().and_then(present_str);
     let persona_contract_value = explicit_persona
@@ -57,34 +165,33 @@ pub(crate) fn prospect_contract_violations(
         }
     }
 
-    for (field, contract) in &manifest.lead_input_requirements.value_contracts {
-        if field == "persona" {
-            if let Some(persona) = persona_contract_value.as_deref() {
-                validate_value(
-                    field,
-                    &Value::String(persona.to_string()),
-                    contract,
-                    field,
-                    "prospect",
-                    &mut violations,
-                );
-            } else if contract.required {
-                violations.push(required_violation("prospect", field, field));
-            }
-        } else if let Some(value) = prospect_field_value(prospect, field) {
-            validate_value(field, &value, contract, field, "prospect", &mut violations);
+    violations.extend(
+        crate::value_contracts::decision_input_value_contract_violations(
+            &crate::decision_input::requirements_view(&manifest.lead_input_requirements),
+            &input,
+            "prospect",
+            "",
+            true,
+        ),
+    );
+    if let Some(contract) = manifest
+        .lead_input_requirements
+        .value_contracts
+        .get("persona")
+    {
+        if let Some(persona) = persona_contract_value.as_deref() {
+            validate_value(
+                "persona",
+                &Value::String(persona.to_string()),
+                contract,
+                "persona",
+                "prospect",
+                &mut violations,
+            );
         } else if contract.required {
-            violations.push(required_violation("prospect", field, field));
+            violations.push(required_violation("prospect", "persona", "persona"));
         }
     }
-
-    collect_attribute_contract_violations(
-        &manifest.lead_input_requirements.attribute_definitions,
-        manifest.lead_input_requirements.allow_undeclared_attributes,
-        &prospect.attributes.iter().collect::<Vec<_>>(),
-        "attributes",
-        &mut violations,
-    );
 
     violations
 }
@@ -94,6 +201,23 @@ pub(crate) fn normalized_prospect_contract_violations(
     prospect: &Map<String, Value>,
     path: &str,
 ) -> Vec<ContractViolation> {
+    let input = if manifest
+        .profile
+        .as_ref()
+        .is_some_and(|profile| profile.id == "proposal")
+    {
+        let mut output = Map::new();
+        output.insert(
+            "normalized_prospect".to_string(),
+            Value::Object(prospect.clone()),
+        );
+        crate::decision_input::from_proposal_output(&output)
+    } else {
+        crate::decision_input::from_gtm_normalized(prospect)
+    };
+    let Ok(input) = input else {
+        return Vec::new();
+    };
     let mut violations = Vec::new();
     let explicit_persona = prospect
         .get("persona")
@@ -130,120 +254,48 @@ pub(crate) fn normalized_prospect_contract_violations(
         }
     }
 
-    for (field, contract) in &manifest.lead_input_requirements.value_contracts {
-        if field == "persona" {
-            if let Some(persona) = persona_contract_value.as_deref() {
-                validate_value(
-                    field,
-                    &Value::String(persona.to_string()),
-                    contract,
-                    &format!("{path}/{field}"),
-                    "prospect",
-                    &mut violations,
-                );
-            } else if let Some(value) = prospect
-                .get(field)
-                .filter(|value| meaningful_json_value(value))
-            {
-                validate_value(
-                    field,
-                    value,
-                    contract,
-                    &format!("{path}/{field}"),
-                    "prospect",
-                    &mut violations,
-                );
-            } else if contract.required {
-                violations.push(required_violation(
-                    "prospect",
-                    field,
-                    &format!("{path}/{field}"),
-                ));
-            }
-        } else if let Some(value) = prospect
-            .get(field)
-            .filter(|value| meaningful_json_value(value))
-        {
+    violations.extend(
+        crate::value_contracts::decision_input_value_contract_violations(
+            &crate::decision_input::requirements_view(&manifest.lead_input_requirements),
+            &input,
+            "prospect",
+            path,
+            true,
+        ),
+    );
+    // Preserve the normalized-prospect path for persona diagnostics, including
+    // the legacy title-to-persona compatibility projection.
+    if let Some(contract) = manifest
+        .lead_input_requirements
+        .value_contracts
+        .get("persona")
+    {
+        if let Some(persona) = persona_contract_value.as_deref() {
             validate_value(
-                field,
-                value,
+                "persona",
+                &Value::String(persona.to_string()),
                 contract,
-                &format!("{path}/{field}"),
+                &format!("{path}/persona"),
                 "prospect",
                 &mut violations,
             );
         } else if contract.required {
             violations.push(required_violation(
                 "prospect",
-                field,
-                &format!("{path}/{field}"),
+                "persona",
+                &format!("{path}/persona"),
             ));
         }
     }
 
-    let attributes = prospect
-        .get("attributes")
-        .and_then(Value::as_object)
-        .map(|attributes| attributes.iter().collect::<Vec<_>>())
-        .unwrap_or_default();
-    collect_attribute_contract_violations(
-        &manifest.lead_input_requirements.attribute_definitions,
-        manifest.lead_input_requirements.allow_undeclared_attributes,
-        &attributes,
-        &format!("{path}/attributes"),
-        &mut violations,
-    );
-
     violations
 }
 
-fn prospect_field_value(prospect: &Prospect, field: &str) -> Option<Value> {
-    match field {
-        "name" => present_str(&prospect.name).map(|value| Value::String(value.to_string())),
-        "title" => present_str(&prospect.title).map(|value| Value::String(value.to_string())),
-        "company" => present_str(&prospect.company).map(|value| Value::String(value.to_string())),
-        "company_domain" => prospect
-            .company_domain
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        "source_kind" => prospect
-            .source_kind
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        "synthetic" => Some(Value::Bool(prospect.synthetic)),
-        "linkedin_url" => prospect
-            .linkedin_url
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        "company_url" => prospect
-            .company_url
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        "background" => prospect
-            .background
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        "trigger" => prospect
-            .trigger
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        "persona" => prospect
-            .persona
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        "segment" => prospect
-            .segment
-            .as_deref()
-            .and_then(present_str)
-            .map(|value| Value::String(value.to_string())),
-        _ => None,
+fn join_path(prefix: &str, field: &str) -> String {
+    if prefix.is_empty() {
+        field.to_string()
+    } else {
+        format!("{prefix}/{field}")
     }
 }
 
@@ -563,6 +615,7 @@ fn leap_year(year: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::LeadInputRequirements;
     use serde_json::json;
 
     #[test]
@@ -617,5 +670,43 @@ mod tests {
             &json!(9_007_199_254_740_993_u64),
             &json!(9_007_199_254_740_992_f64)
         ));
+    }
+
+    #[test]
+    fn required_signal_fields_require_every_signal_and_nonempty_signals() {
+        let requirements = LeadInputRequirements {
+            required_signal_fields: vec!["source".into(), "confidence".into()],
+            ..Default::default()
+        };
+        let view = crate::decision_input::requirements_view(&requirements);
+        let partial = crate::decision_input::DecisionInput::new(
+            BTreeMap::new(),
+            vec![
+                json!({"source": "row"}),
+                json!({"source": "row", "confidence": "high"}),
+            ],
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let violations = decision_input_contract_violations(&view, &partial);
+        assert_eq!(
+            violations
+                .iter()
+                .filter(|violation| violation.scope == "signal")
+                .map(|violation| violation.field.as_str())
+                .collect::<Vec<_>>(),
+            vec!["confidence"]
+        );
+
+        let empty =
+            crate::decision_input::DecisionInput::new(BTreeMap::new(), Vec::new(), BTreeMap::new())
+                .unwrap();
+        assert_eq!(
+            decision_input_contract_violations(&view, &empty)
+                .iter()
+                .filter(|violation| violation.scope == "signal")
+                .count(),
+            2
+        );
     }
 }

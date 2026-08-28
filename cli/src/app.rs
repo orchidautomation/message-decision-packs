@@ -905,10 +905,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
 }
 
 fn default_init_name(template: &str) -> &'static str {
-    match template {
-        "proposal" => "Proposal Reference Profile Sample",
-        _ => "Example Message Pack",
-    }
+    crate::template_registry::default_name(template).unwrap_or("Example Message Pack")
 }
 
 fn print_sample_leads(

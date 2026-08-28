@@ -480,6 +480,52 @@ pub(crate) fn validate_normalized_decision_input_with_projection(
     }
 
     let mut issues = Vec::new();
+    // Convert once at the ingress boundary and run shared readiness/value
+    // checks against the neutral representation.  Persona interpretation and
+    // the legacy projected-prospect renderer remain adapter-owned elsewhere.
+    if let Some(prospect) = output["normalized_prospect"].as_object() {
+        let manifest = read_manifest(root)?;
+        let job = manifest
+            .jobs
+            .iter()
+            .find(|job| job.id == job_id)
+            .ok_or_else(|| anyhow!("unknown profile job {job_id}"))?;
+        if crate::decision_input::select_adapter_for_job(&manifest, job).is_err() {
+            issues.push(decision_input_issue(
+                "decision_input_adapter_ownership_invalid",
+                format!("{artifact_path}#/normalized_prospect"),
+                "normalized decision input does not have an unambiguous profile/input owner",
+            ));
+        } else if let Ok(input) = crate::decision_input::from_gtm_normalized(prospect) {
+            let mut neutral_requirements = manifest.lead_input_requirements.clone();
+            // v2 signal authority is carried by the lineage projection rather
+            // than the legacy normalized_prospect.signals array.
+            if output["contract"] == NORMALIZED_DECISION_INPUT_CONTRACT_V2 {
+                neutral_requirements
+                    .required_fields
+                    .retain(|field| field != "signals");
+                neutral_requirements.required_signal_fields.clear();
+            }
+            // v2's lineage projection is the authority for signal-backed
+            // readiness; retain its existing validator and only apply the
+            // neutral requirements pass to scalar v1 ingress.
+            if output["contract"] != NORMALIZED_DECISION_INPUT_CONTRACT_V2 {
+                for violation in crate::value_contracts::decision_input_contract_violations(
+                    &crate::decision_input::requirements_view(&neutral_requirements),
+                    &input,
+                ) {
+                    issues.push(decision_input_issue(
+                        "decision_input_contract_violation",
+                        format!(
+                            "{artifact_path}#/normalized_prospect/{}",
+                            violation.path.replace('/', "/")
+                        ),
+                        violation.reason,
+                    ));
+                }
+            }
+        }
+    }
     validate_bound_normalization_prompt(
         root,
         &compiled,

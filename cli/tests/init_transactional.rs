@@ -141,6 +141,22 @@ fn assert_publication_paths_clean(publication: &Value) {
 }
 
 #[test]
+fn proposal_uses_same_transactional_publication_guarantees() {
+    let root = temp_root("proposal");
+    let (ok, stdout, stderr) = run_init(&root, "proposal", false, &[]);
+    assert!(ok, "stderr: {stderr}");
+    let payload = data_envelope(&stdout);
+    assert_eq!(payload["template"], "proposal");
+    assert_eq!(payload["publication"]["mode"], "atomic-directory-rename");
+    assert!(root.join(".mdp/manifest.yaml").is_file());
+    assert!(root.join(".mdp/briefs").is_dir());
+    let (ok, stdout, stderr) = run_init(&root, "proposal", false, &[]);
+    assert!(!ok);
+    assert!(format!("{stdout}{stderr}").contains("already exists"));
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn absent_root_publishes_atomically_and_reports_published() {
     let root = temp_root("absent");
     let (ok, stdout, stderr) = run_init(&root, "gtm", false, &[]);
