@@ -186,14 +186,16 @@ validate-llms:
 
 validate-installers:
 	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh scripts/test-proposal-runner.sh
-	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh scripts/validate-version-sync.sh scripts/test-version-sync.sh
+	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh scripts/validate-version-sync.sh scripts/test-version-sync.sh scripts/test-authority-mutations.sh
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-model-openai.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
 	node --check scripts/mdp-proposal-evidence-harness.mjs
 	node --check scripts/test-route-budget-installed-parity.mjs
+	node --check scripts/test-authority-mutations-contract.mjs
 	node scripts/test-release-workflow.mjs
+	node scripts/test-authority-mutations-contract.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check scripts/lib/process-supervisor.mjs
 	node --check scripts/mdp-run-mcp-server.mjs

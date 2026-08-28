@@ -135,6 +135,7 @@ NODE
 install_home="$TMP_DIR/install-home"
 sed -i "s|REPLACE_CODEX_PLUGIN_ROOT|$install_home/.codex/plugins/message-decision-packs|" "$fake_codex"
 MDP_RELEASE_REQUIRE_STAGED_PARITY=1 \
+MDP_RELEASE_SOURCE_PARITY_BIN="$TMP_DIR/$staged_name" \
 MDP_RELEASE_INSTALLER="$fake_installer" \
 MDP_RELEASE_INSTALL_HOME="$install_home" \
 MDP_CODEX_BIN="$fake_codex" \

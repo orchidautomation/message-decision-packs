@@ -11,6 +11,7 @@ on:
       - "plugin/assets/authority-conformance/corpus.json"
       - "assets/authority-conformance/corpus.json"
       - "scripts/test-authority-mutations.sh"
+      - "scripts/test-authority-mutations-contract.mjs"
       - ".github/workflows/authority-mutations.yml"
   pull_request:
     branches:
@@ -22,6 +23,7 @@ on:
       - "plugin/assets/authority-conformance/corpus.json"
       - "assets/authority-conformance/corpus.json"
       - "scripts/test-authority-mutations.sh"
+      - "scripts/test-authority-mutations-contract.mjs"
       - ".github/workflows/authority-mutations.yml"
 
 concurrency:
@@ -46,18 +48,47 @@ jobs:
           path: ${{ runner.temp }}/cargo-mutants-bin/cargo-mutants
           if-no-files-found: error
 
+  authority-mutation-contract:
+    needs: authority-mutation-tool
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Validate authority mutation contract
+        run: node scripts/test-authority-mutations-contract.mjs
+
   authority-mutation-shard:
     name: authority-mutation-shard-${{ matrix.shard }}
-    needs: authority-mutation-tool
+    needs: [authority-mutation-tool, authority-mutation-contract]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        shard: ["0/2", "1/2"]
+        # Disjoint shard topology: every focused mutation must appear in
+        # exactly one shard, and the aggregate gate fails on any shard
+        # failure or surviving mutant. The contract test enforces the
+        # matrix and selector invariants; the script enforces the
+        # 24-candidate cap and pinned 27.1.0 tool.
+        shard: ["0/4", "1/4", "2/4", "3/4"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache mutation build inputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+          cache-provider: github
+          # Cache boundaries: runner OS, pinned Rust toolchain, the CLI
+          # lockfile, the cargo-mutants version, and the matrix shard. Each
+          # shard gets its own cache slot so an unbalanced topology cannot
+          # silently reuse another shard's mutated artifacts.
+          shared-key: authority-mutations-${{ runner.os }}-${{ matrix.shard }}
+          workspaces: |
+            cli -> cli/target
       - name: Download pinned cargo-mutants
         uses: actions/download-artifact@v8
         with:
