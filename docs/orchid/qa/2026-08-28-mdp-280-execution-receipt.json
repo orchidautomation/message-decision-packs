@@ -1,0 +1,43 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-280",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-28-008-mdp-280-extension-boundary-integration-plan.md",
+    "sha256": "b16de3a0cba057546b36e8ed18aa7249d83b134b957df77ecdbfa88bb18aba3a",
+    "sourceRef": "codex/mdp-280-integration-docs",
+    "sourceCommit": "a2299facb32fea8b38020185c2fc20779b8fca51"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "MDP-280-inline-luna-initial",
+    "threadId": "01a0483c-f7da-7e30-afc2-47885a082dff",
+    "initialDispatchHash": "823906805df37d241716ab50595940bb3b57d8fd1687fecd7d8005c24cb3d951",
+    "acceptanceRepairDispatchHash": "ab30aac8063fa0792d39d864bade3d14d37be2dc0f05120f0595f6255f1d3b72",
+    "headAuditDispatchHash": "efc3843439016d98778ee4a35dff5860e4ccde6f042f781c1f89a87d6fb5f449",
+    "implementationHead": "c5083a3f30d049b468e37aeb96b7e561a6c02c8a"
+  },
+  "validation": {
+    "documentation": "Public artifact lint and regression tests, skill contract tests, skill packaging, plugin validation, llms validation, and diff checks passed",
+    "compatibility": "Cross-profile conformance, template and authored-asset parity, version sync, release workflow contracts, installer fixtures, installed route-budget parity, universal native parity, and release-install smoke passed",
+    "reviewRepair": "The guide was repaired to match the executable one-profile/one-template registry instead of implying an unsupported second template",
+    "authoritativeNext": "Exact final delivery-head GitHub CI is the authoritative cumulative Rust, MCP, Pluxx, Eve, and authority-mutation matrix"
+  },
+  "boundaries": {
+    "delivery": "One cumulative PR only; Brandon remains the only merge authority",
+    "excluded": "No runtime, schema, template asset, packaged capability, version, release, deployment, installation, migration, or third-profile activation changed"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-280-integration-docs",
+    "cumulativeBranch": "codex/mdp-273-primitive-contracts",
+    "targetRef": "main",
+    "pullRequest": 236
+  },
+  "observedAt": "2026-08-28T12:15:00Z"
+}
