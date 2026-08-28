@@ -12,14 +12,14 @@
   "inputs": [
     {
       "logical_name": "prompt-output",
-      "source_path": "examples/proposal-flow-video/fixtures/normalize-opportunity-output.json",
+      "source_path": "scripts/fixtures/proposal-runner/normalize-opportunity-output.json",
       "schema_id": "mdp.prompt-output.v0",
       "media_type": "application/json",
       "provenance_refs": []
     },
     {
       "logical_name": "source-audit",
-      "source_path": "examples/proposal-flow-video/fixtures/source-audit.json",
+      "source_path": "scripts/fixtures/proposal-runner/source-audit.json",
       "schema_id": "mdp.source-audit.v0",
       "media_type": "application/json",
       "provenance_refs": []

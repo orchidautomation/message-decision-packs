@@ -45,7 +45,7 @@ def is_claim_surface(relative: str) -> bool:
     path = Path(relative)
     if path.suffix.lower() not in {".md", ".rst", ".txt"}:
         return False
-    if relative.startswith(("docs/plans/", "docs/orchid/")):
+    if relative.startswith("docs/orchid/"):
         return False
     return (
         len(path.parts) == 1

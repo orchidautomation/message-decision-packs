@@ -43,7 +43,7 @@ jobs:
               - "plugin/skills/**"
               - "plugin/skill-evals/**"
               - "examples/clay-audiences-self-serve-enterprise-expansion/**"
-              - "examples/proposal-flow-video/fixtures/**"
+              - "scripts/fixtures/proposal-runner/**"
               - "examples/run-conformance/**"
               - "examples/clay-row.json"
               - "examples/decision-input-scenarios.json"

@@ -639,16 +639,20 @@ try {
   const hookInvocations = []
   const shell = (strings, ...values) => {
     assert(strings.length === 2 && strings[0] === 'bash -lc ', 'Hook must execute through bash -lc.')
-    hookCommand = String(values[0])
-    const result = run('bash', ['-lc', hookCommand], {
+    hookCommand = `export PATH='${fakeBin}':"$PATH"; ${String(values[0])}`
+    const result = spawnSync('bash', ['-lc', hookCommand], {
       cwd: launchRoot,
-      environment: {
+      env: {
         ...process.env,
         PATH: `${fakeBin}:${process.env.PATH}`,
       },
+      encoding: 'utf8',
     })
-    hookOutput = result.stdout
-    hookInvocations.push({ command: hookCommand, output: hookOutput })
+    hookOutput = `${result.stdout}${result.stderr}`
+    hookInvocations.push({ command: hookCommand, output: hookOutput, status: result.status })
+    if (result.status !== 0) {
+      throw new Error(`Hook command failed (${result.status}): ${hookOutput}`)
+    }
     return Promise.resolve(result)
   }
   const client = { app: { log: async () => undefined } }
@@ -683,7 +687,7 @@ try {
   )
 
   writeFileSync(join(selectedWorkspace, 'notes.txt'), 'irrelevant edit\n')
-  await hooks['tool.execute.after']({ tool: 'edit' }, {})
+  await hooks['tool.execute.after']({ tool: 'apply_patch' }, {})
   assert(
     hookInvocations.length === 1 &&
       !hookInvocations[0].output.includes('MDP post-edit validation: relevant changes detected.'),
@@ -694,11 +698,12 @@ try {
     join(selectedWorkspace, '.mdp/manifest.yaml'),
     `${readFileSync(join(selectedWorkspace, '.mdp/manifest.yaml'), 'utf8')}\n# relevant edit\n`,
   )
-  await hooks['tool.execute.after']({ tool: 'apply_patch' }, {})
+  await hooks['tool.execute.after']({ tool: 'edit' }, {})
   assert(
     hookInvocations.length === 2 &&
+      hookInvocations[1].status === 0 &&
       hookInvocations[1].output.includes('MDP post-edit validation: relevant changes detected.'),
-    'A relevant MDP edit must invoke post-edit validation exactly once.',
+    `A relevant MDP edit must invoke post-edit validation exactly once; observed ${JSON.stringify(hookInvocations)}.`,
   )
 
   console.log(

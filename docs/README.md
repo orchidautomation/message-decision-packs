@@ -16,18 +16,22 @@ These are the current public docs:
 - [Headless Normalization Runners](headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and the bundled local stdio MCP wrapper.
 - [Native API Normalization Runner](native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
 - [Proof-Output Drafting](proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
-- [Proposal Flow Video Demo](../examples/proposal-flow-video/README.md): runnable synthetic walkthrough from messy proposal sources to verified review artifacts.
 - [Agent Hook Guidance](agent-hook-guidance.md): safe activation and validation hooks.
 - [Distribution](distribution.md): Pluxx bundles, release assets, installers, and updates.
 - [Skill Evals](skill-evals.md): skill trigger and output-eval fixtures.
 - [CLI Usage](../cli/USAGE.md): detailed commands; `mdp --json capabilities` is the machine-readable source of truth.
 - [Concepts](../CONCEPTS.md): canonical product, evidence, assurance, and public-safety vocabulary.
-- [Solution Notes](solutions/README.md): sanitized post-fix learning loop for reusable engineering lessons.
 
 The root [README](../README.md) is the product overview. [llms.txt](../llms.txt) and [llms-full.txt](../llms-full.txt) are the curated agent briefings.
 
-## Historical Material
+## Contributor Workflow Material
 
-`docs/orchid/` contains durable planning, decision, QA, and review artifacts. `docs/plans/` contains shipped implementation plans from the earlier repository layout. Historical narrative and evaluation files carry an explicit banner and are not canonical product documentation.
+`docs/orchid/` is the durable Orchid Relay workspace for public-safe plans,
+decisions, reviews, QA evidence, and reusable project history. It is contributor
+context, not canonical product documentation. Private, raw, temporary, or bulky
+agent artifacts belong in the gitignored `.agent-artifacts/` directory instead.
 
-Do not copy stale commands or positioning from historical material into current docs without checking the implementation, `mdp --json capabilities`, and the latest release.
+Do not copy commands or positioning from workflow history into current docs
+without checking the implementation, `mdp --json capabilities`, and the latest
+release. Obsolete code examples belong in Git history rather than under
+`docs/orchid/`.

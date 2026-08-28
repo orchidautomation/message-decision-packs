@@ -150,8 +150,6 @@ validate-proposal-runner:
 	node --check scripts/mdp-proposal-runner.mjs
 	node --test scripts/test-proposal-runner-modules.mjs
 	node --test scripts/test-proposal-readiness-report.mjs
-	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
-	bash -n examples/proposal-flow-video/scripts/run-demo.sh
 	bash -n scripts/test-proposal-runner.sh
 	bash scripts/test-proposal-runner.sh
 
@@ -194,7 +192,6 @@ validate-installers:
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check scripts/lib/process-supervisor.mjs
 	node --check scripts/mdp-run-mcp-server.mjs
-	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	scripts/test-install.sh
 	scripts/test-release-install-smoke.sh
 

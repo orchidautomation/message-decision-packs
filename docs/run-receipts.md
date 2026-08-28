@@ -210,10 +210,9 @@ decision or draft authority that a host can mistake for usable output.
 
 This compatibility rule lets existing proposal pilots remain inspectable without overstating them, while proposal and GTM workflows converge on one v1 execution and receipt authority.
 
-For public demos, apply the
-[Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md) before recording or
-presenting a receipt. A mock run is safe to show only when its blocked decision
-and synthetic status are explicit.
+For public demonstrations, show mock evidence only when its blocked decision
+and synthetic status are explicit. Never present fixture evidence as proof of a
+real invocation.
 
 ## Legacy v0: What It Proves
 
