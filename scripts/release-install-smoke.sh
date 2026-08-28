@@ -9,9 +9,22 @@ Usage:
   scripts/release-install-smoke.sh VERSION
 
 Environment:
-  MDP_RELEASE_INSTALLER      Installer script to run. Defaults to scripts/install.sh.
-  MDP_RELEASE_INSTALL_HOME  Temporary HOME to use. Defaults to a new mktemp dir.
-  MDP_RELEASE_INSTALL_ARGS  Installer args. Defaults to: --agents -y.
+  MDP_RELEASE_INSTALLER       Installer script to run. Defaults to scripts/install.sh.
+  MDP_RELEASE_INSTALL_HOME    Temporary HOME to use. Defaults to a new mktemp dir.
+  MDP_RELEASE_INSTALL_ARGS    Installer args. Defaults to: --agents -y.
+  MDP_RELEASE_SOURCE_PARITY_BIN
+                              Absolute path to an executable source CLI binary
+                              used for source-assets-versus-installed-assets
+                              route-budget parity. Defaults to the local debug
+                              build at cli/target/debug/mdp. When
+                              MDP_RELEASE_REQUIRE_STAGED_PARITY=1, the value
+                              must point to the exact staged release binary
+                              for the host platform.
+  MDP_RELEASE_REQUIRE_STAGED_PARITY
+                              When set to 1, the staged release binary must
+                              byte-match the installed binary and the route-
+                              budget source binary must be the same staged
+                              binary.
 USAGE
 }
 
@@ -31,6 +44,20 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 installer="${MDP_RELEASE_INSTALLER:-$ROOT/scripts/install.sh}"
 if [ ! -f "$installer" ]; then
   echo "Installer not found: $installer" >&2
+  exit 1
+fi
+
+default_source_parity_bin="$ROOT/cli/target/debug/mdp"
+source_parity_bin="${MDP_RELEASE_SOURCE_PARITY_BIN:-$default_source_parity_bin}"
+case "$source_parity_bin" in
+  /*) ;;
+  *)
+    echo "MDP_RELEASE_SOURCE_PARITY_BIN must be an absolute path: $source_parity_bin" >&2
+    exit 1
+    ;;
+esac
+if [ ! -x "$source_parity_bin" ]; then
+  echo "Route-budget installed parity requires an executable source CLI binary: $source_parity_bin" >&2
   exit 1
 fi
 
@@ -158,6 +185,13 @@ if [ "${MDP_RELEASE_REQUIRE_STAGED_PARITY:-0}" = "1" ]; then
     exit 1
   fi
   cmp "$staged_cli" "$mdp_bin"
+  # The route-budget source binary must be the exact same staged release
+  # binary the install just verified. Fail closed otherwise so a fresh
+  # debug build cannot silently replace the staged asset.
+  if [ "$source_parity_bin" != "$staged_cli" ]; then
+    echo "MDP_RELEASE_SOURCE_PARITY_BIN must point to the staged release binary under staged parity: $staged_cli (got $source_parity_bin)" >&2
+    exit 1
+  fi
   node - "$release_manifest" "mdp-$staged_target" "$staged_cli" <<'NODE'
 const { createHash } = require('node:crypto')
 const { readFileSync } = require('node:fs')
@@ -395,13 +429,12 @@ trap 'rm -rf "$proposal_fixture" "$run_fixture"; cleanup' EXIT
 "$mdp_bin" --json validate --dir "$proposal_fixture" >"$artifact_root/mdp-release-install-validate.json"
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
 "$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-init.json"
-source_route_budget_bin="$ROOT/cli/target/debug/mdp"
-if [ ! -x "$source_route_budget_bin" ]; then
-  echo "Route-budget installed parity requires a source CLI binary: $source_route_budget_bin" >&2
+if [ ! -x "$source_parity_bin" ]; then
+  echo "Route-budget installed parity requires a source CLI binary: $source_parity_bin" >&2
   exit 1
 fi
 "$node_bin" "$ROOT/scripts/test-route-budget-installed-parity.mjs" \
-  --source-bin "$source_route_budget_bin" \
+  --source-bin "$source_parity_bin" \
   --installed-bin "$mdp_bin" \
   --source-assets "$ROOT/plugin/assets" \
   --installed-assets "$codex_plugin_root/assets" \
@@ -628,6 +661,7 @@ fi
 if ! grep -F 'card_entry_applies_to_persona_undeclared' \
   "$proposal_fixture/undeclared-persona-strict.json" >/dev/null; then
   echo "Installed CLI strict validation omitted the undeclared persona diagnostic." >&2
+  printf '%s\n' "$output" >&2
   exit 1
 fi
 

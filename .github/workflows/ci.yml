@@ -29,6 +29,7 @@ jobs:
             cli:
               - ".github/workflows/ci.yml"
               - ".github/workflows/release.yml"
+              - ".github/workflows/authority-mutations.yml"
               - "cli/**"
               - "rust-toolchain.toml"
               - "Makefile"
@@ -66,6 +67,8 @@ jobs:
               - "scripts/mdp-proposal-mcp-server.mjs"
               - "scripts/mdp-proposal-runner.mjs"
               - "scripts/test-release-workflow.mjs"
+              - "scripts/test-authority-mutations-contract.mjs"
+              - "scripts/test-authority-mutations.sh"
               - "scripts/test-native-model-driver.mjs"
               - "scripts/mdp-native-model-openai.mjs"
               - "scripts/mdp-native-normalize-openai.mjs"
@@ -90,6 +93,8 @@ jobs:
         working-directory: cli
       - name: Validate release workflow contract
         run: node scripts/test-release-workflow.mjs
+      - name: Validate authority mutation workflow contract
+        run: node scripts/test-authority-mutations-contract.mjs
       - name: Validate authored asset parity
         run: |
           /usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"
