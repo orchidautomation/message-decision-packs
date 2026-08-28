@@ -1,5 +1,5 @@
 use crate::commands::briefs::prospect_brief_from_value;
-use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
+use crate::commands::health::{KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
 use crate::commands::prompt_output::validate_prompt_output_value_with_source_audit;
 use crate::commands::requirements::requirements;
 use crate::commands::routing::{check_claims_scoped, fit_prospect_for_job, route_scoped};
@@ -7,6 +7,7 @@ use crate::commands::{verify_output_file, verify_output_value};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
 use crate::pack_io::read_manifest;
+use crate::primitives::PrimitiveId;
 use crate::prospect_validation::validate_prospect_value;
 use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
 use crate::scope::parse_scope_selectors;
@@ -401,14 +402,14 @@ fn validate_profile_eval_primitives(path: &Path, values: &[String], issues: &mut
                 format!("{}#/profile_eval/primitives/{index}", path.display()),
                 "profile_eval.primitives entries must not be empty",
             ));
-        } else if !KNOWN_PRIMITIVES.contains(&value.as_str()) {
+        } else if !value.parse::<PrimitiveId>().is_ok() {
             issues.push(issue(
                 "eval_profile_primitive_unknown",
                 "error",
                 format!("{}#/profile_eval/primitives/{index}", path.display()),
                 format!(
                     "profile eval fixture references unknown primitive {value}; expected one of {}",
-                    KNOWN_PRIMITIVES.join(", ")
+                    PrimitiveId::names().join(", ")
                 ),
             ));
         } else if !seen.insert(value) {

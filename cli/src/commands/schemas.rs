@@ -27,6 +27,7 @@ use crate::models::{
     MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE, MAX_SIGNAL_PROJECTIONS_PER_CONTRACT,
     MAX_SIGNAL_QUALIFIED_ID_LEN, SIGNAL_OBSERVATION_CONTRACT_V2,
 };
+use crate::primitives::PrimitiveId;
 use crate::run_contracts::{
     CANONICAL_AUTHORITY_BLOCK_V1, DEADLINE_OBSERVATION_V1, DRIVER_CONFIGURATION_PROJECTION_V1,
     DRIVER_REQUEST_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V1, DRIVER_RESULT_V2, MDP_RUNTIME_VERSION,
@@ -2910,21 +2911,6 @@ fn target_identity_schema() -> Value {
     })
 }
 
-fn primitive_ids() -> [&'static str; 10] {
-    [
-        "actors",
-        "decision-criteria",
-        "source-signals",
-        "needs-requirements",
-        "evidence-proof",
-        "boundaries",
-        "output-contracts",
-        "routing-jobs",
-        "gaps",
-        "evals",
-    ]
-}
-
 fn profile_eval_categories() -> [&'static str; 9] {
     [
         "proceed",
@@ -2943,7 +2929,7 @@ fn primitive_id_array_schema() -> Value {
     json!({
         "type": "array",
         "description": "Optional universal primitive IDs this profile must cover before activation.",
-        "items": {"enum": primitive_ids()}
+        "items": {"enum": PrimitiveId::names()}
     })
 }
 
@@ -2951,7 +2937,7 @@ fn primitive_map_schema() -> Value {
     json!({
         "type": "object",
         "description": "Manifest-level mapping from universal primitives to profile-owned cards, prompts, input contracts, jobs, and eval fixtures.",
-        "propertyNames": {"enum": primitive_ids()},
+        "propertyNames": {"enum": PrimitiveId::names()},
         "additionalProperties": primitive_mapping_schema()
     })
 }
@@ -5622,6 +5608,18 @@ mod tests {
         assert_eq!(
             result["properties"]["primitive_map"]["propertyNames"]["enum"][9],
             "evals"
+        );
+        let expected_primitives = PrimitiveId::names()
+            .into_iter()
+            .map(Value::from)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            result["properties"]["required_primitives"]["items"]["enum"],
+            Value::Array(expected_primitives.clone())
+        );
+        assert_eq!(
+            result["properties"]["primitive_map"]["propertyNames"]["enum"],
+            Value::Array(expected_primitives)
         );
         assert_eq!(
             result["properties"]["input_contracts"]["items"]["properties"]["prompt"]["type"],

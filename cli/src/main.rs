@@ -13,6 +13,7 @@ mod models;
 mod output;
 mod pack_io;
 mod pack_readme;
+mod primitives;
 mod product_foundation;
 mod prospect_validation;
 mod routing;

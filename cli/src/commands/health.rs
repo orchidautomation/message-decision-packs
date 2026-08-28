@@ -17,6 +17,7 @@ use crate::models::{
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
+use crate::primitives::PrimitiveId;
 use crate::product_foundation::{
     ProductFoundationIndex, apply_validation_errors_for_job, resolution_json,
     resolve_product_foundation,
@@ -31,19 +32,6 @@ use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-pub(crate) const KNOWN_PRIMITIVES: &[&str] = &[
-    "actors",
-    "decision-criteria",
-    "source-signals",
-    "needs-requirements",
-    "evidence-proof",
-    "boundaries",
-    "output-contracts",
-    "routing-jobs",
-    "gaps",
-    "evals",
-];
 
 pub(crate) const KNOWN_PROFILE_EVAL_CATEGORIES: &[&str] = &[
     "proceed",
@@ -2322,7 +2310,7 @@ fn validate_profile_mapping(
     }
 
     let starting_issue_count = issues.len();
-    let known_primitives = KNOWN_PRIMITIVES.iter().copied().collect::<BTreeSet<_>>();
+    let known_primitives = PrimitiveId::names().into_iter().collect::<BTreeSet<_>>();
     let required_primitives = validate_primitive_list(
         &manifest.required_primitives,
         ".mdp/manifest.yaml#/required_primitives",
@@ -2362,14 +2350,14 @@ fn validate_profile_mapping(
 
     let mut covered_primitives = BTreeSet::new();
     for (primitive, mapping) in &manifest.primitive_map {
-        if !known_primitives.contains(primitive.as_str()) {
+        if primitive.parse::<PrimitiveId>().is_err() {
             issues.push(issue(
                 "profile_primitive_unknown",
                 "error",
                 format!(".mdp/manifest.yaml#/primitive_map/{primitive}"),
                 format!(
                     "unknown primitive id {primitive}; expected one of {}",
-                    KNOWN_PRIMITIVES.join(", ")
+                    PrimitiveId::names().join(", ")
                 ),
             ));
             continue;
@@ -2409,9 +2397,7 @@ fn validate_profile_mapping(
     for job in &manifest.jobs {
         let mut missing_job_primitives = Vec::new();
         for primitive in &job.required_primitives {
-            if known_primitives.contains(primitive.as_str())
-                && !covered_primitives.contains(primitive)
-            {
+            if primitive.parse::<PrimitiveId>().is_ok() && !covered_primitives.contains(primitive) {
                 missing_job_primitives.push(primitive.clone());
                 issues.push(issue_with_gate(
                     "profile_job_required_primitive_unmapped",
@@ -2536,19 +2522,19 @@ fn validate_primitive_list(
     values: &[String],
     path: &str,
     code_prefix: &str,
-    known_primitives: &BTreeSet<&str>,
+    _known_primitives: &BTreeSet<&str>,
     issues: &mut Vec<Value>,
 ) -> BTreeSet<String> {
     let mut seen = BTreeSet::new();
     for (index, primitive) in values.iter().enumerate() {
-        if !known_primitives.contains(primitive.as_str()) {
+        if !primitive.parse::<PrimitiveId>().is_ok() {
             issues.push(issue(
                 &format!("{code_prefix}_unknown"),
                 "error",
                 format!("{path}/{index}"),
                 format!(
                     "unknown primitive id {primitive}; expected one of {}",
-                    KNOWN_PRIMITIVES.join(", ")
+                    PrimitiveId::names().join(", ")
                 ),
             ));
         } else if !seen.insert(primitive.clone()) {
@@ -3250,7 +3236,7 @@ fn validate_profile_eval_string_refs(
                 format!("{path}/{index}"),
                 format!(
                     "profile eval fixture references unknown {label} {value}; expected one of {}",
-                    KNOWN_PRIMITIVES.join(", ")
+                    PrimitiveId::names().join(", ")
                 ),
             ));
         } else if !seen.insert(value) {
