@@ -122,6 +122,7 @@ impl PrimitiveRoutingIndex {
 
 struct PrimitiveRoutingPolicy {
     legacy: bool,
+    governed_job: bool,
     index: PrimitiveRoutingIndex,
     required: BTreeSet<PrimitiveId>,
 }
@@ -130,40 +131,53 @@ impl PrimitiveRoutingPolicy {
     fn for_job(manifest: &Manifest, job: Option<&str>) -> Self {
         let legacy = manifest.profile.is_none() && manifest.primitive_map.is_empty();
         let index = PrimitiveRoutingIndex::from_manifest(manifest);
-        let required = manifest
+        let job_definition = manifest
             .jobs
             .iter()
-            .find(|candidate| Some(candidate.id.as_str()) == job)
+            .find(|candidate| Some(candidate.id.as_str()) == job);
+        let required = job_definition
             .into_iter()
             .flat_map(|candidate| candidate.required_primitives.iter())
             .filter_map(|name| name.parse::<PrimitiveId>().ok())
             .collect();
         Self {
             legacy,
+            governed_job: job_definition.is_some(),
             index,
             required,
         }
     }
 
-    fn roles_for(&self, card_id: &str) -> BTreeSet<PrimitiveRoutingRole> {
-        self.index
-            .card_to_primitives
-            .get(card_id)
-            .into_iter()
-            .flatten()
-            .filter(|primitive| self.required.contains(primitive))
-            .map(|primitive| primitive_role(*primitive))
-            .collect()
+    /// `None` means the card is absent from the typed reverse index. `Some`
+    /// with no roles is deliberately different: the card is mapped, but none
+    /// of its memberships are relevant to this job.
+    fn roles_for(&self, card_id: &str) -> Option<BTreeSet<PrimitiveRoutingRole>> {
+        // Ad-hoc tasks have no selected governed job; preserve their v0
+        // compatibility route. Declared jobs use the mapped-card distinction.
+        if !self.governed_job {
+            return None;
+        }
+        Some(
+            self.index
+                .card_to_primitives
+                .get(card_id)
+                .map(|primitives| {
+                    primitives
+                        .iter()
+                        .filter(|primitive| self.required.contains(primitive))
+                        .map(|primitive| primitive_role(*primitive))
+                        .collect()
+                })?,
+        )
     }
 
     fn is_base_guardrail(&self, card_id: &str, kind: &CardKind) -> bool {
         if self.legacy {
             return is_base_guardrail_v0(kind);
         }
-        let roles = self.roles_for(card_id);
-        if roles.is_empty() {
+        let Some(roles) = self.roles_for(card_id) else {
             return is_base_guardrail_v0(kind);
-        }
+        };
         (roles.contains(&PrimitiveRoutingRole::Actor) && matches!(kind, CardKind::Personas))
             || (roles.contains(&PrimitiveRoutingRole::Boundary)
                 && matches!(kind, CardKind::AvoidRules))
@@ -1596,11 +1610,14 @@ fn apply_selection_authority(
         let card_kind = serde_json::from_value::<CardKind>(entry["card_kind"].clone()).ok();
         let authority = entry["card_id"]
             .as_str()
-            .map(|card_id| policy.roles_for(card_id))
-            .unwrap_or_default();
+            .and_then(|card_id| policy.roles_for(card_id));
         let v0_gap = matches!(card_kind, Some(CardKind::Gaps));
         let v0_output = matches!(card_kind, Some(CardKind::ChannelPolicies));
-        let (selection_class, reason_code) = if entry["selection"] == "guardrail" {
+        let (selection_class, reason_code) = if entry["selection"] == "guardrail"
+            && card_kind
+                .as_ref()
+                .is_some_and(|kind| is_base_guardrail_with_authority(&authority, kind))
+        {
             ("universal_guardrail", None)
         } else if reference
             .0
@@ -1611,8 +1628,10 @@ fn apply_selection_authority(
                 "product_foundation_requirement",
                 Some("product_foundation_requirement"),
             )
-        } else if (authority.contains(&PrimitiveRoutingRole::Gap) && v0_gap)
-            || (authority.is_empty() && v0_gap)
+        } else if authority
+            .as_ref()
+            .is_some_and(|roles| roles.contains(&PrimitiveRoutingRole::Gap) && v0_gap)
+            || (authority.is_none() && v0_gap)
         {
             ("gap_requirement", Some("gap_requirement"))
         } else if entry["evidence"]
@@ -1620,11 +1639,13 @@ fn apply_selection_authority(
             .is_some_and(|evidence| !evidence.is_empty())
         {
             ("evidence_dependency", Some("evidence_dependency"))
-        } else if (authority.contains(&PrimitiveRoutingRole::Output) && v0_output)
-            || (authority.is_empty() && v0_output)
+        } else if authority
+            .as_ref()
+            .is_some_and(|roles| roles.contains(&PrimitiveRoutingRole::Output) && v0_output)
+            || (authority.is_none() && v0_output)
         {
             ("output_requirement", Some("output_requirement"))
-        } else if entry["metadata"]["required"] == true {
+        } else if authority.is_none() && entry["metadata"]["required"] == true {
             ("output_requirement", Some("output_requirement"))
         } else {
             ("persona_or_job_match", None)
@@ -1916,7 +1937,7 @@ fn entry_summary(
     card_kind: &CardKind,
     entry: &Entry,
     reason: &str,
-    authority: &BTreeSet<PrimitiveRoutingRole>,
+    authority: &Option<BTreeSet<PrimitiveRoutingRole>>,
 ) -> Value {
     json!({
         "card_id": card_id,
@@ -1940,7 +1961,7 @@ fn entry_context_value(
     entry: &Entry,
     selection: &str,
     reason: &str,
-    authority: &BTreeSet<PrimitiveRoutingRole>,
+    authority: &Option<BTreeSet<PrimitiveRoutingRole>>,
 ) -> Value {
     let reason_code = match selection {
         "guardrail" => guardrail_reason_code(card_kind),
@@ -2004,12 +2025,12 @@ fn entry_status(card_kind: &CardKind) -> &'static str {
 }
 
 fn entry_status_with_authority(
-    authority: &BTreeSet<PrimitiveRoutingRole>,
+    authority: &Option<BTreeSet<PrimitiveRoutingRole>>,
     card_kind: &CardKind,
 ) -> &'static str {
-    if authority.is_empty() {
+    let Some(authority) = authority else {
         return entry_status(card_kind);
-    }
+    };
     let required = (authority.contains(&PrimitiveRoutingRole::Boundary)
         && matches!(card_kind, CardKind::AvoidRules | CardKind::OutputRules))
         || (authority.contains(&PrimitiveRoutingRole::Decision)
@@ -2043,13 +2064,13 @@ fn is_context_guardrail(card_kind: &CardKind, entry: &Entry) -> bool {
 }
 
 fn is_context_guardrail_with_authority(
-    authority: &BTreeSet<PrimitiveRoutingRole>,
+    authority: &Option<BTreeSet<PrimitiveRoutingRole>>,
     card_kind: &CardKind,
     entry: &Entry,
 ) -> bool {
-    if authority.is_empty() {
+    let Some(authority) = authority else {
         return is_context_guardrail(card_kind, entry);
-    }
+    };
     (authority.contains(&PrimitiveRoutingRole::Boundary)
         && matches!(card_kind, CardKind::AvoidRules | CardKind::OutputRules))
         || (authority.contains(&PrimitiveRoutingRole::Output)
@@ -2057,6 +2078,20 @@ fn is_context_guardrail_with_authority(
         || (authority.contains(&PrimitiveRoutingRole::Decision)
             && matches!(card_kind, CardKind::FitRules)
             && !entry.avoid.is_empty())
+}
+
+fn is_base_guardrail_with_authority(
+    authority: &Option<BTreeSet<PrimitiveRoutingRole>>,
+    kind: &CardKind,
+) -> bool {
+    let Some(authority) = authority else {
+        return is_base_guardrail_v0(kind);
+    };
+    (authority.contains(&PrimitiveRoutingRole::Actor) && matches!(kind, CardKind::Personas))
+        || (authority.contains(&PrimitiveRoutingRole::Boundary)
+            && matches!(kind, CardKind::AvoidRules))
+        || (authority.contains(&PrimitiveRoutingRole::Output)
+            && matches!(kind, CardKind::OutputRules))
 }
 
 fn guardrail_reason(card_kind: &CardKind) -> &'static str {
@@ -2613,7 +2648,9 @@ mod tests {
             .or_default()
             .cards = vec!["positioning".to_string()];
         let policy = PrimitiveRoutingPolicy::for_job(&manifest, Some("outbound-copy-brief"));
-        let roles = policy.roles_for("positioning");
+        let roles = policy
+            .roles_for("positioning")
+            .expect("mapped card has authority");
         assert!(roles.contains(&PrimitiveRoutingRole::Actor));
         assert!(roles.contains(&PrimitiveRoutingRole::Evidence));
         assert!(
@@ -2635,7 +2672,7 @@ mod tests {
         add_supplemental_persona_card_for_tests(&root);
         let manifest = read_manifest(&root).expect("manifest should load");
         let policy = PrimitiveRoutingPolicy::for_job(&manifest, Some("outbound-copy-brief"));
-        assert!(policy.roles_for("supplemental-personas").is_empty());
+        assert!(policy.roles_for("supplemental-personas").is_none());
         assert!(policy.is_base_guardrail("supplemental-personas", &CardKind::Personas));
         let _ = std::fs::remove_dir_all(root);
     }
@@ -2647,16 +2684,22 @@ mod tests {
         let mut manifest = read_manifest(&root).expect("manifest should load");
         manifest
             .primitive_map
-            .entry("actors".to_string())
+            .entry("evals".to_string())
             .or_default()
             .cards
             .push("supplemental-personas".to_string());
         let policy = PrimitiveRoutingPolicy::for_job(&manifest, Some("outbound-copy-brief"));
         let authority = policy.roles_for("supplemental-personas");
-        assert!(authority.contains(&PrimitiveRoutingRole::Actor));
-        // The misleading v0 kind must not promote this mapped card to a
-        // universal guardrail, guardrail entry, or required entry.
-        assert!(!policy.is_base_guardrail("supplemental-personas", &CardKind::OutputRules));
+        assert_eq!(authority, Some(BTreeSet::new()));
+        // A mapped card with no job-relevant role must not fall back to its
+        // misleading v0 kind, while an absent card still has compatibility.
+        for kind in [
+            CardKind::Personas,
+            CardKind::AvoidRules,
+            CardKind::OutputRules,
+        ] {
+            assert!(!policy.is_base_guardrail("supplemental-personas", &kind));
+        }
         let entry = Entry {
             id: "conflict".to_string(),
             title: "Conflict".to_string(),
@@ -2678,6 +2721,35 @@ mod tests {
             entry_status_with_authority(&authority, &CardKind::OutputRules),
             "supporting"
         );
+
+        let mut selected = vec![json!({
+            "card_id": "supplemental-personas",
+            "card_kind": CardKind::ChannelPolicies,
+            "entry_id": "conflict",
+            "selection": "matched",
+            "metadata": {"required": true},
+            "reason_codes": []
+        })];
+        apply_selection_authority(&mut selected, &[], &policy);
+        assert_eq!(selected[0]["selection_class"], "persona_or_job_match");
+        assert_eq!(selected[0]["status"], "supporting");
+
+        let gap = Some(BTreeSet::new());
+        assert!(!is_context_guardrail_with_authority(
+            &gap,
+            &CardKind::Gaps,
+            &entry
+        ));
+        let mut gap_entry = json!({
+            "card_id": "supplemental-personas",
+            "card_kind": CardKind::Gaps,
+            "entry_id": "conflict",
+            "selection": "matched",
+            "metadata": {},
+            "reason_codes": []
+        });
+        apply_selection_authority(std::slice::from_mut(&mut gap_entry), &[], &policy);
+        assert_eq!(gap_entry["selection_class"], "persona_or_job_match");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -3537,7 +3609,7 @@ mod tests {
             &entry,
             "matched",
             "entry job match",
-            &BTreeSet::new(),
+            &None,
         );
 
         assert_eq!(value["metadata"]["segment_hint"], "enterprise");
