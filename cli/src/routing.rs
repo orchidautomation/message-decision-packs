@@ -1613,11 +1613,7 @@ fn apply_selection_authority(
             .and_then(|card_id| policy.roles_for(card_id));
         let v0_gap = matches!(card_kind, Some(CardKind::Gaps));
         let v0_output = matches!(card_kind, Some(CardKind::ChannelPolicies));
-        let (selection_class, reason_code) = if entry["selection"] == "guardrail"
-            && card_kind
-                .as_ref()
-                .is_some_and(|kind| is_base_guardrail_with_authority(&authority, kind))
-        {
+        let (selection_class, reason_code) = if entry["selection"] == "guardrail" {
             ("universal_guardrail", None)
         } else if reference
             .0
@@ -2080,20 +2076,6 @@ fn is_context_guardrail_with_authority(
             && !entry.avoid.is_empty())
 }
 
-fn is_base_guardrail_with_authority(
-    authority: &Option<BTreeSet<PrimitiveRoutingRole>>,
-    kind: &CardKind,
-) -> bool {
-    let Some(authority) = authority else {
-        return is_base_guardrail_v0(kind);
-    };
-    (authority.contains(&PrimitiveRoutingRole::Actor) && matches!(kind, CardKind::Personas))
-        || (authority.contains(&PrimitiveRoutingRole::Boundary)
-            && matches!(kind, CardKind::AvoidRules))
-        || (authority.contains(&PrimitiveRoutingRole::Output)
-            && matches!(kind, CardKind::OutputRules))
-}
-
 fn guardrail_reason(card_kind: &CardKind) -> &'static str {
     if matches!(card_kind, CardKind::FitRules) {
         "fit guardrail included"
@@ -2209,7 +2191,9 @@ fn has_token(tokens: &[String], needle: &str) -> bool {
 mod tests {
     use super::*;
     use crate::commands::init::init_pack;
-    use crate::models::{CardRef, Entry, LeadInputRequirements, Policy, Provenance};
+    use crate::models::{
+        CardRef, Entry, LeadInputRequirements, Policy, PrimitiveMapping, ProfileJob, Provenance,
+    };
     use crate::pack_io::read_manifest;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -2751,6 +2735,63 @@ mod tests {
         apply_selection_authority(std::slice::from_mut(&mut gap_entry), &[], &policy);
         assert_eq!(gap_entry["selection_class"], "persona_or_job_match");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mapped_decision_fit_guardrail_stays_universal_after_authority_application() {
+        let mut manifest = manifest(5);
+        let fit_rules = CardRef {
+            id: "fit-rules".to_string(),
+            path: "cards/fit-rules.yaml".to_string(),
+            kind: CardKind::FitRules,
+            description: "Fit rules".to_string(),
+            personas: vec!["PMM".to_string()],
+            tags: vec!["fit".to_string()],
+        };
+        manifest.cards.push(fit_rules);
+        manifest.jobs.push(ProfileJob {
+            id: "outbound-copy-brief".to_string(),
+            required_primitives: vec!["decision-criteria".to_string()],
+            ..ProfileJob::default()
+        });
+        manifest.primitive_map.insert(
+            "decision-criteria".to_string(),
+            PrimitiveMapping {
+                cards: vec!["fit-rules".to_string()],
+                ..PrimitiveMapping::default()
+            },
+        );
+
+        let policy = PrimitiveRoutingPolicy::for_job(&manifest, Some("outbound-copy-brief"));
+        let authority = policy.roles_for("fit-rules");
+        let entry = Entry {
+            id: "fit-guardrail".to_string(),
+            title: "Fit guardrail".to_string(),
+            body: "Synthetic fit rule".to_string(),
+            applies_to: Vec::new(),
+            scope: BTreeMap::new(),
+            evidence: Vec::new(),
+            avoid: vec!["do not use this when the fit is absent".to_string()],
+            exact_paragraphs: None,
+            constraints: Default::default(),
+            metadata: BTreeMap::new(),
+        };
+        assert!(is_context_guardrail_with_authority(
+            &authority,
+            &CardKind::FitRules,
+            &entry
+        ));
+
+        let mut selected = vec![json!({
+            "card_id": "fit-rules",
+            "card_kind": CardKind::FitRules,
+            "entry_id": "fit-guardrail",
+            "selection": "guardrail",
+            "reason_codes": []
+        })];
+        apply_selection_authority(&mut selected, &[], &policy);
+        assert_eq!(selected[0]["selection_class"], "universal_guardrail");
+        assert_eq!(selected[0]["status"], "required");
     }
 
     #[test]
