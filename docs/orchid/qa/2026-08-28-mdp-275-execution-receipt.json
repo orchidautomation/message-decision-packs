@@ -9,16 +9,16 @@
     "path": "docs/orchid/plans/2026-08-28-003-mdp-275-primitive-driven-routing-plan.md",
     "sha256": "893e4a120ac067ad570ff57dd15e6370339f8ae203546da8ff9b6beebb34106a",
     "sourceRef": "codex/mdp-275-primitive-routing",
-    "sourceCommit": "1664309651dd60af4b81a23c77aa7ff9d9bc3cf8"
+    "sourceCommit": "9864e05f6dd69cf75f8639cc8e662f051c689d57"
   },
   "execution": {
     "model": "gpt-5.6-luna",
     "reasoningEffort": "medium",
     "requestedServiceTier": "fast",
     "observedServiceTier": "priority",
-    "taskId": "01a0465b-5113-7e13-92f0-e0b12ea9cc2c",
-    "dispatchHash": "47f0eb92a61f1d4d74dbb18753f1151f79ee10a86efaab2e60ae0883457c6468",
-    "implementationHead": "cc115a50b3704bfe4c510fb6e34ff8d827b6677b"
+    "taskId": "01a0466e-c52d-76a1-84de-bf9de10a0963",
+    "dispatchHash": "d6c6fee141eeadee4cb4fe5ff9b7b5324aa88186312b8895184cdb8585a0dfcd",
+    "implementationHead": "ec71471b6bdadd6973410a30382e77a7b546bc57"
   },
   "delivery": {
     "issueBranch": "codex/mdp-275-primitive-routing",
@@ -27,6 +27,6 @@
     "pullRequest": 236,
     "reconciledStandalonePullRequest": 237
   },
-  "recovery": "The first execution attempt stopped without an implementation commit when repository compatibility tests exposed a plan conflict. Relay revised and repinned the plan, accepted a plan-bound implementation, and routed two direct-review authority gaps through bounded Luna repairs. The completed prior thread remained writer-locked for the final mapped-versus-job-relevant authority finding, so Relay repinned the unchanged plan at the accepted implementation head and used a fresh plan-bound Luna recovery lane. A worker-created standalone PR was closed in favor of the authorized cumulative PR.",
-  "observedAt": "2026-08-28T03:26:00Z"
+  "recovery": "The first execution attempt stopped without an implementation commit when repository compatibility tests exposed a plan conflict. Relay revised and repinned the plan, accepted a plan-bound implementation, and routed direct-review authority gaps through bounded Luna repair or recovery lanes. A completed thread that remained writer-locked required a fresh plan pin for the mapped-versus-job-relevant authority fix. Direct review then caught an overcorrection that demoted resolved context guardrails, so a final plan-bound recovery restored that compatibility invariant. A worker-created standalone PR was closed in favor of the authorized cumulative PR.",
+  "observedAt": "2026-08-28T03:44:00Z"
 }
