@@ -37,6 +37,19 @@ pub(crate) fn decision_input_contract_violations(
             ));
         }
     }
+    for name in requirements.required_attributes() {
+        if !input
+            .attributes()
+            .get(name)
+            .is_some_and(meaningful_json_value)
+        {
+            violations.push(required_violation(
+                "attribute",
+                name,
+                &format!("attributes/{name}"),
+            ));
+        }
+    }
     violations.extend(decision_input_value_contract_violations(
         requirements,
         input,
@@ -79,19 +92,6 @@ pub(crate) fn decision_input_value_contract_violations(
                 scope,
                 name,
                 &join_path(path_prefix, name),
-            ));
-        }
-    }
-    for name in requirements.required_attributes() {
-        if !input
-            .attributes()
-            .get(name)
-            .is_some_and(meaningful_json_value)
-        {
-            violations.push(required_violation(
-                "attribute",
-                name,
-                &join_path(&join_path(path_prefix, "attributes"), name),
             ));
         }
     }

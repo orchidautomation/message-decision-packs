@@ -3635,6 +3635,23 @@ optional:
                 .iter()
                 .any(|value| value == "attributes.fiscal_year")
         );
+        assert_eq!(
+            result["context"]["missing_requirements"]
+                .as_array()
+                .expect("missing requirements array")
+                .iter()
+                .filter(|issue| issue["path"] == "attributes.fiscal_year")
+                .count(),
+            1,
+            "required_attributes must remain a readiness diagnostic, not be duplicated as a value-contract violation"
+        );
+        assert!(
+            result["context"]["invalid_requirements"]
+                .as_array()
+                .expect("invalid requirements array")
+                .iter()
+                .all(|issue| issue["path"] != "attributes/fiscal_year")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
