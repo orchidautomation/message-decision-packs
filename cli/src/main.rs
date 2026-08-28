@@ -27,6 +27,7 @@ mod scope;
 mod skill_catalog;
 mod starter;
 mod target_starter;
+mod template_registry;
 mod utils;
 mod value_contracts;
 

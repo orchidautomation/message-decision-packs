@@ -1,6 +1,17 @@
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+fn template_value(value: &str) -> Result<String, String> {
+    if crate::template_registry::lookup(value).is_some() {
+        Ok(value.to_string())
+    } else {
+        Err(format!(
+            "invalid value '{value}'; available: {}",
+            crate::template_registry::available()
+        ))
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "mdp")]
 #[command(about = "Author and route modular message decision packs for agent workflows")]
@@ -57,7 +68,8 @@ pub(crate) enum Commands {
         #[arg(
             long,
             default_value = "gtm",
-            help = "Starter template to write (available: gtm, proposal)"
+            value_parser = template_value,
+            help = "Starter template to write (available templates are registry-defined)"
         )]
         template: String,
         #[arg(long, help = "Overwrite existing starter files")]

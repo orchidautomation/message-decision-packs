@@ -15,14 +15,14 @@ use crate::target_starter::{
     target_cards, target_evals, target_manifest, target_prompts, target_prospect,
     target_source_ledger,
 };
+use crate::template_registry;
 use crate::utils::slugify;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use serde_yaml::Value as YamlValue;
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-const AVAILABLE_TEMPLATES: &str = "gtm, proposal";
+#[cfg(test)]
 const PROPOSAL_TEMPLATE_NAME: &str = "Proposal Reference Profile Sample";
 
 pub(crate) struct TargetInitOptions<'a> {
@@ -32,7 +32,6 @@ pub(crate) struct TargetInitOptions<'a> {
     pub(crate) aliases: &'a [String],
     pub(crate) excluded_terms: &'a [String],
 }
-
 impl Default for TargetInitOptions<'_> {
     fn default() -> Self {
         Self {
@@ -44,363 +43,6 @@ impl Default for TargetInitOptions<'_> {
         }
     }
 }
-
-const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
-    (
-        ".mdp/manifest.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/manifest.yaml"),
-    ),
-    (
-        ".mdp/sources.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/sources.yaml"),
-    ),
-    (
-        ".mdp/cards/bid-no-bid-rules.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/bid-no-bid-rules.yaml"),
-    ),
-    (
-        ".mdp/cards/compliance-boundaries.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/cards/compliance-boundaries.yaml"
-        ),
-    ),
-    (
-        ".mdp/cards/evaluation-criteria.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/cards/evaluation-criteria.yaml"
-        ),
-    ),
-    (
-        ".mdp/cards/gaps.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/gaps.yaml"),
-    ),
-    (
-        ".mdp/cards/opportunity-context.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/cards/opportunity-context.yaml"
-        ),
-    ),
-    (
-        ".mdp/cards/proof-library.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/proof-library.yaml"),
-    ),
-    (
-        ".mdp/cards/proposal-boundaries.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/cards/proposal-boundaries.yaml"
-        ),
-    ),
-    (
-        ".mdp/cards/proposal-output-rules.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/cards/proposal-output-rules.yaml"
-        ),
-    ),
-    (
-        ".mdp/cards/proposal-roles.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/proposal-roles.yaml"),
-    ),
-    (
-        ".mdp/cards/requirement-signals.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/cards/requirement-signals.yaml"
-        ),
-    ),
-    (
-        ".mdp/cards/requirements-matrix.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/cards/requirements-matrix.yaml"
-        ),
-    ),
-    (
-        ".mdp/cards/review-gates.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/review-gates.yaml"),
-    ),
-    (
-        ".mdp/cards/review-outputs.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/review-outputs.yaml"),
-    ),
-    (
-        ".mdp/evals/bid-no-bid-route.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/bid-no-bid-route.yaml"),
-    ),
-    (
-        ".mdp/evals/compliance-route.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/compliance-route.yaml"),
-    ),
-    (
-        ".mdp/evals/compliance-unsupported-claim.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/compliance-unsupported-claim.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/fit-insufficient-context.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/fit-insufficient-context.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/fit-policy-bypass-disqualified.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/fit-policy-bypass-disqualified.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/invented-proof-guardrail.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/invented-proof-guardrail.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/normalize-opportunity-insufficient-context.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-insufficient-context.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/normalize-opportunity-invalid-source-kind.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-invalid-source-kind.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/normalize-opportunity-missing-required-attribute.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-missing-required-attribute.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/normalize-opportunity-missing-required-signal.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-missing-required-signal.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/normalize-opportunity-output.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-output.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/normalize-opportunity-source-audit-mismatch.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-source-audit-mismatch.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-claim-source-ref-missing.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-claim-source-ref-missing.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-compliance-row.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-compliance-row.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-missing-proof-gap.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-missing-proof-gap.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-connective-text.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-connective-text.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-connective-too-long.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-connective-too-long.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-fake-id.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-fake-id.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-gap-only-safe.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-gap-only-safe.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-malformed-artifact.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-malformed-artifact.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-min-segments-violation.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-min-segments-violation.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-missing-binding.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-missing-binding.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-missing-required-segment.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-missing-required-segment.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-unsupported-claim.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-unsupported-claim.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-output-valid-binding.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-valid-binding.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proof-review-route.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-review-route.yaml"
-        ),
-    ),
-    (
-        ".mdp/evals/proposal-gaps.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/proposal-gaps.yaml"),
-    ),
-    (
-        ".mdp/evals/red-team-route.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/red-team-route.yaml"),
-    ),
-    (
-        ".mdp/prompts/normalize-opportunity.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/prompts/normalize-opportunity.yaml"
-        ),
-    ),
-    (
-        ".mdp/prompts/review-bid-no-bid.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-bid-no-bid.yaml"
-        ),
-    ),
-    (
-        ".mdp/prompts/review-proposal-compliance.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-compliance.yaml"
-        ),
-    ),
-    (
-        ".mdp/prompts/review-proposal-proof.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-proof.yaml"
-        ),
-    ),
-    (
-        ".mdp/prompts/review-proposal-red-team.yaml",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-red-team.yaml"
-        ),
-    ),
-    (
-        "examples/proof-output/claim-source-ref-missing.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/claim-source-ref-missing.json"
-        ),
-    ),
-    (
-        "examples/proof-output/compliance-row.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/compliance-row.json"
-        ),
-    ),
-    (
-        "examples/proof-output/missing-proof-gap.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/missing-proof-gap.json"
-        ),
-    ),
-    (
-        "examples/proof-output/connective-text.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/connective-text.json"
-        ),
-    ),
-    (
-        "examples/proof-output/connective-too-long.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/connective-too-long.json"
-        ),
-    ),
-    (
-        "examples/proof-output/fake-id.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/fake-id.json"
-        ),
-    ),
-    (
-        "examples/proof-output/gap-only-safe.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/gap-only-safe.json"
-        ),
-    ),
-    (
-        "examples/proof-output/malformed-artifact.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/malformed-artifact.json"
-        ),
-    ),
-    (
-        "examples/proof-output/min-segments-violation.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/min-segments-violation.json"
-        ),
-    ),
-    (
-        "examples/proof-output/missing-binding.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/missing-binding.json"
-        ),
-    ),
-    (
-        "examples/proof-output/missing-required-segment.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/missing-required-segment.json"
-        ),
-    ),
-    (
-        "examples/proof-output/unsupported-claim.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/unsupported-claim.json"
-        ),
-    ),
-    (
-        "examples/proof-output/valid-binding.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output/valid-binding.json"
-        ),
-    ),
-    (
-        "examples/proof-output-drafts/compliance-row.draft.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output-drafts/compliance-row.draft.json"
-        ),
-    ),
-    (
-        "examples/proof-output-drafts/missing-proof-gap.draft.json",
-        include_str!(
-            "../../../plugin/assets/templates/proposal/examples/proof-output-drafts/missing-proof-gap.draft.json"
-        ),
-    ),
-];
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn init_pack(
@@ -752,102 +394,104 @@ fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Va
     Ok(payload)
 }
 
-fn proposal_template_directories() -> Vec<String> {
-    vec![
-        ".mdp".to_string(),
-        ".mdp/briefs".to_string(),
-        ".mdp/cards".to_string(),
-        ".mdp/evals".to_string(),
-        ".mdp/prompts".to_string(),
-        "examples/proof-output".to_string(),
-        "examples/proof-output-drafts".to_string(),
-    ]
-}
-
-fn append_required_directories(inventory: &mut Vec<GeneratedArtifact>) {
-    let directories = vec![
-        ".mdp".to_string(),
-        ".mdp/briefs".to_string(),
-        ".mdp/cards".to_string(),
-        ".mdp/evals".to_string(),
-        ".mdp/prompts".to_string(),
-        "examples".to_string(),
-    ];
-    for relative in directories {
-        if !inventory
-            .iter()
-            .any(|artifact| artifact.relative == relative)
-        {
-            inventory.push(GeneratedArtifact::directory(relative));
-        }
-    }
-}
-
-fn proposal_readme(name: &str) -> Result<String> {
-    let manifest_raw = proposal_template_contents(
-        ".mdp/manifest.yaml",
-        include_str!("../../../plugin/assets/templates/proposal/.mdp/manifest.yaml"),
-        name,
-    )?;
+fn proposal_readme_from_inventory(inventory: &[GeneratedArtifact], _name: &str) -> Result<String> {
+    let manifest_raw = inventory
+        .iter()
+        .find(|a| a.relative == ".mdp/manifest.yaml")
+        .map(|a| a.bytes.as_slice())
+        .ok_or_else(|| anyhow!("embedded proposal manifest missing"))?;
     let manifest: Manifest =
-        serde_yaml::from_str(manifest_raw.as_ref()).context("parsing proposal manifest")?;
+        serde_yaml::from_slice(manifest_raw).context("parsing proposal manifest")?;
     let mut cards = Vec::new();
     let mut prompt_ids = Vec::new();
     let mut source_ledger = Value::Null;
-    for (relative_path, contents) in PROPOSAL_TEMPLATE_FILES {
-        if relative_path.starts_with(".mdp/cards/") {
+    for artifact in inventory {
+        if artifact.relative.starts_with(".mdp/cards/") && !artifact.is_directory {
             cards.push(
-                serde_yaml::from_str::<Card>(contents)
-                    .with_context(|| format!("parsing embedded {relative_path}"))?,
+                serde_yaml::from_slice::<Card>(&artifact.bytes)
+                    .with_context(|| format!("parsing embedded {}", artifact.relative))?,
             );
-        } else if *relative_path == ".mdp/sources.yaml" {
-            source_ledger = serde_yaml::from_str(contents)
+        } else if artifact.relative == ".mdp/sources.yaml" {
+            source_ledger = serde_yaml::from_slice(&artifact.bytes)
                 .context("parsing embedded proposal source ledger")?;
-        } else if relative_path.starts_with(".mdp/prompts/") {
-            let prompt: Value = serde_yaml::from_str(contents)
-                .with_context(|| format!("parsing embedded {relative_path}"))?;
+        } else if artifact.relative.starts_with(".mdp/prompts/") && !artifact.is_directory {
+            let prompt: Value = serde_yaml::from_slice(&artifact.bytes)
+                .with_context(|| format!("parsing embedded {}", artifact.relative))?;
             if let Some(id) = prompt["id"].as_str() {
                 prompt_ids.push(id.to_string());
             }
         }
     }
-    let card_refs = cards.iter().collect::<Vec<_>>();
     Ok(render_pack_readme(
         &manifest,
-        &card_refs,
+        &cards.iter().collect::<Vec<_>>(),
         &source_ledger,
         &prompt_ids,
     ))
 }
 
-fn proposal_template_contents(
-    relative_path: &str,
-    contents: &'static str,
-    name: &str,
-) -> Result<Cow<'static, str>> {
-    if relative_path != ".mdp/manifest.yaml" || name == PROPOSAL_TEMPLATE_NAME {
-        return Ok(Cow::Borrowed(contents));
+fn proposal_inventory(name: &str) -> Result<Vec<GeneratedArtifact>> {
+    let descriptor =
+        template_registry::lookup("proposal").ok_or_else(|| unsupported_template("proposal"))?;
+    let mut inventory = template_registry::inventory(descriptor);
+    append_required_directories(&mut inventory);
+    if name != descriptor.default_name {
+        let manifest = inventory
+            .iter_mut()
+            .find(|a| a.relative == ".mdp/manifest.yaml")
+            .ok_or_else(|| anyhow!("embedded proposal manifest missing"))?;
+        let mut value: YamlValue = serde_yaml::from_slice(&manifest.bytes)
+            .context("parsing embedded proposal manifest")?;
+        let map = value
+            .as_mapping_mut()
+            .ok_or_else(|| anyhow!("embedded proposal manifest must be a mapping"))?;
+        map.insert(
+            YamlValue::String("id".into()),
+            YamlValue::String(slugify(name)),
+        );
+        map.insert(
+            YamlValue::String("name".into()),
+            YamlValue::String(name.into()),
+        );
+        manifest.bytes = serde_yaml::to_string(&value)
+            .context("serializing embedded proposal manifest")?
+            .into_bytes();
     }
-    let mut manifest: YamlValue =
-        serde_yaml::from_str(contents).context("parsing embedded proposal manifest")?;
-    let map = manifest
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("embedded proposal manifest must be a mapping"))?;
-    map.insert(
-        YamlValue::String("id".to_string()),
-        YamlValue::String(slugify(name)),
-    );
-    map.insert(
-        YamlValue::String("name".to_string()),
-        YamlValue::String(name.to_string()),
-    );
-    Ok(Cow::Owned(
-        serde_yaml::to_string(&manifest).context("serializing embedded proposal manifest")?,
-    ))
+    let readme = proposal_readme_from_inventory(&inventory, name)?;
+    if let Some(existing) = inventory
+        .iter_mut()
+        .find(|a| a.relative == ".mdp/README.md")
+    {
+        existing.bytes = readme.into_bytes();
+    }
+    Ok(inventory)
 }
 
 fn unsupported_template(template: &str) -> anyhow::Error {
-    anyhow!("unsupported template '{template}'; available: {AVAILABLE_TEMPLATES}")
+    anyhow!(
+        "unsupported template '{template}'; available: {}",
+        template_registry::available()
+    )
+}
+
+fn append_required_directories(inventory: &mut Vec<GeneratedArtifact>) {
+    let Some(descriptor) = template_registry::lookup(
+        if inventory
+            .iter()
+            .any(|a| a.relative == "examples/proof-output/valid-binding.json")
+        {
+            "proposal"
+        } else {
+            "gtm"
+        },
+    ) else {
+        return;
+    };
+    for directory in descriptor.required_directories {
+        if !inventory.iter().any(|a| a.relative == *directory) {
+            inventory.push(GeneratedArtifact::directory(*directory));
+        }
+    }
 }
 
 /// Render a complete GTM starter tree as a list of generated artifacts.
@@ -863,6 +507,12 @@ fn build_gtm_inventory(
     governed: bool,
 ) -> Result<Vec<GeneratedArtifact>> {
     let _ = (root, force);
+    if target.is_none() && !governed && !include_output_schemas && name == "Basic MDP Template" {
+        let descriptor = template_registry::lookup("gtm").expect("gtm descriptor");
+        let mut inventory = template_registry::inventory(descriptor);
+        append_required_directories(&mut inventory);
+        return Ok(inventory);
+    }
     let slug = slugify(name);
     let manifest = if let Some(target) = target {
         target_manifest(name, &slug, template, target)
@@ -998,34 +648,7 @@ fn build_proposal_inventory(
     name: &str,
     _force: bool,
 ) -> Result<Vec<GeneratedArtifact>> {
-    let mut inventory = Vec::new();
-    for (relative_path, contents) in PROPOSAL_TEMPLATE_FILES {
-        let contents = proposal_template_contents(relative_path, contents, name)?;
-        let kind = if relative_path.ends_with(".json") {
-            "json-file"
-        } else {
-            "yaml-file"
-        };
-        inventory.push(GeneratedArtifact {
-            relative: (*relative_path).to_string(),
-            bytes: contents.as_ref().as_bytes().to_vec(),
-            kind,
-            eligible_for_force: true,
-            is_directory: false,
-        });
-    }
-    let readme = proposal_readme(name)?;
-    inventory.push(GeneratedArtifact {
-        relative: ".mdp/README.md".to_string(),
-        bytes: readme.into_bytes(),
-        kind: "markdown-file",
-        eligible_for_force: true,
-        is_directory: false,
-    });
-    for relative in proposal_template_directories() {
-        inventory.push(GeneratedArtifact::directory(relative));
-    }
-    Ok(inventory)
+    proposal_inventory(name)
 }
 
 /// Render a transaction-owned staging tree, run the staged validation
@@ -1212,7 +835,6 @@ mod tests {
     use crate::artifact_hash::pack_content_sha256;
     use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
     use crate::routing::narrow_starter_route_candidates_for_tests;
-    use std::borrow::Cow;
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
