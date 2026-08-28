@@ -1,6 +1,6 @@
 # MDP-275 — Primitive-driven shared authority selection
 
-Status: `READY_TO_PIN`
+Status: `READY_TO_PIN` (revision 2 after execution conflict recovery)
 
 ## 1. Context and current behavior
 
@@ -54,8 +54,9 @@ granularity to preserve guardrail and priority behavior.
   values.
 - A private primitive routing-policy layer used by card selection and shared
   entry authority classification.
-- Direct fail-closed errors for malformed, incomplete, or conflicting
-  primitive authority when routing is invoked without health gating.
+- Structured fail-closed routing through the existing validation and profile
+  activation gate for malformed, incomplete, or conflicting primitive
+  authority.
 - Legacy fallback for manifests with no profile/primitive contract.
 - Focused proposal-native and adversarial tests plus all existing routing and
   compatibility tests.
@@ -75,17 +76,23 @@ granularity to preserve guardrail and priority behavior.
 
 1. Multiple primitive memberships are valid and are merged deterministically.
    They are not ambiguous by themselves.
-2. A conflict means routing cannot derive a complete authority set: an unknown
-   primitive, a mapped unknown card, an unknown required primitive, a required
-   primitive with no mapped card, or an active-profile card with no primitive
-   membership. These cases fail closed with deterministic, body-free errors.
+2. A conflict means the active profile cannot prove its declared authority: an
+   unknown primitive, a mapped unknown card, an unknown required primitive, or
+   a required primitive with no mapped card. Existing health validation and
+   `profile_activation_decision` own the structured fail-closed result. The
+   routing index must not replace that result with an early `anyhow` error.
+   Transient supplemental/unmapped cards used by compatibility and pressure
+   tests may still route through the v0 adapter, but cannot satisfy a required
+   primitive or become primitive-derived authority.
 3. A manifest with no profile metadata and an empty primitive map is a legacy
    pack. It preserves the current `CardKind` behavior exactly.
 4. For an active primitive contract, primitive membership and job-required
-   primitives determine semantic eligibility/classification. The v0 CardKind
-   adapter may only preserve the existing fine-grained guardrail and priority
-   distinctions that are not represented in `PrimitiveMapping`; it may not
-   invent primitive membership.
+   primitives determine semantic authority/classification. Existing
+   persona/job applicability continues to determine candidate eligibility so
+   selected order and hashes do not drift. The v0 CardKind adapter preserves
+   the existing fine-grained guardrail and priority distinctions that are not
+   represented in `PrimitiveMapping`; it may route compatibility-only cards but
+   may not claim that they satisfy primitive requirements.
 5. No valid-pack output may drift. If a primitive-derived implementation would
    change a current GTM/proposal route, retain the existing output through the
    compatibility adapter and prove the primitive boundary with synthetic tests
@@ -98,7 +105,7 @@ granularity to preserve guardrail and priority behavior.
 | Shared routing is explainable from `primitive_map` and job requirements | Build the typed reverse index and resolve each selected card against the selected job's typed required primitives before applying the v0 adapter. | New unit tests show mapping/job changes control semantic authority while misleading proposal-native IDs do not. |
 | Proposal authority does not depend on pretending requirements are pains or outputs are copy patterns | Derive authority roles from `needs-requirements`, `output-contracts`, `boundaries`, and the other primitives; keep the kind only as a compatibility discriminator. | Proposal-native fixture asserts equivalent selection/classification with non-GTM card IDs and primitive-derived roles. |
 | GTM selection, budgets, hashes, and guardrails remain compatible | Preserve current order and fine-grained v0 behavior through the adapter; do not add fields to valid outputs. | Existing routing suite, exact context hash tests, route-cap pressure tests, GTM/proposal evals, and full Rust suite pass unchanged. |
-| Missing, ambiguous, or conflicting mappings fail closed | Validate the reverse index at the routing boundary and return deterministic errors instead of falling back for active profiles. Accept intentional multi-membership but reject incomplete or dangling authority. | Adversarial unit tests cover unknown primitive, dangling card, unmapped active card, empty required mapping, and stable multi-membership. |
+| Missing, ambiguous, or conflicting mappings fail closed | Let existing health/profile activation validation reject incomplete or dangling active-profile authority; the index never treats invalid or unmapped references as primitive authority. Accept intentional multi-membership. | Adversarial route tests assert structured blocked status and existing diagnostic codes for unknown primitive, dangling card, and empty required mapping; multi-membership remains stable. |
 | Legacy packs retain compatibility | Select the old adapter path only when both profile metadata and primitive mapping are absent. | Existing empty-map synthetic manifest tests remain byte/shape compatible; add an explicit legacy fallback assertion. |
 
 ## 4. Affected files and symbols
@@ -138,15 +145,19 @@ other CLI source. Escalate a plan conflict rather than widening scope.
    - Parse each `manifest.primitive_map` key as `PrimitiveId`.
    - Build deterministic `card_id -> BTreeSet<PrimitiveId>` and
      `PrimitiveId -> mapped card IDs` indexes.
-   - Confirm every referenced card exists and, for active profiles, every card
-     has at least one primitive membership.
+   - Index only mappings that resolve to current manifest cards. Preserve
+     unresolved references for the existing health gate to diagnose; do not
+     promote them into routing authority and do not early-error.
+   - Allow transient supplemental cards without mappings to use compatibility
+     applicability, but never count them as primitive authority.
    - Preserve intentional multi-membership without last-write-wins behavior.
 
 2. **Resolve the selected job contract.**
    - Resolve the exact `ProfileJob` for the requested job ID.
    - Parse its `required_primitives` through `PrimitiveId`.
-   - Require every declared primitive to have mapped authority.
-   - Return deterministic errors containing IDs and paths but no entry bodies.
+   - Resolve every recognized declared primitive that has mapped authority.
+     Leave unknown/empty authority to the existing validation and profile
+     activation blocker so CLI output remains structured and compatible.
    - Use the legacy adapter only for a manifest with no profile and no map.
 
 3. **Introduce primitive routing roles.**
@@ -159,9 +170,10 @@ other CLI source. Escalate a plan conflict rather than widening scope.
      names.
 
 4. **Make selection primitive-aware while preserving v0 output.**
-   - Use required primitive membership as semantic authority for eligibility
-     and classification.
-   - Retain persona and job/tag matching as existing applicability signals.
+   - Use required primitive membership as semantic authority and
+     classification, not as a new candidate-expansion or candidate-exclusion
+     rule for v0 packs.
+   - Retain persona and job/tag matching as the existing applicability signals.
    - Route primitive semantics through a clearly named v0 CardKind adapter for
      the fine-grained guardrail and priority distinctions not present in the
      manifest.
@@ -180,8 +192,10 @@ other CLI source. Escalate a plan conflict rather than widening scope.
    - Proposal-native IDs prove primitive membership, not GTM naming, controls
      authority.
    - Multi-membership is stable and deterministic.
-   - Unknown primitive, dangling card, unmapped active card, missing job, and
-     required primitive without mapped cards fail closed.
+   - Unknown primitive, dangling card, and required primitive without mapped
+     cards produce the existing structured validation/profile-activation block.
+     A transient unmapped supplemental card remains compatibility-only and
+     cannot satisfy required primitive authority.
    - Legacy empty-map manifests preserve selection and ordering.
    - Existing GTM/proposal outputs, cap pressure, minimality, and hashes remain
      unchanged.
@@ -216,8 +230,10 @@ is not required proof. Do not install it as part of this issue.
 - No schema or data migration.
 - No manifest, card, template, JSON, or serialized `CardKind` change.
 - Current valid GTM and proposal routes must remain byte/shape/hash compatible.
-- Active-profile malformed authority fails closed rather than silently using
-  kind-only semantics.
+- Active-profile malformed authority fails closed through existing
+  health/profile-activation diagnostics rather than an early routing exception.
+- Transient compatibility-only cards can still be selected by the v0 adapter,
+  but do not contribute primitive authority.
 - Legacy packs with neither profile metadata nor a primitive map use the exact
   previous compatibility path.
 - No release, install, deploy, migration command, or third-profile activation.
@@ -245,9 +261,14 @@ data or published contract requires reverse migration.
 
 MDP-273 is approved, MDP-274 is integrated and verified, MDP-275 has no current
 Linear blocker, the cumulative branch contains current `origin/main`, and the
-affected repository contracts are inspected. The current Linear status drift
-(`In Progress` with `phase:planned`) can be reconciled deterministically through
-`session.started` after the plan-bound worker dispatch; it is not a product or
-repository blocker.
+affected repository contracts are inspected.
+
+The initial execution attempt surfaced a plan/repository conflict: routing tests
+intentionally rename and add cards without synchronously rewriting
+`primitive_map`, expecting the existing health gate and compatibility path to
+remain authoritative. Revision 2 resolves that conflict by preserving
+structured health/profile blocking and treating transient unmapped cards as
+compatibility-only. No implementation commit was accepted from the stopped
+attempt. Linear is now consistently `In Progress` with `phase:in-progress`.
 
 Readiness verdict: `READY_TO_PIN`.
