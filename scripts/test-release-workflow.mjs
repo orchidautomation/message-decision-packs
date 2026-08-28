@@ -306,6 +306,12 @@ function assertAssetParityCiContract(workflow) {
     [assetParityCommand],
     'required CI must execute authored asset parity unconditionally',
   )
+  assertUnconditionalStep(cliJob, 'Validate cross-profile conformance')
+  assert.deepEqual(
+    runBlock(cliJob, 'Validate cross-profile conformance').filter((line) => !line.startsWith('#')),
+    ['make validate-profile-conformance'],
+    'cross-profile conformance must use the named make gate',
+  )
 }
 
 const workflow = readFileSync(workflowPath, 'utf8')
@@ -340,6 +346,10 @@ for (const [name, mutation] of [
   ['commented asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          # ${assetParityCommand}`)],
   ['echoed asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          echo ${assetParityCommand}`)],
   ['unreachable asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          if false; then\n            ${assetParityCommand}\n          fi`)],
+  [
+    'missing cross-profile conformance',
+    ciWorkflow.replace('          make validate-profile-conformance', '          make validate-cli'),
+  ],
   [
     'dry-run make substitution',
     ciWorkflow.replace(

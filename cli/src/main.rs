@@ -31,6 +31,9 @@ mod template_registry;
 mod utils;
 mod value_contracts;
 
+#[cfg(test)]
+mod profile_conformance;
+
 use crate::cli::Cli;
 use crate::output::{DisplayKind, print_error};
 use crate::run_request_compiler::CompilerError;

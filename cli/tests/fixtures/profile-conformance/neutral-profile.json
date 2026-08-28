@@ -1,0 +1,23 @@
+{
+  "id": "neutral",
+  "registered": false,
+  "primitive_ids": ["actors", "decision-criteria", "source-signals", "needs-requirements", "evidence-proof", "boundaries", "output-contracts", "routing-jobs", "gaps", "evals"],
+  "mappings": {
+    "actors": ["actors"], "decision-criteria": ["criteria"], "source-signals": ["sources"],
+    "needs-requirements": ["needs"], "evidence-proof": ["evidence"], "boundaries": ["boundaries"],
+    "output-contracts": ["outcomes"], "routing-jobs": ["triage"], "gaps": ["gaps"], "evals": ["evals"]
+  },
+  "jobs": [{"id": "record-triage", "skill_id": "neutral-review", "required_primitives": ["actors", "decision-criteria", "source-signals", "needs-requirements", "evidence-proof", "boundaries", "output-contracts", "routing-jobs", "gaps"], "input_contracts": ["record"], "max_entries": 64, "max_bytes": 65536}],
+  "input_contracts": ["record"],
+  "route_ready": true,
+  "eval_categories": ["proceed", "insufficient-context", "refusal", "unsafe-output", "job-routing"],
+  "activation_ready": true,
+  "health_valid": true,
+  "eval_valid": true,
+  "output_mapping": true,
+  "gap_mapping": true,
+  "eval_mapping": true,
+  "receipt_trace_clean_replay": true,
+  "authored_digest": null,
+  "text": ["Record triage", "source", "policy", "review", "outcome", "follow-up"]
+}
