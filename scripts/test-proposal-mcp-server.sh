@@ -19,14 +19,14 @@ oversized_source="$tmp_dir/oversized-source.txt"
 
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema proposal-mcp-run-result > "$mcp_result_schema"
 
-source_file="$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt"
+source_file="$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt"
 ln -s "$source_file" "$source_symlink"
 truncate -s 5000001 "$oversized_source"
 
 python3 - "$root" "$pack" "$workdir" "$transcript" "$source_symlink" "$oversized_source" <<'PY'
 import json, pathlib, sys
 root, pack, workdir, transcript, source_symlink, oversized_source = sys.argv[1:]
-source = str(pathlib.Path(root) / "examples" / "proposal-flow-video" / "messy-sources" / "01-rfp-ocr.txt")
+source = str(pathlib.Path(root) / "scripts" / "fixtures" / "proposal-runner" / "sources" / "01-rfp-ocr.txt")
 messages = [
     {
         "jsonrpc": "2.0",
@@ -213,7 +213,7 @@ PY
 node --check "$root/scripts/mdp-proposal-mcp-server.mjs"
 provider_key="OPENAI_API_KEY"
 env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
-  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_INPUT_ROOTS="$root/scripts/fixtures/proposal-runner/sources:$tmp_dir" \
   MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
   MDP_MCP_WORK_ROOTS="$tmp_dir" \
   MDP_MCP_CONSENT_ROOTS="$tmp_dir" \
@@ -408,7 +408,7 @@ message = {
 open(transcript, "w", encoding="utf-8").write(json.dumps(message) + "\n")
 PY
 env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
-  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_INPUT_ROOTS="$root/scripts/fixtures/proposal-runner/sources:$tmp_dir" \
   MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
   MDP_MCP_WORK_ROOTS="$tmp_dir" \
   MDP_MCP_CONSENT_ROOTS="$tmp_dir" \
@@ -494,7 +494,7 @@ with open(transcript, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(message) + "\n")
 PY
 env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
-  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_INPUT_ROOTS="$root/scripts/fixtures/proposal-runner/sources:$tmp_dir" \
   MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
   MDP_MCP_WORK_ROOTS="$tmp_dir" \
   MDP_MCP_CONSENT_ROOTS="$tmp_dir" \

@@ -2,6 +2,11 @@
 
 This repo is prepared for the Orchid Agent Stack.
 
+This is a public repository. Commit only durable, public-safe workflow
+artifacts here. Private Linear context stays in Linear; raw, temporary, bulky,
+or sensitive agent output belongs in the gitignored `.agent-artifacts/`
+directory. Obsolete runnable code belongs in Git history, not in this tree.
+
 - `brainstorms/` stores early thinking, PRDs, and problem framing.
 - `requirements/` stores scoped source summaries and requirements.
 - `plans/` stores implementation plans and CE plans.

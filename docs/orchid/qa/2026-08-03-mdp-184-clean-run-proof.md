@@ -144,7 +144,7 @@ MDP_BIN=/path/to/installed/mdp node scripts/test-run-conformance.mjs
 node /path/to/installed/plugin/scripts/mdp-proposal-runner.mjs run \
   --pack plugin/assets/templates/proposal \
   --workdir /private/temporary/proof \
-  --source examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt \
+  --source scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt \
   --source-id synthetic-rfp-summary \
   --source-kind synthetic-example \
   --model <operator-selected-model> \

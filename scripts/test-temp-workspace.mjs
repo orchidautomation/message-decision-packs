@@ -534,10 +534,14 @@ test('missing or no-op secure helper fails closed without claiming cleanup', (t)
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-helper-fail-closed-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
   const previous = process.env.MDP_BIN
+  const previousSecure = process.env.MDP_SECURE_INSTALL_BIN
   t.after(() => {
     if (previous === undefined) delete process.env.MDP_BIN
     else process.env.MDP_BIN = previous
+    if (previousSecure === undefined) delete process.env.MDP_SECURE_INSTALL_BIN
+    else process.env.MDP_SECURE_INSTALL_BIN = previousSecure
   })
+  delete process.env.MDP_SECURE_INSTALL_BIN
 
   const missingRoot = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
   writeFileSync(join(missingRoot, 'owned'), 'owned bytes')

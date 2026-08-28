@@ -258,14 +258,7 @@ node scripts/mdp-proposal-runner.mjs run \
   --mock-response <openai-response-fixture.json>
 ```
 
-Mock mode intentionally writes native-runner audit evidence with `mock_response: true`, `isolated_invocation: false`, and `stateless_request: false`. `mdp run-receipt --require-runner-audit` must block this path. Treat that blocked receipt as success for fixture safety and failure for production assurance.
-
-The default public video uses this synthetic mock path. Label it mock/non-audit-grade. Replace that label only for a real invocation whose own required runner-audit receipt is audit-grade; do not reuse fixture artifacts as proof.
-
-Before recording or sharing that walkthrough, use the
-[Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md). It defines the
-red/yellow/green evidence states, exact safe narration for the mock path,
-screen-recording redactions, and the human-owned final go/no-go decision.
+Mock mode intentionally writes native-runner audit evidence with `mock_response: true`, `isolated_invocation: false`, and `stateless_request: false`. `mdp run-receipt --require-runner-audit` must block this path. Treat that blocked receipt as success for fixture safety and failure for production assurance. Never reuse synthetic fixture artifacts as proof for a real invocation.
 
 Validate the local surface with:
 

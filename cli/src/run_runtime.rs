@@ -6081,10 +6081,9 @@ mod tests {
         let run = root.join("published-run");
         init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let output = repository
-            .join("examples/proposal-flow-video/fixtures/normalize-opportunity-output.json");
-        let source_audit =
-            repository.join("examples/proposal-flow-video/fixtures/source-audit.json");
+        let output =
+            repository.join("scripts/fixtures/proposal-runner/normalize-opportunity-output.json");
+        let source_audit = repository.join("scripts/fixtures/proposal-runner/source-audit.json");
         let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
         request.inputs.push(LocalArtifactInput {
             logical_name: "source-audit".into(),
@@ -6297,10 +6296,9 @@ mod tests {
         let run = root.join("run");
         init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let output = repository
-            .join("examples/proposal-flow-video/fixtures/normalize-opportunity-output.json");
-        let source_audit =
-            repository.join("examples/proposal-flow-video/fixtures/source-audit.json");
+        let output =
+            repository.join("scripts/fixtures/proposal-runner/normalize-opportunity-output.json");
+        let source_audit = repository.join("scripts/fixtures/proposal-runner/source-audit.json");
         let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
         request.inputs.push(LocalArtifactInput {
             logical_name: "source-audit".into(),
@@ -6373,8 +6371,8 @@ mod tests {
         let run = root.join("run");
         init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let output = repository
-            .join("examples/proposal-flow-video/fixtures/normalize-opportunity-output.json");
+        let output =
+            repository.join("scripts/fixtures/proposal-runner/normalize-opportunity-output.json");
         let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
         request.inputs[0].logical_name = "backup-prompt-output".into();
 

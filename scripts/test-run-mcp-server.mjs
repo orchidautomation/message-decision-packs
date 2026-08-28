@@ -1721,7 +1721,7 @@ test('interrupting the real CLI during staging removes its exact claim and priva
     writeFileSync(join(stagingFixture, `${index.toString().padStart(4, '0')}.txt`), 'a')
   }
   const promptOutput = join(root, 'prompt-output.json')
-  cpSync(join(repoRoot, 'examples', 'proposal-flow-video', 'fixtures', 'normalize-opportunity-output.json'), promptOutput)
+  cpSync(join(repoRoot, 'scripts', 'fixtures', 'proposal-runner', 'normalize-opportunity-output.json'), promptOutput)
   const requestPath = join(root, 'request.json')
   const outputDir = join(root, 'interrupted-run')
   writeFileSync(requestPath, `${JSON.stringify({

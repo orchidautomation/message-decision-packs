@@ -16,8 +16,8 @@ import { fileURLToPath } from 'node:url'
 const HARNESS_CONTRACT = 'mdp.proposal-evidence-harness.v0'
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDir, '..')
-const outputFixture = join(repoRoot, 'examples', 'proposal-flow-video', 'fixtures', 'normalize-opportunity-output.json')
-const sourceAuditFixture = join(repoRoot, 'examples', 'proposal-flow-video', 'fixtures', 'source-audit.json')
+const outputFixture = join(repoRoot, 'scripts', 'fixtures', 'proposal-runner', 'normalize-opportunity-output.json')
+const sourceAuditFixture = join(repoRoot, 'scripts', 'fixtures', 'proposal-runner', 'source-audit.json')
 
 const sha256Bytes = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const sha256File = (path) => sha256Bytes(readFileSync(path))

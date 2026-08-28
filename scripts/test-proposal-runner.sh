@@ -16,11 +16,6 @@ minimal_attrs_output="$tmp_dir/minimal-attrs-output.json"
 dry_result="$tmp_dir/dry-result.json"
 mock_result="$tmp_dir/mock-result.json"
 clean_run_result="$tmp_dir/clean-run-result.json"
-demo_stdout="$tmp_dir/demo.stdout"
-helper_audit="$tmp_dir/helper-runner-audit.json"
-helper_stdout="$tmp_dir/helper.stdout.json"
-helper_receipt="$tmp_dir/helper-receipt.json"
-helper_receipt_stdout="$tmp_dir/helper-receipt.stdout.json"
 source_intake_schema="$tmp_dir/source-intake.schema.json"
 source_audit_schema="$tmp_dir/source-audit.schema.json"
 native_request_schema="$tmp_dir/native-normalize-request.schema.json"
@@ -36,7 +31,7 @@ cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema prompt
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema proposal-runner-result > "$runner_result_schema"
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema proposal-run-manifest > "$run_manifest_schema"
 
-python3 - "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" "$mock_response" "$minimal_attrs_output" <<'PY'
+python3 - "$root/scripts/fixtures/proposal-runner/normalize-opportunity-output.json" "$mock_response" "$minimal_attrs_output" <<'PY'
 import copy, json, sys
 fixture = json.load(open(sys.argv[1]))
 payload = {
@@ -85,7 +80,7 @@ PY
 node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack "$pack" \
   --workdir "$tmp_dir/dry-run" \
-  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
   --source-id synthetic-rfp-summary \
   --source-kind synthetic-example \
   --dry-run > "$dry_result"
@@ -313,7 +308,7 @@ PY
 node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack "$pack" \
   --workdir "$tmp_dir/approved-dry-run" \
-  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
   --source-intake "$tmp_dir/approved-source-intake.json" \
   --source-id synthetic-rfp-summary \
   --source-kind synthetic-example \
@@ -334,7 +329,7 @@ node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack "$pack" \
   --workdir "$tmp_dir/dry-run" \
   --reuse-workdir-id "$workdir_id" \
-  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
   --source-id synthetic-rfp-summary \
   --source-kind synthetic-example \
   --dry-run > "$tmp_dir/reused-dry-result.json"
@@ -359,7 +354,7 @@ JS
 node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack "$pack" \
   --workdir "$tmp_dir/concurrent-workdir" \
-  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
   --source-id synthetic-rfp-summary \
   --source-kind synthetic-example \
   --native-runner "$tmp_dir/slow-native-runner.mjs" \
@@ -387,7 +382,7 @@ expect_fail "partial or unknown runs fail closed" \
     --pack "$pack" \
     --workdir "$tmp_dir/concurrent-workdir" \
     --reuse-workdir-id "$concurrent_workdir_id" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --dry-run
@@ -397,7 +392,7 @@ expect_fail "source-id must be lowercase safe ID" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
     --workdir "$tmp_dir/unsafe-source-id" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id ../escape \
     --source-kind synthetic-example \
     --dry-run
@@ -406,7 +401,7 @@ expect_fail "Generating a source audit from --source requires --source-id" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
     --workdir "$tmp_dir/missing-source-id" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-kind synthetic-example \
     --dry-run
 
@@ -414,7 +409,7 @@ expect_fail "does not exist in .mdp/sources.yaml" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
     --workdir "$tmp_dir/unknown-source-id" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id nonexistent-source \
     --source-kind synthetic-example \
     --dry-run
@@ -429,7 +424,7 @@ assert manifest["error"]["code"] == "runner-failed"
 assert not pathlib.Path(sys.argv[1]).with_name(".mdp-proposal-run.lock").exists()
 PY
 
-ln -s "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" "$tmp_dir/source-link.txt"
+ln -s "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" "$tmp_dir/source-link.txt"
 expect_fail "source must not be a symlink" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
@@ -445,7 +440,7 @@ expect_fail "Workdir already exists and is not empty" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
     --workdir "$tmp_dir/stale-workdir" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --dry-run
@@ -455,7 +450,7 @@ expect_fail "Workdir reuse manifest does not match" \
     --pack "$pack" \
     --workdir "$tmp_dir/dry-run" \
     --reuse-workdir-id wrong-id \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --dry-run
@@ -465,7 +460,7 @@ expect_fail "Workdir must not be a symlink" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
     --workdir "$tmp_dir/workdir-link" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --dry-run
@@ -473,7 +468,7 @@ expect_fail "Workdir must not be a symlink" \
 node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack "$pack" \
   --workdir "$tmp_dir/managed-symlink-workdir" \
-  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
   --source-id synthetic-rfp-summary \
   --source-kind synthetic-example \
   --dry-run > "$tmp_dir/managed-symlink-first.json"
@@ -486,7 +481,7 @@ expect_fail "Managed proposal directory must not be a symlink" \
     --pack "$pack" \
     --workdir "$tmp_dir/managed-symlink-workdir" \
     --reuse-workdir-id "$managed_workdir_id" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --dry-run
@@ -499,7 +494,7 @@ expect_fail "Pack content must not be a symlink" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$tmp_dir/symlink-pack" \
     --workdir "$tmp_dir/symlink-pack-workdir" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --dry-run
@@ -519,7 +514,7 @@ expect_fail "Pack validation failed before model invocation" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$tmp_dir/invalid-pack" \
     --workdir "$tmp_dir/invalid-pack-workdir" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --native-runner "$tmp_dir/should-not-run.mjs" \
@@ -550,7 +545,7 @@ expect_fail "must bind to exactly one staged source with matching snippet bytes"
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
     --workdir "$tmp_dir/malicious-audit" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-audit "$tmp_dir/malicious-source-audit.json" \
     --source-kind synthetic-example \
     --dry-run
@@ -559,7 +554,7 @@ expect_fail "Real native runs require --source-intake" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
     --pack "$pack" \
     --workdir "$tmp_dir/real-without-intake" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
     --source-id synthetic-rfp-summary \
     --source-kind synthetic-example \
     --model test-model
@@ -568,7 +563,7 @@ cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json validate-prom
   --dir "$pack" \
   --prompt-id normalize-opportunity \
   --file "$minimal_attrs_output" \
-  --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" > "$tmp_dir/minimal-attrs-validation.json"
+  --source-audit "$root/scripts/fixtures/proposal-runner/source-audit.json" > "$tmp_dir/minimal-attrs-validation.json"
 
 python3 - "$tmp_dir/minimal-attrs-validation.json" <<'PY'
 import json, sys
@@ -579,11 +574,11 @@ PY
 node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack "$pack" \
   --workdir "$tmp_dir/mock-run" \
-  --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" \
-  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
-  --source "$root/examples/proposal-flow-video/messy-sources/02-capture-notes.md" \
-  --source "$root/examples/proposal-flow-video/messy-sources/03-proof-inventory.md" \
-  --source "$root/examples/proposal-flow-video/messy-sources/04-compliance-matrix.csv" \
+  --source-audit "$root/scripts/fixtures/proposal-runner/source-audit.json" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/02-capture-notes.md" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/03-proof-inventory.md" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/04-compliance-matrix.csv" \
   --source-kind synthetic-example \
   --model gpt-test \
   --mock-response "$mock_response" > "$mock_result"
@@ -632,11 +627,11 @@ node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack-release-id proposal-test-release-v1 \
   --clean-run-v1 \
   --workdir "$tmp_dir/clean-run" \
-  --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" \
-  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
-  --source "$root/examples/proposal-flow-video/messy-sources/02-capture-notes.md" \
-  --source "$root/examples/proposal-flow-video/messy-sources/03-proof-inventory.md" \
-  --source "$root/examples/proposal-flow-video/messy-sources/04-compliance-matrix.csv" \
+  --source-audit "$root/scripts/fixtures/proposal-runner/source-audit.json" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/02-capture-notes.md" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/03-proof-inventory.md" \
+  --source "$root/scripts/fixtures/proposal-runner/sources/04-compliance-matrix.csv" \
   --source-kind synthetic-example \
   --model gpt-test \
   --mock-response "$mock_response" > "$clean_run_result"
@@ -698,11 +693,11 @@ expect_fail "Native normalization failed before canonical clean-run finalization
     --pack-release-id proposal-test-release-v1 \
     --clean-run-v1 \
     --workdir "$tmp_dir/native-failure-clean-run" \
-    --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" \
-    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
-    --source "$root/examples/proposal-flow-video/messy-sources/02-capture-notes.md" \
-    --source "$root/examples/proposal-flow-video/messy-sources/03-proof-inventory.md" \
-    --source "$root/examples/proposal-flow-video/messy-sources/04-compliance-matrix.csv" \
+    --source-audit "$root/scripts/fixtures/proposal-runner/source-audit.json" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/02-capture-notes.md" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/03-proof-inventory.md" \
+    --source "$root/scripts/fixtures/proposal-runner/sources/04-compliance-matrix.csv" \
     --source-kind synthetic-example \
     --model gpt-test \
     --native-runner "$tmp_dir/failing-native-runner.mjs" \
@@ -716,74 +711,14 @@ assert manifest["status"] == "blocked"
 assert manifest["decision"] == "blocked"
 PY
 
-DEMO_WORKDIR="$tmp_dir/demo" bash "$root/examples/proposal-flow-video/scripts/run-demo.sh" > "$demo_stdout"
-
-python3 - "$tmp_dir/demo/artifacts/proposal-runner-result.json" "$tmp_dir/demo/artifacts/run-receipt.json" "$tmp_dir/demo/artifacts/runner-audit.json" "$tmp_dir/demo/artifacts/proof-output-verify.json" "$tmp_dir/demo/artifacts/check-claims-unsupported.json" <<'PY'
-import json, sys
-runner_result = json.load(open(sys.argv[1]))
-receipt = json.load(open(sys.argv[2]))
-runner_audit = json.load(open(sys.argv[3]))
-proof = json.load(open(sys.argv[4]))["data"]
-claim = json.load(open(sys.argv[5]))["data"]
-assert runner_result["mode"] == "mock"
-assert runner_result["audit_grade_eligible"] is False
-assert receipt["decision"] == "blocked"
-assert receipt["runner"]["assurance"] == "invalid"
-assert runner_audit["mock_response"] is True
-assert proof["valid"] is True
-assert claim["valid"] is False
-PY
-
-node "$root/examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs" \
-  --prompt-output "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" \
-  --out "$helper_audit" > "$helper_stdout"
-
-cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json validate-prompt-output \
-  --dir "$pack" \
-  --prompt-id normalize-opportunity \
-  --file "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" \
-  --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" > "$tmp_dir/helper-validation.json"
-
-if cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json run-receipt \
-  --dir "$pack" \
-  --workflow proposal-review \
-  --isolation isolated \
-  --declared-inputs-only \
-  --prompt-id normalize-opportunity \
-  --prompt-output "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" \
-  --validation "$tmp_dir/helper-validation.json" \
-  --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" \
-  --runner-audit "$helper_audit" \
-  --require-runner-audit \
-  --out "$helper_receipt" > "$helper_receipt_stdout"; then
-  echo "expected legacy demo runner-audit helper to block receipt" >&2
-  exit 1
-fi
-
-python3 - "$helper_stdout" "$helper_audit" "$helper_receipt" <<'PY'
-import json, sys
-helper = json.load(open(sys.argv[1]))
-audit = json.load(open(sys.argv[2]))
-receipt = json.load(open(sys.argv[3]))
-assert helper["audit_grade_eligible"] is False
-assert audit["mock_response"] is True
-assert audit["isolated_invocation"] is False
-assert audit["declared_inputs_only"] is False
-assert receipt["decision"] == "blocked"
-assert receipt["runner"]["assurance"] == "invalid"
-PY
-
-python3 - "$tmp_dir/dry-run/artifacts/proposal-runner-result.json" "$tmp_dir/dry-run/artifacts/proposal-readiness-report.json" "$tmp_dir/demo/artifacts/proposal-readiness-report.json" <<'PY'
+python3 - "$tmp_dir/dry-run/artifacts/proposal-runner-result.json" "$tmp_dir/dry-run/artifacts/proposal-readiness-report.json" <<'PY'
 import json, pathlib, sys
 result = json.load(open(sys.argv[1]))
 dry = json.load(open(sys.argv[2]))
-demo = json.load(open(sys.argv[3]))
 assert pathlib.Path(result["readiness_report"]).resolve() == pathlib.Path(sys.argv[2]).resolve()
 assert dry["contract"] == "mdp.proposal-readiness-report.v0"
 assert dry["readiness"]["status"] == "blocked"
 assert "non_native_evidence" in [finding["code"] for finding in dry["findings"]]
-assert demo["readiness"]["status"] == "blocked"
-assert all(len(anchor["sha256"]) == 64 for anchor in demo["anchors"])
 PY
 
 echo '{"ok":true,"contract":"mdp.proposal-runner-test.v0"}'

@@ -91,6 +91,28 @@ function expectPreflightRefusal(result, label, reasonCode) {
   return data;
 }
 
+function invokeMcp(message) {
+  const invoked = spawnSync(process.execPath, [join(repoRoot, "scripts", "mdp-run-mcp-server.mjs")], {
+    cwd: root,
+    input: `${message}\n`,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: process.env.PATH || "",
+      MDP_BIN: mdp,
+      MDP_MCP_PACK_ROOTS: root,
+      MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`,
+      MDP_MCP_APPROVAL_ROOTS: root,
+      MDP_MCP_WORK_ROOTS: root,
+      MDP_MCP_OUTPUT_ROOTS: root,
+      MDP_MCP_CONSENT_ROOTS: root,
+    },
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  assert.equal(invoked.status, 0, invoked.stderr);
+  return JSON.parse(invoked.stdout.trim());
+}
+
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
@@ -198,7 +220,7 @@ try {
   assert.ok(existsSync(mdp), `compiled CLI not found at ${mdp}; run cargo build --manifest-path cli/Cargo.toml`);
   cpSync(join(repoRoot, "plugin", "assets", "templates", "proposal"), pack, { recursive: true });
   cpSync(join(repoRoot, "examples", "clay-audiences-self-serve-enterprise-expansion"), gtmPack, { recursive: true });
-  copyFileSync(join(repoRoot, "examples", "proposal-flow-video", "fixtures", "normalize-opportunity-output.json"), validOutput);
+  copyFileSync(join(repoRoot, "scripts", "fixtures", "proposal-runner", "normalize-opportunity-output.json"), validOutput);
   writeJson(invalidOutput, { contract: "mdp.prompt-output.v0", prompt_id: "normalize-opportunity" });
   const disqualifiedResults = JSON.parse(readFileSync(join(gtmPack, "fixtures", "collected-attempt-results.json"), "utf8"));
   disqualifiedResults.attributes.enterprise_eligibility.value = "ineligible";
@@ -286,18 +308,12 @@ try {
     const call = (id, name, args) => JSON.stringify({
       jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args },
     });
-    const input = [
-      call(1, "mdp_run", { request_path: qualifiedRequest, request_sha256: createHash("sha256").update(readFileSync(qualifiedRequest)).digest("hex"), output_dir: qualifiedOut }),
-      call(2, "mdp_verify_run", { bundle_path: join(qualifiedOut, "run-bundle.json"), receipt_path: join(qualifiedOut, "run-receipt.json"), artifact_root: qualifiedOut }),
-      call(3, "mdp_run", { request_path: disqualifiedRequest, request_sha256: createHash("sha256").update(readFileSync(disqualifiedRequest)).digest("hex"), output_dir: disqualifiedOut }),
-      call(4, "mdp_verify_run", { bundle_path: join(disqualifiedOut, "run-bundle.json"), receipt_path: join(disqualifiedOut, "run-receipt.json"), artifact_root: disqualifiedOut }),
-    ].join("\n");
-    const invoked = spawnSync(process.execPath, [join(repoRoot, "scripts", "mdp-run-mcp-server.mjs")], {
-      cwd: root, input: `${input}\n`, encoding: "utf8",
-      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: root, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root }, maxBuffer: 16 * 1024 * 1024,
-    });
-    assert.equal(invoked.status, 0, invoked.stderr);
-    const replies = invoked.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    const replies = [
+      invokeMcp(call(1, "mdp_run", { request_path: qualifiedRequest, request_sha256: createHash("sha256").update(readFileSync(qualifiedRequest)).digest("hex"), output_dir: qualifiedOut })),
+      invokeMcp(call(2, "mdp_verify_run", { bundle_path: join(qualifiedOut, "run-bundle.json"), receipt_path: join(qualifiedOut, "run-receipt.json"), artifact_root: qualifiedOut })),
+      invokeMcp(call(3, "mdp_run", { request_path: disqualifiedRequest, request_sha256: createHash("sha256").update(readFileSync(disqualifiedRequest)).digest("hex"), output_dir: disqualifiedOut })),
+      invokeMcp(call(4, "mdp_verify_run", { bundle_path: join(disqualifiedOut, "run-bundle.json"), receipt_path: join(disqualifiedOut, "run-receipt.json"), artifact_root: disqualifiedOut })),
+    ];
     assert.ok(replies[0]?.result, JSON.stringify(replies[0]));
     assert.equal(replies[0].result.isError, false, JSON.stringify(replies[0]));
     assert.ok(replies[2]?.result, JSON.stringify(replies[2]));
@@ -347,15 +363,8 @@ try {
         artifact_root: outDir,
       },
     } });
-    const invoked = spawnSync(process.execPath, [join(repoRoot, "scripts", "mdp-run-mcp-server.mjs")], {
-      cwd: root,
-      input: `${runMessage}\n${verifyMessage}\n`,
-      encoding: "utf8",
-      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: root, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root },
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    assert.equal(invoked.status, 0, invoked.stderr);
-    const [reply, verificationReply] = invoked.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    const reply = invokeMcp(runMessage);
+    const verificationReply = invokeMcp(verifyMessage);
     assert.ok(reply?.result, JSON.stringify(reply));
     assert.ok(verificationReply?.result, JSON.stringify(verificationReply));
     assert.equal(reply.result.isError, false, JSON.stringify(reply));
