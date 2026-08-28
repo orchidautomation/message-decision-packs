@@ -1,8 +1,8 @@
 # MDP-273 Primitive Core, Profile, and Template Contract
 
-**Date:** 2026-08-28  
-**Issue:** MDP-273  
-**Status:** Proposed pending Brandon approval  
+**Date:** 2026-08-28
+**Issue:** MDP-273
+**Status:** Proposed pending Brandon approval
 **Decision type:** Public architecture and compatibility authority
 
 ## Decision
@@ -105,13 +105,13 @@ in this program).
 
 | Issue | Owns | Must prove |
 | --- | --- | --- |
-| MDP-274 | Core primitive authority and neutral contracts | Exactly ten IDs, no profile switch in core, schema/health authority alignment, and negative unknown-primitive coverage. This issue is blocked until Brandon approves this decision. |
-| MDP-275 | Profile registry and actor/persona adapter | Only GTM/proposal activate; persona fields remain compatible; actor mapping handles ambiguity without silently changing selection. |
-| MDP-276 | Prospect/opportunity neutral input and normalization adapters | Prospect v0 and opportunity v0 remain valid; normalized alias is exact for proposal and absent/non-proposal elsewhere; lead requirements remain enforced. |
-| MDP-277 | Declarative job and skill registry | Seven route specs and five packaged skill IDs remain compatible; wrong profile, duplicate, unknown, and fixture-only route tests fail closed. |
-| MDP-278 | Primitive-aware routing and compiled-context adapter | Existing `CardKind` guardrails, priority, route caps, context budgets, output shape, and hashes are preserved for GTM/proposal fixtures. |
-| MDP-279 | Neutral conformance fixture | Fixture is synthetic and test-only, exercises the ten-core contract, and is absent from installation, capabilities, templates, skills, and packaging inventories. |
-| MDP-280 | Data-first template registry/publication | Basic and proposal inventories share one publication path, validate transactionally, preserve canonical bytes/paths, and reject unregistered templates. |
+| MDP-274 | Centralize the ten primitives as one typed core contract. | Exactly ten IDs, no profile switch in core, schema/health authority alignment, and negative unknown-primitive coverage. This issue is blocked until Brandon approves this decision. |
+| MDP-275 | Make shared authority selection/routing primitive-driven instead of CardKind-driven. | Existing `CardKind` guardrails, priority, route caps, context budgets, output shape, and hashes are preserved for GTM/proposal fixtures. |
+| MDP-276 | Introduce neutral decision-input internals with GTM/proposal compatibility adapters, including actor/persona and prospect/opportunity seams where applicable. | Prospect v0 and opportunity v0 remain valid; normalized alias is exact for proposal and absent/non-proposal elsewhere; lead requirements remain enforced; actor mapping handles ambiguity without silently changing selection. |
+| MDP-277 | Declarative closed per-profile job/skill registry. | Seven route specs and five packaged skill IDs remain compatible; wrong profile, duplicate, unknown, and fixture-only route tests fail closed. |
+| MDP-278 | Unified data-first GTM/proposal template descriptor, inventory, and init/publication pipeline. | Basic and proposal inventories share one publication path, validate transactionally, preserve canonical bytes/paths, and reject unregistered templates. |
+| MDP-279 | Cross-profile conformance gate and test-only neutral fixture. | Fixture is synthetic and test-only, exercises the ten-core contract, and is absent from installation, capabilities, templates, skills, and packaging inventories. |
+| MDP-280 | Extension-boundary documentation, exact-commit integration validation, and cumulative PR handoff. | The cumulative downstream head documents extension boundaries, validates the exact integration commit, and hands off one cumulative PR with the required compatibility evidence. |
 
 The cumulative downstream head must additionally run `cargo fmt --check`, the
 full Rust suite, strict GTM and proposal validation/evals, profile conformance,
