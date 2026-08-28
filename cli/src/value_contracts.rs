@@ -105,6 +105,9 @@ pub(crate) fn prospect_contract_violations(
     prospect: &Prospect,
     effective_persona: Option<&str>,
 ) -> Vec<ContractViolation> {
+    // Keep the compatibility wrapper's diagnostics unchanged while making
+    // the GTM adapter the conversion boundary for typed producer inputs.
+    let _ = crate::decision_input::from_gtm_prospect(prospect);
     let mut violations = Vec::new();
     let explicit_persona = prospect.persona.as_deref().and_then(present_str);
     let persona_contract_value = explicit_persona
@@ -167,6 +170,9 @@ pub(crate) fn normalized_prospect_contract_violations(
     prospect: &Map<String, Value>,
     path: &str,
 ) -> Vec<ContractViolation> {
+    // Unknown-field rejection remains rendered by the legacy validator; this
+    // call ensures normalized GTM inputs still cross the same neutral seam.
+    let _ = crate::decision_input::from_gtm_normalized(prospect);
     let mut violations = Vec::new();
     let explicit_persona = prospect
         .get("persona")

@@ -163,6 +163,16 @@ pub(crate) fn from_gtm_prospect(prospect: &Prospect) -> Result<DecisionInput, Ad
     )
 }
 
+/// Adapt the governed GTM projection.  This deliberately has a separate
+/// entry point from proposal output: the two public producers happen to use
+/// compatible v0 field spellings, but ownership is never inferred from those
+/// spellings.
+pub(crate) fn from_gtm_normalized(
+    prospect: &Map<String, Value>,
+) -> Result<DecisionInput, AdapterError> {
+    from_wire_object(prospect, AdapterKind::GtmProspect)
+}
+
 pub(crate) fn from_proposal_output(
     output: &Map<String, Value>,
 ) -> Result<DecisionInput, AdapterError> {
@@ -176,7 +186,14 @@ pub(crate) fn from_proposal_output(
             ));
         }
         (Some(a), None) => a,
-        (None, Some(a)) => a,
+        // The opportunity spelling is a readable proposal alias, not a new
+        // unversioned producer contract.  It is accepted only alongside its
+        // required v0 compatibility peer.
+        (None, Some(_)) => {
+            return Err(AdapterError::Invalid(
+                "normalized_opportunity requires normalized_prospect",
+            ));
+        }
         (None, None) => {
             return Err(AdapterError::Invalid(
                 "proposal normalization is missing its decision input",
@@ -191,31 +208,31 @@ pub(crate) fn from_proposal_output(
 
 fn from_wire_object(
     object: &Map<String, Value>,
-    _kind: AdapterKind,
+    kind: AdapterKind,
 ) -> Result<DecisionInput, AdapterError> {
-    let allowed: BTreeSet<&str> = [
-        "name",
-        "title",
-        "company",
-        "company_domain",
-        "source_kind",
-        "synthetic",
-        "linkedin_url",
-        "company_url",
-        "background",
-        "trigger",
-        "persona",
-        "segment",
-        "signals",
-        "attributes",
-        "id",
-        "status",
-        "amount",
-        "close_date",
-        "description",
-    ]
-    .into_iter()
-    .collect();
+    // Both adapters read the established v0 scalar vocabulary.  Keeping the
+    // match here makes the ownership distinction explicit and prevents a
+    // future adapter from silently inheriting this wire contract.
+    let allowed: BTreeSet<&str> = match kind {
+        AdapterKind::GtmProspect | AdapterKind::ProposalOpportunity => [
+            "name",
+            "title",
+            "company",
+            "company_domain",
+            "source_kind",
+            "synthetic",
+            "linkedin_url",
+            "company_url",
+            "background",
+            "trigger",
+            "persona",
+            "segment",
+            "signals",
+            "attributes",
+        ]
+        .into_iter()
+        .collect(),
+    };
     if object.keys().any(|key| !allowed.contains(key.as_str())) {
         return Err(AdapterError::Invalid(
             "decision input contains an unknown field",
@@ -226,11 +243,40 @@ fn from_wire_object(
     let mut attributes = BTreeMap::new();
     for (key, value) in object {
         match key.as_str() {
+            // serde emits null for omitted Option fields on typed Prospect;
+            // null is absence, not a neutral scalar value.
+            _ if value.is_null() => {}
             "signals" => {
                 signals = value
                     .as_array()
                     .ok_or(AdapterError::Invalid("signals must be an array"))?
-                    .clone()
+                    .iter()
+                    .map(|signal| {
+                        let signal = signal
+                            .as_object()
+                            .ok_or(AdapterError::Invalid("signals must contain objects"))?;
+                        let allowed = [
+                            "id",
+                            "title",
+                            "source",
+                            "confidence",
+                            "freshness",
+                            "state_as",
+                        ];
+                        if signal.keys().any(|key| !allowed.contains(&key.as_str())) {
+                            return Err(AdapterError::Invalid(
+                                "decision input contains an unknown signal field",
+                            ));
+                        }
+                        Ok(Value::Object(
+                            signal
+                                .iter()
+                                .filter(|(_, value)| !value.is_null())
+                                .map(|(key, value)| (key.clone(), value.clone()))
+                                .collect(),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, AdapterError>>()?
             }
             "attributes" => {
                 attributes = value
@@ -293,6 +339,41 @@ mod tests {
         output.insert("normalized_prospect".into(), json!({"status":"open"}));
         output.insert("normalized_opportunity".into(), json!({"status":"closed"}));
         assert!(from_proposal_output(&output).is_err());
+    }
+
+    #[test]
+    fn proposal_alias_cannot_become_an_opportunity_only_wire_shape() {
+        let mut output = Map::new();
+        output.insert(
+            "normalized_opportunity".into(),
+            json!({"company": "ExampleCo"}),
+        );
+        assert!(matches!(
+            from_proposal_output(&output),
+            Err(AdapterError::Invalid(
+                "normalized_opportunity requires normalized_prospect"
+            ))
+        ));
+    }
+
+    #[test]
+    fn wire_adapter_does_not_authorize_unversioned_opportunity_fields() {
+        let mut output = Map::new();
+        output.insert(
+            "normalized_prospect".into(),
+            json!({"name": "Taylor", "title": "Lead", "company": "ExampleCo", "amount": 10}),
+        );
+        assert!(from_proposal_output(&output).is_err());
+    }
+
+    #[test]
+    fn old_proposal_prospect_only_artifact_remains_readable() {
+        let mut output = Map::new();
+        output.insert(
+            "normalized_prospect".into(),
+            json!({"name": "Taylor", "title": "Lead", "company": "ExampleCo"}),
+        );
+        assert!(from_proposal_output(&output).is_ok());
     }
 
     fn test_manifest() -> Manifest {
