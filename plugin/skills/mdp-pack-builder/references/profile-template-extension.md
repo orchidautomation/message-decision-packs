@@ -5,9 +5,12 @@ packs inside an existing registered profile; it must not register a new
 profile, template, or skill as part of ordinary `.mdp/` editing.
 
 - A **profile** owns vocabulary mappings, input contracts/adapter, jobs, eval
-  categories, packaged skill routes, and one template association.
-- A **template** is an authored starter tree for one registered profile. It
-  owns starter metadata, required directories, examples, and bounded
+  categories, packaged skill routes, and exactly one template association.
+- A **template** is an authored starter tree for one registered profile. The
+  shipped registry is one-to-one: maintain or deliberately replace that
+  profile's single template, but do not add a second one without a separately
+  reviewed architecture/public-contract change. The template owns starter
+  metadata, required directories, examples, and bounded
   post-processing. A template is not a profile.
 - A **skill** is authored agent guidance for an operator or profile job. The
   closed packaged skill registry determines routing.

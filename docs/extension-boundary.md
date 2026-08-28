@@ -1,6 +1,6 @@
 # Extension boundary
 
-This is the maintainer checklist for extending the shipped MDP vocabulary. It
+This is the maintainer checklist for extending the shipped MDP registry. It
 describes the current closed system: the only registered runtime profiles and
 templates are `gtm` and `proposal`. Ordinary pack authoring uses those
 registrations; it does not create new ones.
@@ -12,7 +12,7 @@ registrations; it does not create new ones.
 | Primitive | One of ten fixed, domain-agnostic decision families: actors, decision criteria, source signals, needs/requirements, evidence/proof, boundaries, output contracts, routing/jobs, gaps, and evals. | `cli/src/primitives.rs`; public vocabulary in `CONCEPTS.md` |
 | Profile | A reviewed domain mapping: vocabulary, primitive map, input contracts/adapter, jobs, eval categories, and exactly one template association. | `cli/src/skill_catalog.rs` and pack profile validation |
 | Template | An authored starter tree for one already registered profile, with metadata, asset root, required directories, examples, and bounded post-processing. It is not a profile. | `cli/src/template_registry.rs`, build-time inventory, and `plugin/assets/templates/` |
-| Pack | A local `.mdp/` directory containing decision context and routing contracts. Editing one consumes a profile; it does not register a profile, template, or skill. | Pack files and the Rust CLI validator |
+| Pack | A local `.mdp/` directory containing decision context and routing contracts. Editing one uses or declares an existing profile; it does not register a profile, template, or skill. | Pack files and the Rust CLI validator |
 | Skill | Authored agent instructions for a supported operator or profile job. A job route must point to a packaged skill. | `plugin/skills/` (authored source), `cli/src/skill_catalog.rs`, and Pluxx packaging |
 | Host | The customer-controlled environment that owns connectors, credentials, model/provider execution, sequencing, and external side effects. It does not extend MDP vocabulary or promote compatibility evidence. | Host boundary; MDP remains the deterministic CLI authority |
 
@@ -21,12 +21,17 @@ routes, asset roots, required directories, examples, and associations must be
 unique and complete. Capabilities and help are derived from those authorities,
 not from free text or dynamically discovered plugins.
 
-## Adding a template to an existing profile
+## Maintaining a template for an existing profile
 
-Only do this as reviewed repository source work:
+The shipped registry is one-to-one: each profile has exactly one associated
+template, and each template belongs to exactly one profile. A maintainer may
+deliberately maintain or replace that single template/descriptor, but adding a
+second template to an existing profile is unsupported without a separately
+reviewed architecture and public-contract change. Only do this as reviewed
+repository source work:
 
-1. Add the template descriptor and unique profile association in the template
-   registry; preserve the existing profile's one-template invariant.
+1. Update or replace the template descriptor and its unique profile association
+   in the template registry; preserve the one-profile/one-template invariant.
 2. Add the authored asset root and build-time inventory for every file and
    required directory, including the manifest and declared examples.
 3. Use only bounded post-processing already supported by the CLI. Do not add a
@@ -41,11 +46,12 @@ Only do this as reviewed repository source work:
 
 ## Adding a new reviewed profile
 
-A new profile is a reviewed extension, not a pack edit. It must add a unique
-profile descriptor with unique jobs, one packaged skill route per job, one input
-adapter, one template association, explicit primitive mappings and input
-contracts, required eval categories, authored template assets, and any needed
-skill guidance. Validate capabilities/help parity, asset inventory, common
+A new profile is a reviewed extension, not a pack edit. It must arrive with
+exactly one associated template and add a unique profile descriptor with unique
+jobs, one packaged skill route per job, one input adapter, explicit primitive
+mappings and input contracts, required eval categories, authored template
+assets, and any needed skill guidance. Validate capabilities/help parity, asset
+inventory, common
 conformance, Pluxx packaging, and the full exact-head CI matrix. Keep the
 registry fail-closed: never activate a profile by filename, prose, provider
 response, or host configuration.
