@@ -161,12 +161,21 @@ impl PrimitiveRoutingPolicy {
             return is_base_guardrail_v0(kind);
         }
         let roles = self.roles_for(card_id);
-        roles.contains(&PrimitiveRoutingRole::Actor)
+        if roles.is_empty() {
+            return is_base_guardrail_v0(kind);
+        }
+        (roles.contains(&PrimitiveRoutingRole::Actor) && matches!(kind, CardKind::Personas))
             || (roles.contains(&PrimitiveRoutingRole::Boundary)
                 && matches!(kind, CardKind::AvoidRules))
             || (roles.contains(&PrimitiveRoutingRole::Output)
                 && matches!(kind, CardKind::OutputRules))
-            || is_base_guardrail_v0(kind)
+    }
+
+    fn card_priority(&self, card_id: &str, kind: &CardKind, is_message_job: bool) -> usize {
+        // Primitive membership is resolved before the deliberately narrow v0
+        // discriminator. The adapter keeps the established numeric ordering.
+        let _roles = self.roles_for(card_id);
+        card_priority_v0(kind, is_message_job)
     }
 }
 
@@ -222,7 +231,7 @@ fn select_cards_with_diagnostics(
                 (false, false) => "matched",
             };
             candidates.push((
-                card_priority(&card.kind, is_message_job),
+                policy.card_priority(&card.id, &card.kind, is_message_job),
                 index,
                 json!({"id": card.id, "kind": card.kind, "path": format!("{DEFAULT_DIR}/{}", card.path), "reason": reason, "description": card.description}),
             ));
@@ -371,7 +380,7 @@ fn is_base_guardrail_v0(kind: &CardKind) -> bool {
     )
 }
 
-fn card_priority(kind: &CardKind, is_message_job: bool) -> usize {
+fn card_priority_v0(kind: &CardKind, is_message_job: bool) -> usize {
     if is_message_job {
         match kind {
             CardKind::Personas | CardKind::AvoidRules | CardKind::OutputRules => 0,
@@ -1998,11 +2007,24 @@ fn entry_status_with_authority(
     authority: &BTreeSet<PrimitiveRoutingRole>,
     card_kind: &CardKind,
 ) -> &'static str {
-    // The typed roles establish which primitive owns the card. The explicit
-    // v0 adapter retains the historical fine-grained status distinctions so
-    // valid packs keep their byte and receipt compatibility.
-    let _ = authority;
-    entry_status(card_kind)
+    if authority.is_empty() {
+        return entry_status(card_kind);
+    }
+    let required = (authority.contains(&PrimitiveRoutingRole::Boundary)
+        && matches!(card_kind, CardKind::AvoidRules | CardKind::OutputRules))
+        || (authority.contains(&PrimitiveRoutingRole::Decision)
+            && matches!(card_kind, CardKind::FitRules))
+        || (authority.contains(&PrimitiveRoutingRole::Evidence)
+            && matches!(card_kind, CardKind::Claims | CardKind::Positioning))
+        || (authority.contains(&PrimitiveRoutingRole::Output)
+            && matches!(card_kind, CardKind::OutputRules | CardKind::ChannelPolicies));
+    if required {
+        "required"
+    } else {
+        // The card kind remains a compatibility discriminator for distinctions
+        // not represented by the primitive map (including supporting cards).
+        "supporting"
+    }
 }
 
 fn match_reason(applies: bool, job_match: bool) -> &'static str {
@@ -2035,7 +2057,6 @@ fn is_context_guardrail_with_authority(
         || (authority.contains(&PrimitiveRoutingRole::Decision)
             && matches!(card_kind, CardKind::FitRules)
             && !entry.avoid.is_empty())
-        || is_context_guardrail(card_kind, entry)
 }
 
 fn guardrail_reason(card_kind: &CardKind) -> &'static str {
@@ -2616,6 +2637,47 @@ mod tests {
         let policy = PrimitiveRoutingPolicy::for_job(&manifest, Some("outbound-copy-brief"));
         assert!(policy.roles_for("supplemental-personas").is_empty());
         assert!(policy.is_base_guardrail("supplemental-personas", &CardKind::Personas));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mapped_card_cannot_claim_kind_only_authority() {
+        let root = temp_pack("primitive-kind-conflict");
+        add_supplemental_persona_card_for_tests(&root);
+        let mut manifest = read_manifest(&root).expect("manifest should load");
+        manifest
+            .primitive_map
+            .entry("actors".to_string())
+            .or_default()
+            .cards
+            .push("supplemental-personas".to_string());
+        let policy = PrimitiveRoutingPolicy::for_job(&manifest, Some("outbound-copy-brief"));
+        let authority = policy.roles_for("supplemental-personas");
+        assert!(authority.contains(&PrimitiveRoutingRole::Actor));
+        // The misleading v0 kind must not promote this mapped card to a
+        // universal guardrail, guardrail entry, or required entry.
+        assert!(!policy.is_base_guardrail("supplemental-personas", &CardKind::OutputRules));
+        let entry = Entry {
+            id: "conflict".to_string(),
+            title: "Conflict".to_string(),
+            body: "Synthetic conflict".to_string(),
+            applies_to: Vec::new(),
+            scope: BTreeMap::new(),
+            evidence: Vec::new(),
+            avoid: vec!["do not use this".to_string()],
+            exact_paragraphs: None,
+            constraints: Default::default(),
+            metadata: BTreeMap::new(),
+        };
+        assert!(!is_context_guardrail_with_authority(
+            &authority,
+            &CardKind::OutputRules,
+            &entry
+        ));
+        assert_eq!(
+            entry_status_with_authority(&authority, &CardKind::OutputRules),
+            "supporting"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
