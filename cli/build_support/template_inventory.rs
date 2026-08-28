@@ -32,6 +32,16 @@ pub fn validate_relative(relative: &str) -> io::Result<()> {
     Ok(())
 }
 
+pub fn validate_root_key(key: &str) -> io::Result<()> {
+    if key.is_empty() || key == "." || key == ".." || key.contains('/') || key.contains('\\') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unsafe template root key",
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_entries(entries: &[InventoryEntry]) -> io::Result<()> {
     let mut sorted = entries.to_vec();
     sorted.sort_by(|a, b| a.relative.cmp(&b.relative));

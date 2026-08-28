@@ -435,6 +435,12 @@ fn append_required_directories(
             inventory.push(GeneratedArtifact::directory(*directory));
         }
     }
+    if !inventory
+        .iter()
+        .any(|artifact| artifact.relative == ".mdp/briefs")
+    {
+        inventory.push(GeneratedArtifact::directory(".mdp/briefs"));
+    }
 }
 
 /// Render a complete GTM starter tree as a list of generated artifacts.

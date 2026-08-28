@@ -30,13 +30,14 @@ fn main() -> std::io::Result<()> {
                 "template asset root must be a directory",
             ));
         }
-        let key = root.file_name().to_string_lossy().into_owned();
-        if key != "basic" && key != "proposal" {
-            return Err(std::io::Error::new(
+        let key_name = root.file_name();
+        let key = key_name.to_str().ok_or_else(|| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("unregistered template asset root: {key}"),
-            ));
-        }
+                "template asset root must be UTF-8",
+            )
+        })?;
+        template_inventory::validate_root_key(key)?;
         let entries = template_inventory::collect_tree(&root.path())?;
         for entry in &entries {
             println!(

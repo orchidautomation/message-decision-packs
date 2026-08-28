@@ -33,7 +33,6 @@ pub(crate) struct TemplateDescriptor {
     pub(crate) required_directories: &'static [&'static str],
     pub(crate) examples: &'static [&'static str],
     pub(crate) postprocess: TemplatePostprocess,
-    pub(crate) inventory: &'static [EmbeddedTemplateEntry],
 }
 
 const GTM_OPTIONS: &[&str] = &[
@@ -47,7 +46,6 @@ const GTM_OPTIONS: &[&str] = &[
 const PROPOSAL_OPTIONS: &[&str] = &["name"];
 const GTM_DIRS: &[&str] = &[
     ".mdp",
-    ".mdp/briefs",
     ".mdp/cards",
     ".mdp/evals",
     ".mdp/prompts",
@@ -55,7 +53,6 @@ const GTM_DIRS: &[&str] = &[
 ];
 const PROPOSAL_DIRS: &[&str] = &[
     ".mdp",
-    ".mdp/briefs",
     ".mdp/cards",
     ".mdp/evals",
     ".mdp/prompts",
@@ -79,7 +76,6 @@ static DESCRIPTORS: &[TemplateDescriptor] = &[
         required_directories: GTM_DIRS,
         examples: GTM_EXAMPLES,
         postprocess: TemplatePostprocess::Gtm,
-        inventory: &[],
     },
     TemplateDescriptor {
         id: "proposal",
@@ -90,7 +86,6 @@ static DESCRIPTORS: &[TemplateDescriptor] = &[
         required_directories: PROPOSAL_DIRS,
         examples: PROPOSAL_EXAMPLES,
         postprocess: TemplatePostprocess::Proposal,
-        inventory: &[],
     },
 ];
 
@@ -115,11 +110,18 @@ pub(crate) fn default_name(id: &str) -> Option<&'static str> {
 }
 
 pub(crate) fn validate() -> Result<(), String> {
+    validate_registry(DESCRIPTORS, EMBEDDED_ROOTS)
+}
+
+fn validate_registry(
+    descriptors: &[TemplateDescriptor],
+    root_entries: &[EmbeddedTemplateRoot],
+) -> Result<(), String> {
     let mut ids = std::collections::BTreeSet::new();
-    let mut roots = std::collections::BTreeSet::new();
+    let mut roots_seen = std::collections::BTreeSet::new();
     let mut referenced_roots = std::collections::BTreeSet::new();
-    for descriptor in DESCRIPTORS {
-        if !ids.insert(descriptor.id) || !roots.insert(descriptor.asset_root) {
+    for descriptor in descriptors {
+        if !ids.insert(descriptor.id) || !roots_seen.insert(descriptor.asset_root) {
             return Err("duplicate template registry entry".into());
         }
         if profile_descriptor(descriptor.profile_id).is_none_or(|p| p.template_id != descriptor.id)
@@ -141,7 +143,10 @@ pub(crate) fn validate() -> Result<(), String> {
                 ));
             }
         }
-        let inventory = embedded_root(descriptor.asset_root)
+        let inventory = root_entries
+            .iter()
+            .find(|root| root.key == descriptor.asset_root)
+            .map(|root| root.entries)
             .ok_or_else(|| format!("missing embedded asset root '{}'", descriptor.asset_root))?;
         let mut entries = std::collections::BTreeSet::new();
         for (index, entry) in inventory.iter().enumerate() {
@@ -171,9 +176,13 @@ pub(crate) fn validate() -> Result<(), String> {
             }
         }
         for required in descriptor.required_directories {
-            if let Some(entry) = inventory.iter().find(|entry| entry.relative == *required)
-                && !entry.is_directory
-            {
+            let Some(entry) = inventory.iter().find(|entry| entry.relative == *required) else {
+                return Err(format!(
+                    "template '{}' is missing directory '{}',",
+                    descriptor.id, required
+                ));
+            };
+            if !entry.is_directory {
                 return Err(format!(
                     "template '{}' requires directory '{}',",
                     descriptor.id, required
@@ -202,7 +211,7 @@ pub(crate) fn validate() -> Result<(), String> {
             return Err(format!("template '{}' is missing manifest", descriptor.id));
         }
     }
-    for root in EMBEDDED_ROOTS {
+    for root in root_entries {
         if !referenced_roots.contains(root.key) {
             return Err(format!("unregistered embedded asset root '{}'", root.key));
         }
@@ -257,5 +266,47 @@ mod tests {
             serde_json::json!(["gtm", "proposal"])
         );
         assert!(crate::cli::Cli::try_parse_from(["mdp", "init", "--template", "unknown"]).is_err());
+    }
+
+    #[test]
+    fn injectable_validation_rejects_missing_and_extra_roots() {
+        assert!(validate_registry(DESCRIPTORS, &[]).is_err());
+        static EXTRA: &[EmbeddedTemplateEntry] = &[];
+        let mut roots = EMBEDDED_ROOTS.to_vec();
+        roots.push(EmbeddedTemplateRoot {
+            key: "future",
+            entries: EXTRA,
+        });
+        assert!(validate_registry(DESCRIPTORS, &roots).is_err());
+    }
+
+    #[test]
+    fn injectable_validation_rejects_missing_required_directory_and_manifest() {
+        static FILES: &[EmbeddedTemplateEntry] = &[EmbeddedTemplateEntry {
+            relative: "other",
+            bytes: b"x",
+            kind: "yaml-file",
+            is_directory: false,
+        }];
+        let descriptor = TemplateDescriptor {
+            id: "gtm",
+            default_name: "x",
+            profile_id: "gtm",
+            asset_root: "basic",
+            options: GTM_OPTIONS,
+            required_directories: &["missing-dir"],
+            examples: &[],
+            postprocess: TemplatePostprocess::Gtm,
+        };
+        assert!(
+            validate_registry(
+                &[descriptor],
+                &[EmbeddedTemplateRoot {
+                    key: "basic",
+                    entries: FILES
+                }]
+            )
+            .is_err()
+        );
     }
 }

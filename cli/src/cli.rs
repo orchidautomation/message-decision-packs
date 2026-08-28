@@ -1,5 +1,6 @@
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 fn template_value(value: &str) -> Result<String, String> {
     if crate::template_registry::lookup(value).is_some() {
@@ -13,13 +14,13 @@ fn template_value(value: &str) -> Result<String, String> {
 }
 
 fn template_help() -> &'static str {
-    Box::leak(
+    static HELP: OnceLock<String> = OnceLock::new();
+    HELP.get_or_init(|| {
         format!(
             "Starter template to write (available: {})",
             crate::template_registry::available()
         )
-        .into_boxed_str(),
-    )
+    })
 }
 
 #[derive(Parser)]
