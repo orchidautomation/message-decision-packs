@@ -12,11 +12,23 @@ fn main() -> std::io::Result<()> {
     let mut roots = fs::read_dir(&parent)?.collect::<Result<Vec<_>, _>>()?;
     roots.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("out dir")).join("template_inventory.rs");
-    fs::write(&out, "")?;
+    fs::write(
+        &out,
+        "pub(crate) static EMBEDDED_ROOTS: &[crate::template_registry::EmbeddedTemplateRoot] = &[\n",
+    )?;
     for root in roots {
         let metadata = fs::symlink_metadata(root.path())?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            continue;
+        if metadata.file_type().is_symlink() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "template asset root may not be a symlink",
+            ));
+        }
+        if !metadata.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "template asset root must be a directory",
+            ));
         }
         let key = root.file_name().to_string_lossy().into_owned();
         if key != "basic" && key != "proposal" {
@@ -34,5 +46,8 @@ fn main() -> std::io::Result<()> {
         }
         template_inventory::emit_inventory(&root.path(), &entries, &out, &key)?;
     }
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new().append(true).open(&out)?;
+    file.write_all(b"];\n")?;
     Ok(())
 }

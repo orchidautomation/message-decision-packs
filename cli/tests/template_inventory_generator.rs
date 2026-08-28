@@ -66,3 +66,15 @@ fn collector_rejects_symlinks() {
     assert!(template_inventory::collect_tree(&root).is_err());
     let _ = fs::remove_dir_all(root);
 }
+
+#[cfg(unix)]
+#[test]
+fn collector_rejects_non_regular_nodes() {
+    let root = std::env::temp_dir().join(format!("mdp-inventory-fifo-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let name = std::ffi::CString::new(root.join("pipe").to_str().unwrap()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    assert!(template_inventory::collect_tree(&root).is_err());
+    let _ = fs::remove_dir_all(root);
+}

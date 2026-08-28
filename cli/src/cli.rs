@@ -12,6 +12,16 @@ fn template_value(value: &str) -> Result<String, String> {
     }
 }
 
+fn template_help() -> &'static str {
+    Box::leak(
+        format!(
+            "Starter template to write (available: {})",
+            crate::template_registry::available()
+        )
+        .into_boxed_str(),
+    )
+}
+
 #[derive(Parser)]
 #[command(name = "mdp")]
 #[command(about = "Author and route modular message decision packs for agent workflows")]
@@ -69,7 +79,7 @@ pub(crate) enum Commands {
             long,
             default_value = "gtm",
             value_parser = template_value,
-            help = "Starter template to write (available templates are registry-defined)"
+            help = template_help()
         )]
         template: String,
         #[arg(long, help = "Overwrite existing starter files")]

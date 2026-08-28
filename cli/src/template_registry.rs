@@ -9,6 +9,12 @@ pub(crate) struct EmbeddedTemplateEntry {
     pub(crate) is_directory: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct EmbeddedTemplateRoot {
+    pub(crate) key: &'static str,
+    pub(crate) entries: &'static [EmbeddedTemplateEntry],
+}
+
 include!(concat!(env!("OUT_DIR"), "/template_inventory.rs"));
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,7 +79,7 @@ static DESCRIPTORS: &[TemplateDescriptor] = &[
         required_directories: GTM_DIRS,
         examples: GTM_EXAMPLES,
         postprocess: TemplatePostprocess::Gtm,
-        inventory: BASIC,
+        inventory: &[],
     },
     TemplateDescriptor {
         id: "proposal",
@@ -84,7 +90,7 @@ static DESCRIPTORS: &[TemplateDescriptor] = &[
         required_directories: PROPOSAL_DIRS,
         examples: PROPOSAL_EXAMPLES,
         postprocess: TemplatePostprocess::Proposal,
-        inventory: PROPOSAL,
+        inventory: &[],
     },
 ];
 
@@ -111,6 +117,7 @@ pub(crate) fn default_name(id: &str) -> Option<&'static str> {
 pub(crate) fn validate() -> Result<(), String> {
     let mut ids = std::collections::BTreeSet::new();
     let mut roots = std::collections::BTreeSet::new();
+    let mut referenced_roots = std::collections::BTreeSet::new();
     for descriptor in DESCRIPTORS {
         if !ids.insert(descriptor.id) || !roots.insert(descriptor.asset_root) {
             return Err("duplicate template registry entry".into());
@@ -122,8 +129,28 @@ pub(crate) fn validate() -> Result<(), String> {
                 descriptor.id
             ));
         }
+        if !referenced_roots.insert(descriptor.asset_root) {
+            return Err("duplicate asset root".into());
+        }
+        let mut options = std::collections::BTreeSet::new();
+        for option in descriptor.options {
+            if option.is_empty() || !options.insert(option) {
+                return Err(format!(
+                    "template '{}' has invalid option metadata",
+                    descriptor.id
+                ));
+            }
+        }
+        let inventory = embedded_root(descriptor.asset_root)
+            .ok_or_else(|| format!("missing embedded asset root '{}'", descriptor.asset_root))?;
         let mut entries = std::collections::BTreeSet::new();
-        for entry in descriptor.inventory {
+        for (index, entry) in inventory.iter().enumerate() {
+            if index > 0 && inventory[index - 1].relative > entry.relative {
+                return Err(format!(
+                    "template '{}' inventory is not sorted",
+                    descriptor.id
+                ));
+            }
             if !entries.insert(entry.relative) {
                 return Err(format!(
                     "template '{}' has duplicate inventory entry",
@@ -143,10 +170,30 @@ pub(crate) fn validate() -> Result<(), String> {
                 ));
             }
         }
+        for required in descriptor.required_directories {
+            if let Some(entry) = inventory.iter().find(|entry| entry.relative == *required)
+                && !entry.is_directory
+            {
+                return Err(format!(
+                    "template '{}' requires directory '{}',",
+                    descriptor.id, required
+                ));
+            }
+        }
         for required in descriptor.examples {
             if !entries.contains(required) {
                 return Err(format!(
                     "template '{}' is missing '{}',",
+                    descriptor.id, required
+                ));
+            }
+            if inventory
+                .iter()
+                .find(|entry| entry.relative == *required)
+                .is_some_and(|entry| entry.is_directory)
+            {
+                return Err(format!(
+                    "template '{}' example '{}' must be a file",
                     descriptor.id, required
                 ));
             }
@@ -155,12 +202,24 @@ pub(crate) fn validate() -> Result<(), String> {
             return Err(format!("template '{}' is missing manifest", descriptor.id));
         }
     }
+    for root in EMBEDDED_ROOTS {
+        if !referenced_roots.contains(root.key) {
+            return Err(format!("unregistered embedded asset root '{}'", root.key));
+        }
+    }
     Ok(())
 }
 
+fn embedded_root(key: &str) -> Option<&'static [EmbeddedTemplateEntry]> {
+    EMBEDDED_ROOTS
+        .iter()
+        .find(|root| root.key == key)
+        .map(|root| root.entries)
+}
+
 pub(crate) fn inventory(descriptor: &TemplateDescriptor) -> Vec<GeneratedArtifact> {
-    descriptor
-        .inventory
+    embedded_root(descriptor.asset_root)
+        .unwrap_or(&[])
         .iter()
         .map(|entry| GeneratedArtifact {
             relative: entry.relative.to_string(),
@@ -175,9 +234,28 @@ pub(crate) fn inventory(descriptor: &TemplateDescriptor) -> Vec<GeneratedArtifac
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::{CommandFactory, Parser};
     #[test]
     fn canonical_registry_is_valid() {
         validate().expect("registry");
         assert_eq!(ids().collect::<Vec<_>>(), vec!["gtm", "proposal"]);
+    }
+
+    #[test]
+    fn cli_help_and_capabilities_share_registry_order() {
+        let help = crate::cli::Cli::command()
+            .find_subcommand_mut("init")
+            .expect("init command")
+            .render_long_help()
+            .to_string();
+        assert!(
+            help.find("gtm").expect("gtm in help")
+                < help.find("proposal").expect("proposal in help")
+        );
+        assert_eq!(
+            crate::commands::capabilities::capabilities()["defaults"]["init_templates"],
+            serde_json::json!(["gtm", "proposal"])
+        );
+        assert!(crate::cli::Cli::try_parse_from(["mdp", "init", "--template", "unknown"]).is_err());
     }
 }

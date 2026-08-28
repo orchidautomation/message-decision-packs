@@ -125,19 +125,11 @@ pub fn emit_inventory(
         }
     }
     source.push_str("]");
-    let name = match root_key {
-        "basic" => "BASIC",
-        "proposal" => "PROPOSAL",
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "unknown root key",
-            ));
-        }
-    };
+    let _ = root_key;
     let mut module = fs::read_to_string(output).unwrap_or_default();
     module.push_str(&format!(
-        "pub(crate) static {name}: &[crate::template_registry::EmbeddedTemplateEntry] = {source};\n"
+        "    crate::template_registry::EmbeddedTemplateRoot {{ key: {:?}, entries: {source} }},\n",
+        root_key
     ));
     fs::write(output, module)
 }

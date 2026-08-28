@@ -32,6 +32,17 @@ pub(crate) struct TargetInitOptions<'a> {
     pub(crate) aliases: &'a [String],
     pub(crate) excluded_terms: &'a [String],
 }
+
+struct InitRequest<'a> {
+    descriptor: &'static crate::template_registry::TemplateDescriptor,
+    root: &'a Path,
+    name: &'a str,
+    target: Option<&'a TargetIdentity>,
+    force: bool,
+    include_output_schemas: bool,
+    governed: bool,
+    dry_run: bool,
+}
 impl Default for TargetInitOptions<'_> {
     fn default() -> Self {
         Self {
@@ -52,19 +63,18 @@ pub(crate) fn init_pack(
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
-    match template {
-        "gtm" => init_gtm_pack(
-            root,
-            name,
-            template,
-            None,
-            force,
-            include_output_schemas,
-            false,
-        ),
-        "proposal" => init_proposal_pack(root, name, force),
-        _ => Err(unsupported_template(template)),
-    }
+    let descriptor =
+        template_registry::lookup(template).ok_or_else(|| unsupported_template(template))?;
+    run_init(InitRequest {
+        descriptor,
+        root,
+        name,
+        target: None,
+        force,
+        include_output_schemas,
+        governed: false,
+        dry_run: false,
+    })
 }
 
 pub(crate) fn init_pack_targeted(
@@ -83,78 +93,20 @@ pub(crate) fn init_pack_targeted(
         target_options.aliases,
         target_options.excluded_terms,
     )?;
-    match template {
-        "gtm" => init_gtm_pack(
-            root,
-            name,
-            template,
-            target.as_ref(),
-            force,
-            include_output_schemas,
-            true,
-        ),
-        "proposal" => init_proposal_pack(root, name, force),
-        _ => Err(unsupported_template(template)),
-    }
-}
-
-fn init_gtm_pack(
-    root: &Path,
-    name: &str,
-    template: &str,
-    target: Option<&TargetIdentity>,
-    force: bool,
-    include_output_schemas: bool,
-    governed: bool,
-) -> Result<Value> {
-    validate_target_destination(root, target)?;
-    let inventory = build_gtm_inventory(
+    let descriptor =
+        template_registry::lookup(template).ok_or_else(|| unsupported_template(template))?;
+    run_init(InitRequest {
+        descriptor,
         root,
         name,
-        template,
-        target,
+        target: target.as_ref(),
         force,
         include_output_schemas,
-        governed,
-    )?;
-    let outcome = run_publish(root, &inventory, force, |staging_root| {
-        let diagnostics = validate_pack(staging_root)?;
-        let valid = diagnostics
-            .get("valid")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if !valid {
-            let detail = diagnostics
-                .get("issues")
-                .cloned()
-                .unwrap_or(Value::Array(Vec::new()));
-            return Err(anyhow!(
-                "staged init pack at {} failed validation: {}",
-                staging_root.display(),
-                detail
-            ));
-        }
-        Ok(())
-    })?;
-    // Ensure canonical pack directories (e.g. .mdp/briefs) exist even
-    // when no template file populates them. The original implementation
-    // created these directories explicitly before any file write.
-    let briefs_dir = root.join(DEFAULT_DIR).join("briefs");
-    if !briefs_dir.exists() {
-        std::fs::create_dir_all(&briefs_dir)
-            .with_context(|| format!("creating {}", briefs_dir.display()))?;
-    }
-    let mut payload = gtm_init_payload(root, name, template, target);
-    if let Some(object) = payload.as_object_mut() {
-        object.insert(
-            "publication".to_string(),
-            init_transaction::publication_envelope(&outcome),
-        );
-    }
-    Ok(payload)
+        governed: true,
+        dry_run: false,
+    })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn init_pack_dry_run(
     root: &Path,
     name: &str,
@@ -188,51 +140,100 @@ pub(crate) fn init_pack_targeted_dry_run(
         target_options.aliases,
         target_options.excluded_terms,
     )?;
-    match template {
-        "gtm" => init_gtm_pack_dry_run(
-            root,
-            name,
-            template,
-            target.as_ref(),
-            force,
-            include_output_schemas,
-        ),
-        "proposal" => init_proposal_pack_dry_run(root, name, force),
-        _ => Err(unsupported_template(template)),
-    }
-}
-
-fn init_gtm_pack_dry_run(
-    root: &Path,
-    name: &str,
-    template: &str,
-    target: Option<&TargetIdentity>,
-    force: bool,
-    include_output_schemas: bool,
-) -> Result<Value> {
-    validate_target_destination(root, target)?;
-    let inventory = build_gtm_inventory(
+    let descriptor =
+        template_registry::lookup(template).ok_or_else(|| unsupported_template(template))?;
+    run_init(InitRequest {
+        descriptor,
         root,
         name,
-        template,
-        target,
+        target: target.as_ref(),
         force,
         include_output_schemas,
-        true,
-    )?;
-    let mut payload = gtm_init_payload(root, name, template, target);
-    let plan = tx_dry_run(root, &inventory, force)?;
-    let write_plan = dry_run_plan_to_legacy(&plan, &inventory, root);
-    let slug = slugify(name);
+        governed: true,
+        dry_run: true,
+    })
+}
+
+fn run_init(request: InitRequest<'_>) -> Result<Value> {
+    validate_target_destination(request.root, request.target)?;
+    let mut inventory = match request.descriptor.postprocess {
+        crate::template_registry::TemplatePostprocess::Gtm => build_gtm_inventory(
+            request.root,
+            request.name,
+            request.descriptor.id,
+            request.descriptor,
+            request.target,
+            request.force,
+            request.include_output_schemas,
+            request.governed,
+        )?,
+        crate::template_registry::TemplatePostprocess::Proposal => {
+            proposal_inventory(request.descriptor, request.name)?
+        }
+    };
+    append_required_directories(request.descriptor, &mut inventory);
+    if request.dry_run {
+        let plan = tx_dry_run(request.root, &inventory, request.force)?;
+        let mut payload = match request.descriptor.postprocess {
+            crate::template_registry::TemplatePostprocess::Gtm => gtm_init_payload(
+                request.root,
+                request.name,
+                request.descriptor.id,
+                request.target,
+            ),
+            crate::template_registry::TemplatePostprocess::Proposal => {
+                proposal_init_payload(request.root, request.name)
+            }
+        };
+        if let Some(object) = payload.as_object_mut() {
+            object.insert("dry_run".into(), json!(true));
+            object.insert("template".into(), json!(request.descriptor.id));
+            object.insert("slug".into(), json!(slugify(request.name)));
+            object.insert("force".into(), json!(request.force));
+            object.insert(
+                "write_plan".into(),
+                Value::Array(dry_run_plan_to_legacy(&plan, &inventory, request.root)),
+            );
+            object.insert(
+                "publication".into(),
+                init_transaction::dry_run_envelope(&plan),
+            );
+        }
+        return Ok(payload);
+    }
+    let outcome = run_publish(request.root, &inventory, request.force, |staging_root| {
+        let diagnostics = validate_pack(staging_root)?;
+        if !diagnostics
+            .get("valid")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            return Err(anyhow!(
+                "staged init pack at {} failed validation: {}",
+                staging_root.display(),
+                diagnostics
+                    .get("issues")
+                    .cloned()
+                    .unwrap_or(Value::Array(Vec::new()))
+            ));
+        }
+        Ok(())
+    })?;
+    let mut payload = match request.descriptor.postprocess {
+        crate::template_registry::TemplatePostprocess::Gtm => gtm_init_payload(
+            request.root,
+            request.name,
+            request.descriptor.id,
+            request.target,
+        ),
+        crate::template_registry::TemplatePostprocess::Proposal => {
+            proposal_init_payload(request.root, request.name)
+        }
+    };
     if let Some(object) = payload.as_object_mut() {
-        object.insert("dry_run".to_string(), json!(true));
-        object.insert("template".to_string(), json!(template));
-        object.insert("slug".to_string(), json!(slug));
-        object.insert("force".to_string(), json!(force));
-        object.insert("write_plan".to_string(), Value::Array(write_plan));
         object.insert(
-            "publication".to_string(),
-            init_transaction::dry_run_envelope(&plan),
+            "publication".into(),
+            init_transaction::publication_envelope(&outcome),
         );
     }
     Ok(payload)
@@ -344,56 +345,6 @@ fn extend_unique(target: &mut Vec<String>, values: &[String]) {
     }
 }
 
-fn init_proposal_pack(root: &Path, name: &str, force: bool) -> Result<Value> {
-    let inventory = build_proposal_inventory(root, name, force)?;
-    let outcome = run_publish(root, &inventory, force, |staging_root| {
-        let diagnostics = validate_pack(staging_root)?;
-        let valid = diagnostics
-            .get("valid")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if !valid {
-            let detail = diagnostics
-                .get("issues")
-                .cloned()
-                .unwrap_or(Value::Array(Vec::new()));
-            return Err(anyhow!(
-                "staged proposal pack at {} failed validation: {}",
-                staging_root.display(),
-                detail
-            ));
-        }
-        Ok(())
-    })?;
-    let mut payload = proposal_init_payload(root, name);
-    if let Some(object) = payload.as_object_mut() {
-        object.insert(
-            "publication".to_string(),
-            init_transaction::publication_envelope(&outcome),
-        );
-    }
-    Ok(payload)
-}
-
-fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Value> {
-    let mut payload = proposal_init_payload(root, name);
-    let inventory = build_proposal_inventory(root, name, force)?;
-    let plan = tx_dry_run(root, &inventory, force)?;
-    let write_plan = dry_run_plan_to_legacy(&plan, &inventory, root);
-    if let Some(object) = payload.as_object_mut() {
-        object.insert("dry_run".to_string(), json!(true));
-        object.insert("template".to_string(), json!("proposal"));
-        object.insert("slug".to_string(), json!(slugify(name)));
-        object.insert("force".to_string(), json!(force));
-        object.insert("write_plan".to_string(), Value::Array(write_plan));
-        object.insert(
-            "publication".to_string(),
-            init_transaction::dry_run_envelope(&plan),
-        );
-    }
-    Ok(payload)
-}
-
 fn proposal_readme_from_inventory(inventory: &[GeneratedArtifact], _name: &str) -> Result<String> {
     let manifest_raw = inventory
         .iter()
@@ -430,11 +381,12 @@ fn proposal_readme_from_inventory(inventory: &[GeneratedArtifact], _name: &str) 
     ))
 }
 
-fn proposal_inventory(name: &str) -> Result<Vec<GeneratedArtifact>> {
-    let descriptor =
-        template_registry::lookup("proposal").ok_or_else(|| unsupported_template("proposal"))?;
+fn proposal_inventory(
+    descriptor: &'static crate::template_registry::TemplateDescriptor,
+    name: &str,
+) -> Result<Vec<GeneratedArtifact>> {
     let mut inventory = template_registry::inventory(descriptor);
-    append_required_directories(&mut inventory);
+    append_required_directories(descriptor, &mut inventory);
     if name != descriptor.default_name {
         let manifest = inventory
             .iter_mut()
@@ -474,19 +426,10 @@ fn unsupported_template(template: &str) -> anyhow::Error {
     )
 }
 
-fn append_required_directories(inventory: &mut Vec<GeneratedArtifact>) {
-    let Some(descriptor) = template_registry::lookup(
-        if inventory
-            .iter()
-            .any(|a| a.relative == "examples/proof-output/valid-binding.json")
-        {
-            "proposal"
-        } else {
-            "gtm"
-        },
-    ) else {
-        return;
-    };
+fn append_required_directories(
+    descriptor: &crate::template_registry::TemplateDescriptor,
+    inventory: &mut Vec<GeneratedArtifact>,
+) {
     for directory in descriptor.required_directories {
         if !inventory.iter().any(|a| a.relative == *directory) {
             inventory.push(GeneratedArtifact::directory(*directory));
@@ -501,6 +444,7 @@ fn build_gtm_inventory(
     root: &Path,
     name: &str,
     template: &str,
+    descriptor: &crate::template_registry::TemplateDescriptor,
     target: Option<&TargetIdentity>,
     force: bool,
     include_output_schemas: bool,
@@ -508,9 +452,8 @@ fn build_gtm_inventory(
 ) -> Result<Vec<GeneratedArtifact>> {
     let _ = (root, force);
     if target.is_none() && !governed && !include_output_schemas && name == "Basic MDP Template" {
-        let descriptor = template_registry::lookup("gtm").expect("gtm descriptor");
         let mut inventory = template_registry::inventory(descriptor);
-        append_required_directories(&mut inventory);
+        append_required_directories(descriptor, &mut inventory);
         return Ok(inventory);
     }
     let slug = slugify(name);
@@ -637,18 +580,8 @@ fn build_gtm_inventory(
         eligible_for_force: true,
         is_directory: false,
     });
-    append_required_directories(&mut inventory);
+    append_required_directories(descriptor, &mut inventory);
     Ok(inventory)
-}
-
-/// Render a complete proposal starter tree as a list of generated
-/// artifacts. The function never touches the destination.
-fn build_proposal_inventory(
-    _root: &Path,
-    name: &str,
-    _force: bool,
-) -> Result<Vec<GeneratedArtifact>> {
-    proposal_inventory(name)
 }
 
 /// Render a transaction-owned staging tree, run the staged validation
