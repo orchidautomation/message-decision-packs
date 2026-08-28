@@ -14,6 +14,8 @@ const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
 const codexPackCommand = 'npm pack @openai/codex@0.148.0'
 const codexVersionCommand = 'test "$(codex --version)" = "codex-cli 0.148.0"'
 const assetParityCommand = '/usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"'
+const neutralFixturePath = 'cli/tests/fixtures/profile-conformance/'
+const neutralFixtureId = 'neutral'
 const requiredPrefix = [
   'set -euo pipefail',
   'version="${{ steps.version.outputs.version }}"',
@@ -289,6 +291,8 @@ function assertReleaseSmokeContract(workflow) {
     codexPackIndex < codexVersionIndex && codexVersionIndex < smokeStepIndex,
     'pinned native Codex setup must complete before release smoke',
   )
+  assert.equal(workflow.includes(neutralFixturePath), false, 'release sources must exclude test fixtures')
+  assert.equal(workflow.includes(neutralFixtureId), false, 'release sources must exclude neutral fixture IDs')
 }
 
 function assertAssetParityCiContract(workflow) {

@@ -1,17 +1,23 @@
 //! Test-only contract shared by the shipped profile registries.
 
 use crate::artifact_hash::pack_content_sha256;
+use crate::commands::capabilities::capabilities;
+use crate::commands::decision_trace::DECISION_TRACE_V1;
 use crate::commands::evals::eval_pack;
 use crate::commands::health::{profile_activation_decision, validate_pack};
+use crate::constants::RUN_RECEIPT_CONTRACT;
 use crate::models::Manifest;
 use crate::pack_io::read_manifest;
 use crate::primitives::PrimitiveId;
 use crate::routing::route_budget_preflight;
+use crate::run_contracts::RUN_BUNDLE_V1;
+use crate::run_replay::REPLAY_LEDGER_CONTRACT;
 use crate::skill_catalog::{PROFILE_DESCRIPTORS, is_packaged_skill};
 use crate::template_registry::{descriptors, lookup};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 const BASIC_DIGEST: &str = "7d7acb7abb1954f2782b3eb9aa09d5730d7700b9d49936cd957942ccebf55e7d";
 const PROPOSAL_DIGEST: &str = "2bcdaeefe2334215cde0e68aba650abd1d69806825feadfadde3c1333b9bfad9";
@@ -33,6 +39,8 @@ const FORBIDDEN: &[&str] = &[
 struct Subject {
     id: String,
     registered: bool,
+    registry_valid: bool,
+    safe_boundaries: bool,
     primitive_ids: Vec<String>,
     mappings: BTreeMap<String, Vec<String>>,
     jobs: Vec<Job>,
@@ -45,8 +53,10 @@ struct Subject {
     output_mapping: bool,
     gap_mapping: bool,
     eval_mapping: bool,
-    receipt_trace_clean_replay: bool,
+    contracts: Vec<String>,
     authored_digest: Option<String>,
+    expected_digest: Option<String>,
+    routes: Vec<Route>,
     #[serde(default)]
     text: Vec<String>,
 }
@@ -59,6 +69,20 @@ struct Job {
     input_contracts: Vec<String>,
     max_entries: usize,
     max_bytes: usize,
+    #[serde(default)]
+    model_task: Option<ModelTask>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ModelTask {
+    kind: String,
+    prompt: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Route {
+    job_id: String,
+    skill_id: String,
 }
 
 fn finding(subject: &str, check: &str) -> String {
@@ -85,6 +109,27 @@ fn check_subject(subject: &Subject) -> Vec<String> {
     if subject.mappings.values().any(Vec::is_empty) {
         out.push(finding(&subject.id, "primitive-mappings"));
     }
+    if !subject.registry_valid {
+        out.push(finding(&subject.id, "registry"));
+    }
+    if !subject.safe_boundaries {
+        out.push(finding(&subject.id, "safe-boundaries"));
+    }
+    if subject.id == "neutral" && subject.registered {
+        out.push(finding(&subject.id, "registration"));
+    }
+    if let (Some(actual), Some(expected_digest)) =
+        (&subject.authored_digest, &subject.expected_digest)
+    {
+        if actual != expected_digest {
+            out.push(finding(&subject.id, "pack-digest"));
+        }
+    }
+    let routes = subject
+        .routes
+        .iter()
+        .map(|route| (&route.job_id, &route.skill_id))
+        .collect::<BTreeSet<_>>();
     let mut jobs = BTreeSet::new();
     for job in &subject.jobs {
         if !jobs.insert(&job.id) {
@@ -93,6 +138,14 @@ fn check_subject(subject: &Subject) -> Vec<String> {
         if job.skill_id.is_empty() || !job.required_primitives.iter().all(|p| expected.contains(p))
         {
             out.push(finding(&subject.id, "job-ownership"));
+        }
+        if !routes.contains(&(&job.id, &job.skill_id)) {
+            out.push(finding(&subject.id, "route-ownership"));
+        }
+        if let Some(task) = &job.model_task
+            && (task.kind.trim().is_empty() || task.prompt.trim().is_empty())
+        {
+            out.push(finding(&subject.id, "model-task"));
         }
         if job.input_contracts.is_empty()
             || !job
@@ -144,22 +197,60 @@ fn check_subject(subject: &Subject) -> Vec<String> {
     if !subject.eval_mapping {
         out.push(finding(&subject.id, "eval-mapping"));
     }
-    if !subject.receipt_trace_clean_replay {
+    let required_contracts = [
+        RUN_RECEIPT_CONTRACT,
+        DECISION_TRACE_V1,
+        RUN_BUNDLE_V1,
+        REPLAY_LEDGER_CONTRACT,
+    ];
+    if required_contracts
+        .iter()
+        .any(|contract| !subject.contracts.iter().any(|value| value == contract))
+    {
         out.push(finding(&subject.id, "runtime-authority"));
     }
     if subject.id == "neutral"
-        && subject.text.iter().any(|value| {
-            FORBIDDEN.iter().any(|term| {
-                value
-                    .to_ascii_lowercase()
-                    .split(|c: char| !c.is_ascii_alphanumeric())
-                    .any(|token| token == *term)
-            })
-        })
+        && fixture_strings(subject)
+            .iter()
+            .any(|value| forbidden(value))
     {
         out.push(finding(&subject.id, "vocabulary-isolation"));
     }
     out
+}
+
+fn forbidden(value: &str) -> bool {
+    FORBIDDEN.iter().any(|term| {
+        value
+            .to_ascii_lowercase()
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|token| token == *term)
+    })
+}
+
+fn fixture_strings(subject: &Subject) -> Vec<String> {
+    fn visit(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(value) if PrimitiveId::from_str(value).is_err() => {
+                out.push(value.clone())
+            }
+            serde_json::Value::Array(values) => values.iter().for_each(|value| visit(value, out)),
+            serde_json::Value::Object(values) => values.iter().for_each(|(key, value)| {
+                if PrimitiveId::from_str(key).is_err() {
+                    out.push(key.clone());
+                }
+                visit(value, out);
+            }),
+            _ => {}
+        }
+    }
+    let mut value = serde_json::to_value(subject).expect("subject serializes");
+    if let Some(object) = value.as_object_mut() {
+        object.remove("primitive_ids");
+    }
+    let mut strings = Vec::new();
+    visit(&value, &mut strings);
+    strings
 }
 
 fn real_subject(profile_id: &str) -> Subject {
@@ -202,11 +293,17 @@ fn real_subject(profile_id: &str) -> Subject {
             input_contracts: job.input_contracts.clone(),
             max_entries: job.context_budget.as_ref().map_or(0, |b| b.max_entries),
             max_bytes: job.context_budget.as_ref().map_or(0, |b| b.max_bytes),
+            model_task: job.model_task.as_ref().map(|task| ModelTask {
+                kind: task.kind.clone(),
+                prompt: task.prompt.clone(),
+            }),
         })
         .collect();
     Subject {
         id: profile_id.to_string(),
         registered: true,
+        registry_valid: crate::skill_catalog::validate_registry(PROFILE_DESCRIPTORS).is_ok(),
+        safe_boundaries: true,
         primitive_ids: manifest.required_primitives.clone(),
         mappings,
         jobs,
@@ -232,8 +329,26 @@ fn real_subject(profile_id: &str) -> Subject {
             .primitive_map
             .get("evals")
             .is_some_and(|m| !m.evals.is_empty()),
-        receipt_trace_clean_replay: true,
+        contracts: vec![
+            RUN_RECEIPT_CONTRACT.into(),
+            DECISION_TRACE_V1.into(),
+            RUN_BUNDLE_V1.into(),
+            REPLAY_LEDGER_CONTRACT.into(),
+        ],
         authored_digest: Some(pack_content_sha256(&pack).expect("canonical digest")),
+        expected_digest: Some(if profile_id == "gtm" {
+            BASIC_DIGEST.into()
+        } else {
+            PROPOSAL_DIGEST.into()
+        }),
+        routes: descriptor
+            .jobs
+            .iter()
+            .map(|route| Route {
+                job_id: route.job_id.into(),
+                skill_id: route.skill_id.into(),
+            })
+            .collect(),
         text: vec![],
     }
 }
@@ -283,21 +398,17 @@ fn neutral_fixture_passes_core_but_is_not_registered_or_packaged() {
         descriptors().iter().map(|d| d.id).collect::<Vec<_>>(),
         ["gtm", "proposal"]
     );
+    assert_eq!(
+        capabilities()["defaults"]["init_templates"],
+        serde_json::json!(["gtm", "proposal"])
+    );
     assert!(
         subject
             .jobs
             .iter()
             .all(|job| !is_packaged_skill(&job.skill_id))
     );
-    assert!(
-        subject
-            .text
-            .iter()
-            .all(|value| !FORBIDDEN.iter().any(|term| value
-                .to_ascii_lowercase()
-                .split(|c: char| !c.is_ascii_alphanumeric())
-                .any(|token| token == *term)))
-    );
+    assert!(subject.text.iter().all(|value| !forbidden(value)));
 }
 
 #[test]
@@ -355,7 +466,28 @@ fn mutations_have_stable_profile_specific_findings() {
         (
             "runtime-authority",
             Box::new(|s| {
-                s.receipt_trace_clean_replay = false;
+                s.contracts.clear();
+            }),
+        ),
+        ("safe-boundaries", Box::new(|s| s.safe_boundaries = false)),
+        ("registry", Box::new(|s| s.registry_valid = false)),
+        ("registration", Box::new(|s| s.registered = true)),
+        (
+            "route-ownership",
+            Box::new(|s| s.routes[0].skill_id = "other".into()),
+        ),
+        (
+            "model-task",
+            Box::new(|s| s.jobs[0].model_task.as_mut().unwrap().prompt.clear()),
+        ),
+        ("output-mapping", Box::new(|s| s.output_mapping = false)),
+        ("gap-mapping", Box::new(|s| s.gap_mapping = false)),
+        ("eval-mapping", Box::new(|s| s.eval_mapping = false)),
+        (
+            "pack-digest",
+            Box::new(|s| {
+                s.authored_digest = Some("changed".into());
+                s.expected_digest = Some("drift".into());
             }),
         ),
     ];
@@ -368,20 +500,14 @@ fn mutations_have_stable_profile_specific_findings() {
         );
     }
     let mut gtm = base.clone();
-    gtm.id = "gtm".into();
     gtm.text.push("prospect".into());
-    assert!(
-        !gtm.text
-            .iter()
-            .all(|value| !FORBIDDEN.contains(&value.as_str()))
-    );
+    assert!(check_subject(&gtm).contains(&finding("neutral", "vocabulary-isolation")));
     let mut proposal = base;
-    proposal.id = "proposal".into();
     proposal.text.push("proposal".into());
-    assert!(
-        !proposal
-            .text
-            .iter()
-            .all(|value| !FORBIDDEN.contains(&value.as_str()))
-    );
+    assert!(check_subject(&proposal).contains(&finding("neutral", "vocabulary-isolation")));
+    for profile in ["gtm", "proposal"] {
+        let mut subject = real_subject(profile);
+        subject.route_ready = false;
+        assert!(check_subject(&subject).contains(&finding(profile, "route-budget")));
+    }
 }
