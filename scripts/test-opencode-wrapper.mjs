@@ -180,7 +180,43 @@ const fs = require('node:fs')
 const path = require('node:path')
 const args = process.argv.slice(2)
 const selector = 'message-decision-packs@message-decision-packs-local'
+const trace = (value) => {
+  if (process.env.PLUXX_TEST_CODEX_TRACE) {
+    fs.appendFileSync(process.env.PLUXX_TEST_CODEX_TRACE, value + '\\n')
+  }
+}
+if (
+  args[0] === 'plugin' &&
+  args[1] === 'marketplace' &&
+  args[2] === 'add' &&
+  args[4] === '--json'
+) {
+  trace('marketplace add')
+  const config = fs.readFileSync(process.env.PLUXX_CODEX_CONFIG_PATH, 'utf8')
+  if (!config.includes('[marketplaces.message-decision-packs-local]')) {
+    fs.appendFileSync(
+      process.env.PLUXX_CODEX_CONFIG_PATH,
+      '\\n[marketplaces.message-decision-packs-local]\\nsource_type = "local"\\nsource = "' + args[3] + '"\\n',
+    )
+  }
+  fs.appendFileSync(process.env.PLUXX_CODEX_CONFIG_PATH, '# fake marketplace refresh\\n')
+  process.stdout.write(JSON.stringify({
+    marketplaceName: 'message-decision-packs-local',
+    installedRoot: args[3],
+    alreadyAdded: false,
+  }))
+  process.exit(0)
+}
 if (args[0] === 'plugin' && args[1] === 'add' && args[2] === selector && args[3] === '--json') {
+  const traceContent = process.env.PLUXX_TEST_CODEX_TRACE &&
+    fs.existsSync(process.env.PLUXX_TEST_CODEX_TRACE)
+    ? fs.readFileSync(process.env.PLUXX_TEST_CODEX_TRACE, 'utf8')
+    : ''
+  if (!traceContent.includes('marketplace add')) {
+    process.stderr.write('plugin add ran before marketplace add')
+    process.exit(18)
+  }
+  trace('plugin add')
   if (process.env.PLUXX_TEST_CODEX_FAILURE === 'add') {
     const cache = path.join(
       process.env.CODEX_HOME,
@@ -195,6 +231,7 @@ if (args[0] === 'plugin' && args[1] === 'add' && args[2] === selector && args[3]
   process.exit(0)
 }
 if (args[0] === 'plugin' && args[1] === 'list' && args[2] === '--json') {
+  trace('plugin list')
   process.stdout.write(JSON.stringify({
     installed: [{
       pluginId: selector,
@@ -306,6 +343,7 @@ try {
   const finalizedCodexInstaller = readFileSync(join(releaseRoot, 'install-codex.sh'), 'utf8')
   assert(
     finalizedCodexInstaller.includes('# MDP_NATIVE_CODEX_REGISTRATION_V1') &&
+      finalizedCodexInstaller.includes('codex plugin marketplace add "$marketplace_root" --json') &&
       finalizedCodexInstaller.includes('codex plugin add "$plugin_selector" --json') &&
       finalizedCodexInstaller.includes('plugin.installed !== true') &&
       finalizedCodexInstaller.includes('plugin.enabled !== true') &&
@@ -378,6 +416,7 @@ try {
   const codexHome = join(tempRoot, 'installed', 'codex-home')
   const codexConfigPath = join(codexHome, '.codex/config.toml')
   const codexPluginRoot = join(codexHome, '.codex/plugins/message-decision-packs')
+  const codexTracePath = join(tempRoot, 'codex-registration.trace')
   run('bash', [join(releaseRoot, 'install-codex.sh')], {
     cwd: root,
     environment: {
@@ -394,11 +433,18 @@ try {
       PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
       PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
       PLUXX_CODEX_MARKETPLACE_PATH: join(codexHome, '.agents/plugins/marketplace.json'),
+      PLUXX_TEST_CODEX_TRACE: codexTracePath,
       PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
       PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
       PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
     },
   })
+
+  assert(
+    readFileSync(codexTracePath, 'utf8') ===
+      'marketplace add\nplugin add\nplugin list\n',
+    'Generated Codex installer must register the local marketplace before adding the plugin.',
+  )
 
   assert(
     existsSync(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')),
@@ -488,6 +534,7 @@ try {
       PLUXX_CODEX_MARKETPLACE_PATH: codexMarketplacePath,
       PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
       PLUXX_TEST_CODEX_FAILURE: 'add',
+      PLUXX_TEST_CODEX_TRACE: join(tempRoot, 'codex-registration-failure.trace'),
       PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
       PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
     },

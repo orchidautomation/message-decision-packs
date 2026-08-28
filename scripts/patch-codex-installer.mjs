@@ -31,14 +31,41 @@ if ! command -v codex >/dev/null 2>&1; then
 fi
 
 plugin_selector="$PLUGIN_NAME@$MARKETPLACE_NAME"
-export CODEX_HOME_DIR PLUGIN_NAME MARKETPLACE_NAME
-native_cache_path="$(node <<'NODE'
+export CODEX_CONFIG_PATH CODEX_HOME_DIR INSTALL_DIR MARKETPLACE_PATH PLUGIN_NAME MARKETPLACE_NAME
+registration_paths="$(node <<'NODE'
 const path = require('path')
+const codexConfigPath = path.resolve(process.env.CODEX_CONFIG_PATH ?? '')
+const codexHome = path.resolve(process.env.CODEX_HOME_DIR ?? '')
+const installDir = path.resolve(process.env.INSTALL_DIR ?? '')
+const marketplacePath = path.resolve(process.env.MARKETPLACE_PATH ?? '')
 const pluginName = process.env.PLUGIN_NAME ?? ''
 const marketplaceName = process.env.MARKETPLACE_NAME ?? ''
 const safeIdentifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 if (!safeIdentifier.test(pluginName) || !safeIdentifier.test(marketplaceName)) {
   console.error('Refusing unsafe Codex plugin or marketplace identifier.')
+  process.exit(1)
+}
+const marketplaceRoot = path.dirname(path.dirname(path.dirname(marketplacePath)))
+const expectedMarketplacePath = path.join(
+  marketplaceRoot,
+  '.agents',
+  'plugins',
+  'marketplace.json',
+)
+const expectedInstallDir = path.join(
+  marketplaceRoot,
+  '.codex',
+  'plugins',
+  pluginName,
+)
+if (
+  codexConfigPath !== path.join(codexHome, 'config.toml') ||
+  marketplacePath !== expectedMarketplacePath ||
+  installDir !== expectedInstallDir
+) {
+  console.error(
+    'Codex native registration requires matching native config, marketplace, and plugin paths.',
+  )
   process.exit(1)
 }
 const cacheRoot = path.resolve(process.env.CODEX_HOME_DIR, 'plugins', 'cache')
@@ -47,10 +74,39 @@ if (!target.startsWith(cacheRoot + path.sep)) {
   console.error('Refusing a native Codex cache path outside the cache root.')
   process.exit(1)
 }
-process.stdout.write(target)
+process.stdout.write(marketplaceRoot + '\t' + target)
 NODE
 )"
+IFS=$'\t' read -r marketplace_root native_cache_path <<< "$registration_paths"
 pluxx_tx_backup_owned_path "$native_cache_path"
+marketplace_add_json="$(codex plugin marketplace add "$marketplace_root" --json)"
+export MDP_CODEX_MARKETPLACE_ADD_JSON="$marketplace_add_json"
+export MDP_CODEX_MARKETPLACE_NAME="$MARKETPLACE_NAME"
+export MDP_CODEX_MARKETPLACE_ROOT="$marketplace_root"
+node <<'NODE'
+const fs = require('fs')
+let payload
+try {
+  payload = JSON.parse(process.env.MDP_CODEX_MARKETPLACE_ADD_JSON ?? '')
+} catch {
+  console.error('Codex marketplace registration returned invalid JSON.')
+  process.exit(1)
+}
+let installedRoot = ''
+let expectedRoot = ''
+try {
+  installedRoot = fs.realpathSync(payload.installedRoot ?? '')
+  expectedRoot = fs.realpathSync(process.env.MDP_CODEX_MARKETPLACE_ROOT ?? '')
+} catch {}
+if (
+  payload.marketplaceName !== process.env.MDP_CODEX_MARKETPLACE_NAME ||
+  installedRoot !== expectedRoot
+) {
+  console.error('Codex marketplace registration did not bind the expected local root.')
+  process.exit(1)
+}
+NODE
+unset MDP_CODEX_MARKETPLACE_ADD_JSON MDP_CODEX_MARKETPLACE_NAME MDP_CODEX_MARKETPLACE_ROOT
 if ! codex plugin add "$plugin_selector" --json >/dev/null; then
   echo "Failed to register $plugin_selector with the native Codex plugin manager." >&2
   exit 1
