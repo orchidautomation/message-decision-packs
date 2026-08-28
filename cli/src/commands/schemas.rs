@@ -3552,30 +3552,21 @@ fn job_route_schema() -> Value {
 }
 
 fn canonical_job_skill_pairs(job_field: &str) -> Vec<Value> {
-    [
-        ("prospect-fit-or-brief", "mdp-gtm-brief"),
-        ("outbound-copy-brief", "mdp-gtm-brief"),
-        ("outbound-copy-review", "mdp-gtm-brief"),
-        ("bid-no-bid-review", "mdp-proposal-review"),
-        ("compliance-review", "mdp-proposal-review"),
-        ("proof-review", "mdp-proposal-review"),
-        ("red-team-review", "mdp-proposal-review"),
-    ]
-    .into_iter()
-    .map(|(job_id, skill_id)| {
-        json!({
-            "properties": {
-                (job_field): {"const": job_id},
-                "skill_id": {"const": skill_id}
-            },
-            "required": [job_field, "skill_id"]
+    crate::skill_catalog::ordered_route_specs()
+        .map(|(_, route)| {
+            json!({
+                "properties": {
+                    (job_field): {"const": route.job_id},
+                    "skill_id": {"const": route.skill_id}
+                },
+                "required": [job_field, "skill_id"]
+            })
         })
-    })
-    .collect()
+        .collect()
 }
 
 fn canonical_skill_id_schema() -> Value {
-    json!({"enum": ["mdp", "mdp-pack-builder", "mdp-pack-review", "mdp-gtm-brief", "mdp-proposal-review"]})
+    json!({"enum": crate::skill_catalog::PACKAGED_SKILL_IDS})
 }
 
 fn canonical_skill_id_array_schema() -> Value {

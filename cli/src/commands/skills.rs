@@ -6,7 +6,9 @@ use crate::product_foundation::{
     apply_validation_errors_for_job, resolve_product_foundation_for_pack,
     validation_errors_block_job, validation_issues_for_job,
 };
-use crate::skill_catalog::{BOOTSTRAP_SKILL_IDS, JOB_ROUTE_SPECS, PACKAGED_SKILL_IDS, route_spec};
+use crate::skill_catalog::{
+    BOOTSTRAP_SKILL_IDS, PACKAGED_SKILL_IDS, profile_descriptor, route_spec,
+};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -111,10 +113,25 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
     }
 
     let mut routes = Vec::new();
-    for spec in JOB_ROUTE_SPECS
-        .iter()
-        .filter(|spec| spec.profile_id == profile.id)
-    {
+    let Some(descriptor) = profile_descriptor(&profile.id) else {
+        diagnostics.push(diagnostic(
+            "skills_profile_unknown",
+            ".mdp/manifest.yaml#/profile/id",
+            format!(
+                "profile {} is not in the closed profile registry",
+                profile.id
+            ),
+        ));
+        return bootstrap_payload(
+            false,
+            "unresolved",
+            pack_payload(&manifest),
+            profile_payload(&manifest),
+            requested_job,
+            diagnostics,
+        );
+    };
+    for spec in descriptor.jobs {
         let Some(job) = manifest
             .jobs
             .iter()

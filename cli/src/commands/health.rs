@@ -24,7 +24,7 @@ use crate::product_foundation::{
 };
 use crate::routing::select_cards;
 use crate::scope::valid_declared_identifier;
-use crate::skill_catalog::{JOB_ROUTE_SPECS, is_packaged_skill, route_spec};
+use crate::skill_catalog::{is_packaged_skill, job_owner, route_spec};
 use crate::value_contracts::PROSPECT_CONTRACT_FIELDS;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -2811,7 +2811,7 @@ fn validate_profile_jobs(
                     ),
                 ));
             }
-        } else if JOB_ROUTE_SPECS.iter().any(|route| route.job_id == job.id) {
+        } else if job_owner(&job.id).is_some() {
             issues.push(issue(
                 "profile_job_route_incompatible",
                 "error",
