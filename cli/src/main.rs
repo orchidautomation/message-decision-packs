@@ -7,6 +7,7 @@ mod cli;
 mod commands;
 mod conformance;
 mod constants;
+mod decision_input;
 mod diagnostics;
 mod model_steps;
 mod models;

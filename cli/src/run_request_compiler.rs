@@ -475,6 +475,32 @@ fn validate_governed_lineage(
             "mdp requirements --dir <pack> --job <job>",
         ));
     }
+    // Establish ownership before any normalized payload is interpreted.  In
+    // particular, payload aliases must never be used to guess a profile.
+    if normalized.is_some() {
+        let manifest = crate::pack_io::read_manifest(root).map_err(|_| {
+            diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            )
+        })?;
+        let job_definition = manifest
+            .jobs
+            .iter()
+            .find(|candidate| candidate.id == job)
+            .ok_or_else(|| {
+                diagnostic(
+                    "governed-lineage-invalid",
+                    "mdp requirements --dir <pack> --job <job>",
+                )
+            })?;
+        crate::decision_input::select_adapter_for_job(&manifest, job_definition).map_err(|_| {
+            diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            )
+        })?;
+    }
     let compiled = crate::commands::requirements::requirements(root, job).map_err(|_| {
         diagnostic(
             "governed-lineage-invalid",

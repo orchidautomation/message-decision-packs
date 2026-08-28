@@ -3,6 +3,79 @@ use crate::utils::resolve_pack_persona_label;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Validate the profile-neutral value against the manifest view.  Adapters are
+/// responsible for deciding which public fields enter `DecisionInput`; this
+/// function intentionally has no persona or product-profile behavior.
+pub(crate) fn decision_input_contract_violations(
+    requirements: &crate::decision_input::RequirementsView<'_>,
+    input: &crate::decision_input::DecisionInput,
+) -> Vec<ContractViolation> {
+    let mut violations = Vec::new();
+    for field in requirements.required_fields() {
+        let present = if field == "signals" {
+            !input.signals().is_empty()
+        } else {
+            input.field(field).is_some_and(meaningful_json_value)
+        };
+        if !present {
+            violations.push(required_violation("decision_input", field, field));
+        }
+    }
+    for field in requirements.required_signal_fields() {
+        if !input
+            .signals()
+            .iter()
+            .any(|signal| signal.get(field).is_some_and(meaningful_json_value))
+        {
+            violations.push(required_violation(
+                "signal",
+                field,
+                &format!("signals/{field}"),
+            ));
+        }
+    }
+    for field in requirements.value_contracts() {
+        let (name, contract) = field;
+        if let Some(value) = input
+            .field(name)
+            .filter(|value| meaningful_json_value(value))
+        {
+            validate_value(
+                name,
+                value,
+                contract,
+                name,
+                "decision_input",
+                &mut violations,
+            );
+        } else if contract.required && !requirements.required_fields().contains(name) {
+            violations.push(required_violation("decision_input", name, name));
+        }
+    }
+    for name in requirements.required_attributes() {
+        if !input
+            .attributes()
+            .get(name)
+            .is_some_and(meaningful_json_value)
+        {
+            violations.push(required_violation(
+                "attribute",
+                name,
+                &format!("attributes/{name}"),
+            ));
+        }
+    }
+    let attributes = input.attributes().iter().collect::<Vec<_>>();
+    collect_attribute_contract_violations(
+        requirements.attribute_definitions(),
+        requirements.allow_undeclared_attributes(),
+        &attributes,
+        "attributes",
+        &mut violations,
+    );
+    violations
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ContractViolation {
     pub(crate) code: &'static str,
