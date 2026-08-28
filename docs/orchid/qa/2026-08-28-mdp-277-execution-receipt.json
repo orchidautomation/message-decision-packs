@@ -1,0 +1,36 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-277",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-28-005-mdp-277-profile-registry-plan.md",
+    "sha256": "628292ea6666662df6261be4b29ce4eedb6f19bf901a74633e252d263bbdd67e",
+    "sourceRef": "codex/mdp-277-profile-registry",
+    "sourceCommit": "b587579c89bfa91a3569c3e522fbe761d185b0c0"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "01a046c0-ac0d-7cb3-904a-6825bf7b8ad6",
+    "dispatchHash": "6fee3e1bf86ceb52add94018ff45ad1c56e105d441eccd5cbe67dd395fedd92b",
+    "implementationHead": "3d8fef9169c5f2191a35f12424875492ea85fdd4"
+  },
+  "validation": {
+    "fullRust": "794 unit tests plus 25, 11, 19, and 2 integration tests passed on the implementation head",
+    "compatibility": "Strict shipped-template validation/evals, all seven requirements routes, skill contract/eval/packaging suites, public artifact lint, formatting, schema assertions, and git diff checks passed",
+    "boundaries": "Exactly two registered profiles, five packaged skills, three bootstrap skills, and seven ordered routes remain; no public schema version, template byte, plugin content, Cargo, release, deployment, or installation surface changed"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-277-profile-registry",
+    "cumulativeBranch": "codex/mdp-273-primitive-contracts",
+    "targetRef": "main",
+    "pullRequest": 236
+  },
+  "recovery": "Relay rejected an initial dispatch receipt that lacked the exact lane and plan binding, then used the canonical fully bound Luna receipt for execution and lifecycle evidence.",
+  "observedAt": "2026-08-28T05:15:00Z"
+}
