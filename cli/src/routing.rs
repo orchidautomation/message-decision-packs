@@ -2513,6 +2513,7 @@ mod tests {
             required_primitives: Vec::new(),
             primitive_map: std::collections::BTreeMap::new(),
             decision_input_contracts: Vec::new(),
+            classification_taxonomies: Vec::new(),
             input_contracts: Vec::new(),
             jobs: Vec::new(),
             profile_eval: crate::models::ProfileEval::default(),

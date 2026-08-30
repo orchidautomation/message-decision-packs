@@ -26,15 +26,24 @@ use std::collections::BTreeMap;
 use crate::constants::{
     CLASSIFICATION_TAXONOMY_CONTRACT_V3, NORMALIZED_DECISION_INPUT_CONTRACT_V3,
     NORMALIZED_SEMANTIC_PROVIDER_SCHEMA_REF_V3, REQUIREMENTS_HASH_LABEL_V3,
-    TAXONOMY_SET_HASH_LABEL_V3, V3_AMBIGUITY_POLICY_HUMAN_REVIEW, V3_BASIS_MAX_CHARS_DEFAULT,
-    V3_BASIS_MAX_CHARS_HARD_LIMIT, V3_CLASSIFICATION_STATUS_AMBIGUOUS,
-    V3_CLASSIFICATION_STATUS_CLASSIFIED, V3_CLASSIFICATION_STATUS_NO_MATCH,
-    V3_CLASSIFICATION_STATUS_UNSUPPORTED, V3_CONFLICT_POLICY_HUMAN_REVIEW, V3_IDENTIFIER_MAX_LEN,
-    V3_MAX_CLASSIFICATIONS_PER_ENVELOPE, V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
-    V3_MAX_GAPS_PER_ENVELOPE, V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE, V3_NO_MATCH_POLICY_GAP,
+    TAXONOMY_SET_HASH_LABEL_V3, V3_AMBIGUITY_POLICY_HUMAN_REVIEW, V3_BASIS_MAX_CHARS_HARD_LIMIT,
+    V3_CLASSIFICATION_STATUS_AMBIGUOUS, V3_CLASSIFICATION_STATUS_CLASSIFIED,
+    V3_CLASSIFICATION_STATUS_NO_MATCH, V3_CLASSIFICATION_STATUS_UNSUPPORTED,
+    V3_CONFLICT_POLICY_HUMAN_REVIEW, V3_IDENTIFIER_MAX_LEN, V3_MAX_CLASSIFICATIONS_PER_ENVELOPE,
+    V3_MAX_DERIVED_FROM_PER_CLASSIFICATION, V3_MAX_GAPS_PER_ENVELOPE,
+    V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE, V3_MAX_TAXONOMY_CONTRIBUTORS, V3_MAX_TAXONOMY_VALUES,
+    V3_NO_MATCH_POLICY_GAP,
 };
 use crate::models::{
-    NORMALIZATION_HOST_ENVELOPE_CONTRACT, NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+    ClassificationTaxonomy as ClassificationTaxonomyV3, NORMALIZATION_HOST_ENVELOPE_CONTRACT,
+    NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+};
+
+#[cfg(test)]
+use crate::models::{
+    ClassificationAmbiguityPolicy, ClassificationConflictPolicy, ClassificationMinimumEvidence,
+    ClassificationNoMatchPolicy, ClassificationTaxonomyValue as ClassificationTaxonomyValueV3,
+    DecisionInputSourceClass,
 };
 
 // =============================================================================
@@ -49,72 +58,6 @@ pub(crate) const V3_CLASSIFICATION_STATUSES: &[&str] = &[
     V3_CLASSIFICATION_STATUS_NO_MATCH,
     V3_CLASSIFICATION_STATUS_UNSUPPORTED,
 ];
-
-/// Closed set of policy identifiers that may appear in the authored
-/// classification taxonomy. Packs must pick from this set; the host seals the
-/// chosen policy as part of the taxonomy identity.
-pub(crate) const V3_POLICY_KINDS: &[&str] = &[
-    V3_AMBIGUITY_POLICY_HUMAN_REVIEW,
-    V3_NO_MATCH_POLICY_GAP,
-    V3_CONFLICT_POLICY_HUMAN_REVIEW,
-];
-
-// =============================================================================
-// Authored and compiled classification taxonomy.
-// =============================================================================
-
-/// Authored classification taxonomy used by packs. A pack may declare one or
-/// more taxonomies; one canonical taxonomy is selected per classified
-/// attribute for the current job. The runtime stamps the selected taxonomy
-/// identity and the canonical SHA-256 over the selected taxonomy set.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ClassificationTaxonomyV3 {
-    pub(crate) id: String,
-    pub(crate) version: String,
-    pub(crate) output_attribute: String,
-    #[serde(default)]
-    pub(crate) contributor_attribute_ids: Vec<String>,
-    #[serde(default)]
-    pub(crate) source_classes: Vec<String>,
-    #[serde(default)]
-    pub(crate) minimum_evidence_observed_contributors: u32,
-    #[serde(default = "default_basis_max_chars")]
-    pub(crate) basis_max_chars: usize,
-    #[serde(default)]
-    pub(crate) ambiguity_policy: Option<String>,
-    #[serde(default)]
-    pub(crate) no_match_policy: Option<String>,
-    #[serde(default)]
-    pub(crate) conflict_policy: Option<String>,
-    pub(crate) values: Vec<ClassificationTaxonomyValueV3>,
-}
-
-fn default_basis_max_chars() -> usize {
-    V3_BASIS_MAX_CHARS_DEFAULT
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ClassificationTaxonomyValueV3 {
-    pub(crate) value: String,
-    #[serde(default)]
-    pub(crate) definition: Option<String>,
-    #[serde(default)]
-    pub(crate) positive_indicators: Vec<String>,
-    #[serde(default)]
-    pub(crate) exclusions: Vec<String>,
-}
-
-impl ClassificationTaxonomyV3 {
-    /// Returns the canonical taxonomy value domain, sorted for stable
-    /// hashing. The selected taxonomies form a precise value authority that
-    /// downstream checks compare against the attribute's value contract.
-    #[allow(dead_code)] // Reserved for the U1/U2 taxonomy compiler lane.
-    pub(crate) fn canonical_values(&self) -> Vec<String> {
-        let mut values: Vec<String> = self.values.iter().map(|v| v.value.clone()).collect();
-        values.sort();
-        values
-    }
-}
 
 // =============================================================================
 // Semantic-only provider payload.
@@ -415,30 +358,48 @@ pub(crate) fn v3_classification_taxonomy_schema() -> Value {
         "type": "object",
         "additionalProperties": false,
         "required": [
-            "id", "version", "output_attribute", "values"
+            "id", "version", "output_attribute", "contributor_attribute_ids",
+            "source_classes", "minimum_evidence", "basis_max_chars",
+            "ambiguity_policy", "no_match_policy", "conflict_policy", "values"
         ],
         "properties": {
             "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
-            "version": { "type": "string", "minLength": 1 },
-            "output_attribute": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1, "maxLength": V3_IDENTIFIER_MAX_LEN },
+            "output_attribute": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$", "maxLength": V3_IDENTIFIER_MAX_LEN },
             "contributor_attribute_ids": {
                 "type": "array",
+                "minItems": 1,
+                "maxItems": V3_MAX_TAXONOMY_CONTRIBUTORS,
                 "uniqueItems": true,
-                "items": { "type": "string", "minLength": 1 }
+                "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$", "maxLength": V3_IDENTIFIER_MAX_LEN }
             },
             "source_classes": {
                 "type": "array",
+                "minItems": 1,
+                "maxItems": 5,
                 "uniqueItems": true,
-                "items": { "type": "string", "minLength": 1 }
+                "items": { "enum": ["user_provided", "customer_system", "reviewed_internal", "public_web", "synthetic_fixture"] }
             },
-            "minimum_evidence_observed_contributors": { "type": "integer", "minimum": 0 },
+            "minimum_evidence": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["observed_contributors"],
+                "properties": {
+                    "observed_contributors": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": V3_MAX_TAXONOMY_CONTRIBUTORS
+                    }
+                }
+            },
             "basis_max_chars": { "type": "integer", "minimum": 1, "maximum": V3_BASIS_MAX_CHARS_HARD_LIMIT },
-            "ambiguity_policy": { "enum": V3_POLICY_KINDS },
-            "no_match_policy": { "enum": V3_POLICY_KINDS },
-            "conflict_policy": { "enum": V3_POLICY_KINDS },
+            "ambiguity_policy": { "const": V3_AMBIGUITY_POLICY_HUMAN_REVIEW },
+            "no_match_policy": { "const": V3_NO_MATCH_POLICY_GAP },
+            "conflict_policy": { "const": V3_CONFLICT_POLICY_HUMAN_REVIEW },
             "values": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": V3_MAX_TAXONOMY_VALUES,
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
@@ -446,8 +407,8 @@ pub(crate) fn v3_classification_taxonomy_schema() -> Value {
                     "properties": {
                         "value": { "type": "string", "minLength": 1 },
                         "definition": { "type": "string", "minLength": 1 },
-                        "positive_indicators": { "type": "array", "items": { "type": "string" } },
-                        "exclusions": { "type": "array", "items": { "type": "string" } }
+                        "positive_indicators": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                        "exclusions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
                     }
                 }
             }
@@ -907,22 +868,24 @@ mod tests {
             version: "1".into(),
             output_attribute: "persona".into(),
             contributor_attribute_ids: vec!["person_title".into(), "responsibilities".into()],
-            source_classes: vec!["synthetic_fixture".into()],
-            minimum_evidence_observed_contributors: 1,
+            source_classes: vec![DecisionInputSourceClass::SyntheticFixture],
+            minimum_evidence: ClassificationMinimumEvidence {
+                observed_contributors: 1,
+            },
             basis_max_chars: 500,
-            ambiguity_policy: Some(V3_AMBIGUITY_POLICY_HUMAN_REVIEW.into()),
-            no_match_policy: Some(V3_NO_MATCH_POLICY_GAP.into()),
-            conflict_policy: Some(V3_CONFLICT_POLICY_HUMAN_REVIEW.into()),
+            ambiguity_policy: ClassificationAmbiguityPolicy::HumanReview,
+            no_match_policy: ClassificationNoMatchPolicy::Gap,
+            conflict_policy: ClassificationConflictPolicy::HumanReview,
             values: vec![
                 ClassificationTaxonomyValueV3 {
                     value: "GTM Systems Owner".into(),
-                    definition: Some("Owns or builds technical GTM systems.".into()),
+                    definition: "Owns or builds technical GTM systems.".into(),
                     positive_indicators: vec![],
                     exclusions: vec![],
                 },
                 ClassificationTaxonomyValueV3 {
                     value: "Quota-Carrying Seller".into(),
-                    definition: Some("Quota-carrying seller without system ownership.".into()),
+                    definition: "Quota-carrying seller without system ownership.".into(),
                     positive_indicators: vec![],
                     exclusions: vec![],
                 },

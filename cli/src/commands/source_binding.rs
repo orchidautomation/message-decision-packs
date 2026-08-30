@@ -654,6 +654,9 @@ fn expected_attributes(compiled: &Value) -> BTreeMap<(String, String), ExpectedA
     {
         let contract_id = contract["id"].as_str().unwrap_or_default();
         for attribute in contract["attributes"].as_array().into_iter().flatten() {
+            if attribute["processing"].as_str() == Some("model-classified") {
+                continue;
+            }
             let Some(attribute_id) = attribute["id"].as_str() else {
                 continue;
             };
@@ -739,7 +742,7 @@ pub(crate) fn source_binding_schema() -> Value {
     })
 }
 
-fn source_binding_schema_v1() -> Value {
+pub(crate) fn source_binding_schema_v1() -> Value {
     let non_blank = || json!({"type": "string", "minLength": 1, "pattern": ".*\\S.*"});
     let sha256 = || json!({"type": "string", "pattern": "^[0-9a-f]{64}$"});
     json!({
@@ -958,6 +961,23 @@ pub(crate) fn source_lineage_version_matrix() -> Value {
             "v1 source binding hash inside a v2 request",
             "different source binding hashes across v2 request, results, and normalized output"
         ]
+    })
+}
+
+pub(crate) fn semantic_v3_lineage_version_matrix() -> Value {
+    json!({
+        "semantic_v3": {
+            "requirements": REQUIREMENTS_CONTRACT,
+            "source_binding": SOURCE_BINDING_CONTRACT,
+            "source_attempt_request": SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+            "collected_attempt_results": COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
+            "normalized_output": crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3,
+            "meaning": "v1 attribute binding remains authoritative for observed collection; classified attributes are excluded from binding, request, and results and live only in the selected taxonomy specification"
+        },
+        "compatibility": {
+            "legacy_v1_v2_unchanged": true,
+            "mixed_versions_allowed_only_for": "semantic_v3"
+        }
     })
 }
 

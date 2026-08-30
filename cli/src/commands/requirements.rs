@@ -4,7 +4,8 @@ use crate::commands::health::{profile_activation_decision, validate_pack};
 use crate::commands::schemas::schema;
 use crate::commands::schemas::signal_observation_v2_schema;
 use crate::commands::source_binding::{
-    source_binding_schema_v2, source_lineage_version_matrix, validate_source_binding_v2,
+    semantic_v3_lineage_version_matrix, source_binding_schema_v1, source_binding_schema_v2,
+    source_lineage_version_matrix, validate_source_binding_v2,
 };
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT, COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
@@ -13,10 +14,10 @@ use crate::constants::{
 };
 use crate::model_steps::{MODEL_STEP_RESOLUTION_V1, resolve_model_steps};
 use crate::models::{
-    DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputCondition,
-    DecisionInputConditionOperator, DecisionInputContract, DecisionInputDisposition,
-    DecisionInputRequirement, DecisionInputSourceClass, InputContract, Manifest, ProfileJob,
-    ValueContract,
+    ClassificationTaxonomy, DecisionInputAttemptStatus, DecisionInputAttribute,
+    DecisionInputCondition, DecisionInputConditionOperator, DecisionInputContract,
+    DecisionInputDisposition, DecisionInputProcessing, DecisionInputRequirement,
+    DecisionInputSourceClass, InputContract, Manifest, ProfileJob, ValueContract,
 };
 use crate::pack_io::{read_canonical_prompt_by_id, read_manifest, resolve_pack_path};
 use crate::product_foundation::{
@@ -253,6 +254,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         }));
     }
 
+    let selected_taxonomies = selected_classification_taxonomies(&manifest, &selected_contracts);
     let compiled_contracts = selected_contracts
         .iter()
         .map(|contract| compile_contract(contract))
@@ -263,6 +265,11 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let signal_aware = selected_contracts
         .iter()
         .any(|contract| !contract.signal_projections.is_empty());
+    let v3_aware = selected_contracts.iter().any(|contract| {
+        contract.attributes.iter().any(|attribute| {
+            attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+        })
+    });
     let foundation_blocked = product_foundation["status"] == "blocked";
     let model_task_blocked = model_task["status"] == "blocked";
     let model_steps_blocked = model_steps["status"] == "blocked";
@@ -311,21 +318,21 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             "reason": "Only non-decision provenance/safety markers may be present without a Decision Input output_path. All identity, fit, routing, signal, and attribute values require an explicit output_path."
         },
         "semantic_validation": {
-            "command": if signal_aware {
+            "command": if signal_aware || v3_aware {
                 "mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_NORMALIZATION_PROMPT --source-binding SOURCE_BINDING.json --source-attempt-request SOURCE_ATTEMPT_REQUEST.json --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json --file NORMALIZED_INPUT.json"
             } else {
                 "mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_NORMALIZATION_PROMPT --source-attempt-request SOURCE_ATTEMPT_REQUEST.json --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json --file NORMALIZED_INPUT.json"
             },
             "checks": [
                 "exact-compiled-schema",
-                if signal_aware { "bound-source-binding" } else { "scalar-v1-no-source-binding" },
+                if signal_aware || v3_aware { "bound-source-binding" } else { "scalar-v1-no-source-binding" },
                 "bound-source-attempt-request",
                 "bound-collected-attempt-results",
                 "bound-normalization-prompt",
                 "trusted-freshness",
                 "attribute-output-path-consistency",
                 "no-unbound-prospect-fields",
-                if signal_aware { "exact-signal-projection-and-conflict-policy" } else { "scalar-v1-compatibility" }
+                if v3_aware { "exact-classification-taxonomy-and-derived-lineage" } else if signal_aware { "exact-signal-projection-and-conflict-policy" } else { "scalar-v1-compatibility" }
             ]
         },
         "no_draft_policy": {
@@ -347,16 +354,82 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         },
         "diagnostics": diagnostics
     });
+    if let Some(compiled_semantics) =
+        semantic_v3_specifications(&selected_taxonomies, &selected_contracts)?
+    {
+        for (key, value) in compiled_semantics
+            .as_object()
+            .expect("semantic v3 specifications are an object")
+        {
+            response[key] = value.clone();
+        }
+    }
     if signal_aware {
         response["contract"] = json!(REQUIREMENTS_CONTRACT_V2);
         response["runtime_contract_version"] = json!("v2");
         response["source_binding_schema"] = source_binding_schema_v2();
         response["contract_version_matrix"] = source_lineage_version_matrix();
     }
+    if v3_aware {
+        response["runtime_contract_version"] = json!("v3");
+        response["source_binding_schema"] = source_binding_schema_v1();
+        response["contract_version_matrix"] = semantic_v3_lineage_version_matrix();
+        if let Some(object) = response.as_object_mut() {
+            object.remove("normalized_prospect_schema");
+            object.remove("normalized_prospect_unbound_policy");
+        }
+    }
     if drafting_blocked {
         response["draft_allowed"] = json!(false);
     }
     finalize_requirements(response)
+}
+
+fn classification_specification(taxonomies: &[ClassificationTaxonomy]) -> Value {
+    json!({
+        "contract": crate::constants::CLASSIFICATION_TAXONOMY_CONTRACT_V3,
+        "taxonomies": taxonomies,
+    })
+}
+
+fn semantic_v3_specifications(
+    taxonomies: &[ClassificationTaxonomy],
+    contracts: &[&DecisionInputContract],
+) -> Result<Option<Value>> {
+    if taxonomies.is_empty() {
+        return Ok(None);
+    }
+    let classification = classification_specification(taxonomies);
+    let taxonomy_set_sha256 = canonical_json_sha256(&classification)?;
+    Ok(Some(json!({
+        "classification_specification": classification,
+        "taxonomy_set_sha256": taxonomy_set_sha256,
+        "collection_specification": collection_specification(contracts),
+    })))
+}
+
+fn collection_specification(contracts: &[&DecisionInputContract]) -> Value {
+    json!({
+        "provider_neutral": true,
+        "attributes": contracts.iter().flat_map(|contract| {
+            contract.attributes.iter().filter(|attribute| {
+                attribute.effective_processing() == DecisionInputProcessing::Observed
+            }).map(move |attribute| json!({
+                "decision_input_contract_id": contract.id,
+                "attribute_id": attribute.id,
+                "question": attribute.question,
+                "description": attribute.description,
+                "requirement": attribute.requirement,
+                "applies_when": attribute.applies_when,
+                "value": attribute.value,
+                "source_classes": attribute.source_classes,
+                "provenance": attribute.provenance,
+                "freshness": attribute.freshness,
+                "sensitivity": attribute.sensitivity,
+                "status_behavior": attribute.status_behavior,
+            }))
+        }).collect::<Vec<_>>()
+    })
 }
 
 fn blocked_product_foundation_resolution(job_id: &str) -> Value {
@@ -1765,6 +1838,41 @@ fn finalize_requirements(mut value: Value) -> Result<Value> {
     Ok(value)
 }
 
+fn selected_classification_taxonomies(
+    manifest: &Manifest,
+    contracts: &[&DecisionInputContract],
+) -> Vec<ClassificationTaxonomy> {
+    let references = contracts
+        .iter()
+        .flat_map(|contract| contract.attributes.iter())
+        .filter_map(|attribute| attribute.classification_taxonomy.as_ref())
+        .map(|reference| (reference.id.as_str(), reference.version.as_str()))
+        .collect::<BTreeSet<_>>();
+    let mut selected = manifest
+        .classification_taxonomies
+        .iter()
+        .filter(|taxonomy| references.contains(&(taxonomy.id.as_str(), taxonomy.version.as_str())))
+        .cloned()
+        .collect::<Vec<_>>();
+    for taxonomy in &mut selected {
+        taxonomy.contributor_attribute_ids.sort();
+        taxonomy.source_classes.sort();
+        taxonomy
+            .values
+            .sort_by(|left, right| left.value.cmp(&right.value));
+        for value in &mut taxonomy.values {
+            value.positive_indicators.sort();
+            value.exclusions.sort();
+        }
+    }
+    selected.sort_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| left.version.cmp(&right.version))
+    });
+    selected
+}
+
 fn compile_contract(contract: &DecisionInputContract) -> Value {
     let attributes = contract
         .attributes
@@ -1800,6 +1908,30 @@ fn compile_contract(contract: &DecisionInputContract) -> Value {
         "attempt_statuses": DecisionInputAttemptStatus::ALL,
         "attributes": attributes
     });
+    if contract.attributes.iter().any(|attribute| {
+        attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+    }) {
+        compiled["collection_attributes"] = json!(
+            contract
+                .attributes
+                .iter()
+                .filter(|attribute| {
+                    attribute.effective_processing() == DecisionInputProcessing::Observed
+                })
+                .map(|attribute| attribute.id.clone())
+                .collect::<Vec<_>>()
+        );
+        compiled["classification_attributes"] = json!(
+            contract
+                .attributes
+                .iter()
+                .filter(|attribute| {
+                    attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+                })
+                .map(|attribute| attribute.id.clone())
+                .collect::<Vec<_>>()
+        );
+    }
     if !contract.signal_projections.is_empty() {
         compiled["signal_projections"] = serde_json::to_value(&contract.signal_projections)
             .expect("signal projections should serialize");
@@ -1811,6 +1943,14 @@ fn signal_aware(contracts: &[&DecisionInputContract]) -> bool {
     contracts
         .iter()
         .any(|contract| !contract.signal_projections.is_empty())
+}
+
+fn v3_aware(contracts: &[&DecisionInputContract]) -> bool {
+    contracts.iter().any(|contract| {
+        contract.attributes.iter().any(|attribute| {
+            attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+        })
+    })
 }
 
 fn effective_status_behavior(
@@ -1933,8 +2073,14 @@ fn effective_status_behavior(
 }
 
 fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
-    if signal_aware(contracts) {
-        return source_attempt_request_schema_v2(job_id, contracts);
+    if signal_aware(contracts) || v3_aware(contracts) {
+        let mut schema = source_attempt_request_schema_v2(job_id, contracts);
+        if v3_aware(contracts) {
+            schema["properties"]["source_binding_sha256"]["description"] = json!(
+                "SHA-256 of the exact validated source-binding artifact used to create this request."
+            );
+        }
+        return schema;
     }
     source_attempt_request_schema_v1(job_id, contracts)
 }
@@ -1946,12 +2092,20 @@ fn source_attempt_request_schema_v1(job_id: &str, contracts: &[&DecisionInputCon
             contract
                 .attributes
                 .iter()
+                .filter(|attribute| {
+                    attribute.effective_processing()
+                        == crate::models::DecisionInputProcessing::Observed
+                })
                 .map(|attribute| attribute.id.clone())
         })
         .collect::<Vec<_>>();
     let attempt_item_variants = contracts
         .iter()
-        .flat_map(|contract| contract.attributes.iter())
+        .flat_map(|contract| {
+            contract.attributes.iter().filter(|attribute| {
+                attribute.effective_processing() == crate::models::DecisionInputProcessing::Observed
+            })
+        })
         .map(|attribute| {
             json!({
                 "type": "object",
@@ -2049,6 +2203,10 @@ fn source_attempt_request_schema_v2(job_id: &str, contracts: &[&DecisionInputCon
             contract
                 .attributes
                 .iter()
+                .filter(|attribute| {
+                    attribute.effective_processing()
+                        == crate::models::DecisionInputProcessing::Observed
+                })
                 .map(|attribute| (contract.id.as_str(), attribute.id.as_str()))
         })
         .collect::<Vec<_>>();
@@ -2084,7 +2242,7 @@ fn source_attempt_request_schema_v2(job_id: &str, contracts: &[&DecisionInputCon
 }
 
 fn collected_attempt_results_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
-    if signal_aware(contracts) {
+    if signal_aware(contracts) || v3_aware(contracts) {
         let mut schema = collected_attempt_results_schema_v1(job_id, contracts);
         schema["title"] = json!("MDP Collected Attempt Results v2");
         schema["properties"]["contract"]["const"] = json!(COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2);
@@ -2102,37 +2260,44 @@ fn collected_attempt_results_schema(job_id: &str, contracts: &[&DecisionInputCon
         let variants = contracts
             .iter()
             .flat_map(|contract| {
-                contract.attributes.iter().map(move |attribute| {
-                    let mut variant = attempt_result_schema(attribute);
-                    let object = variant
-                        .as_object_mut()
-                        .expect("attempt result schema object");
-                    let required = object["required"]
-                        .as_array_mut()
-                        .expect("attempt result required array");
-                    for field in [
-                        "attempt_id",
-                        "decision_input_contract_id",
-                        "attribute_id",
-                        "source_class",
-                        "source_locator",
-                        "observed_at",
-                    ] {
-                        required.push(json!(field));
-                    }
-                    object["properties"]["attempt_id"] = signal_identifier_schema();
-                    object["properties"]["decision_input_contract_id"] =
-                        json!({"const": contract.id});
-                    object["properties"]["attribute_id"] = json!({"const": attribute.id});
-                    object["properties"]["source_class"] =
-                        json!({"enum": attribute.source_classes});
-                    object["properties"]["source_locator"] = signal_locator_schema();
-                    object["properties"]["observed_at"] = json!({
-                        "type": "string", "format": "date-time", "maxLength": 64,
-                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
-                    });
-                    variant
-                })
+                contract
+                    .attributes
+                    .iter()
+                    .filter(|attribute| {
+                        attribute.effective_processing()
+                            == crate::models::DecisionInputProcessing::Observed
+                    })
+                    .map(move |attribute| {
+                        let mut variant = attempt_result_schema(attribute);
+                        let object = variant
+                            .as_object_mut()
+                            .expect("attempt result schema object");
+                        let required = object["required"]
+                            .as_array_mut()
+                            .expect("attempt result required array");
+                        for field in [
+                            "attempt_id",
+                            "decision_input_contract_id",
+                            "attribute_id",
+                            "source_class",
+                            "source_locator",
+                            "observed_at",
+                        ] {
+                            required.push(json!(field));
+                        }
+                        object["properties"]["attempt_id"] = signal_identifier_schema();
+                        object["properties"]["decision_input_contract_id"] =
+                            json!({"const": contract.id});
+                        object["properties"]["attribute_id"] = json!({"const": attribute.id});
+                        object["properties"]["source_class"] =
+                            json!({"enum": attribute.source_classes});
+                        object["properties"]["source_locator"] = signal_locator_schema();
+                        object["properties"]["observed_at"] = json!({
+                            "type": "string", "format": "date-time", "maxLength": 64,
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                        });
+                        variant
+                    })
             })
             .collect::<Vec<_>>();
         schema["properties"]["attempt_results"] = json!({
@@ -2171,6 +2336,10 @@ fn collected_attempt_results_schema_v1(
     let mut required = Vec::new();
     for contract in contracts {
         for attribute in &contract.attributes {
+            if attribute.effective_processing() != crate::models::DecisionInputProcessing::Observed
+            {
+                continue;
+            }
             properties.insert(
                 attribute.id.clone(),
                 collected_attempt_result_schema(attribute),
@@ -2229,6 +2398,63 @@ fn collected_attempt_result_schema(attribute: &DecisionInputAttribute) -> Value 
 }
 
 fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
+    if contracts.iter().any(|contract| {
+        contract.attributes.iter().any(|attribute| {
+            attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+        })
+    }) {
+        let mut schema = crate::commands::v3_normalization::v3_sealed_envelope_schema();
+        schema["properties"]["job_id"] = json!({"const": job_id});
+        schema["properties"]["decision_input_contracts"] = json!({
+            "type": "array",
+            "const": contracts.iter().map(|contract| contract.id.clone()).collect::<Vec<_>>()
+        });
+        let classified = contracts
+            .iter()
+            .flat_map(|contract| contract.attributes.iter())
+            .filter(|attribute| {
+                attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+            })
+            .collect::<Vec<_>>();
+        let mut properties = Map::new();
+        for attribute in &classified {
+            let reference = attribute
+                .classification_taxonomy
+                .as_ref()
+                .expect("validated classified attributes have taxonomy references");
+            properties.insert(attribute.id.clone(), json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
+                "properties": {
+                    "status": {"enum": ["classified", "ambiguous", "no-match", "unsupported"]},
+                    "value": {"enum": attribute.value.enum_values},
+                    "taxonomy_id": {"const": reference.id},
+                    "taxonomy_version": {"const": reference.version},
+                    "derived_from": {
+                        "type": "array", "minItems": 1, "uniqueItems": true,
+                        "items": {"type": "string", "minLength": 1}
+                    },
+                    "basis": {
+                        "type": "string", "minLength": 1,
+                        "maxLength": crate::constants::V3_BASIS_MAX_CHARS_HARD_LIMIT
+                    }
+                },
+                "allOf": [{
+                    "if": {"properties": {"status": {"const": "classified"}}},
+                    "then": {"required": ["value"]},
+                    "else": {"not": {"required": ["value"]}}
+                }]
+            }));
+        }
+        schema["properties"]["classifications"] = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": classified.iter().map(|attribute| attribute.id.clone()).collect::<Vec<_>>(),
+            "properties": properties
+        });
+        return schema;
+    }
     if signal_aware(contracts) {
         let mut schema = normalized_envelope_schema_v1(job_id, contracts);
         schema["title"] = json!("MDP Normalized Decision Input v2");
@@ -2745,11 +2971,13 @@ mod tests {
     use crate::commands::init::init_pack;
     use crate::commands::routing::fit_normalized;
     use crate::models::{
+        ClassificationAmbiguityPolicy, ClassificationConflictPolicy, ClassificationMinimumEvidence,
+        ClassificationNoMatchPolicy, ClassificationTaxonomyRef, ClassificationTaxonomyValue,
         DecisionInputConfidencePolicy, DecisionInputDecisionEffect, DecisionInputFreshnessPolicy,
-        DecisionInputProvenanceField, DecisionInputProvenancePolicy, DecisionInputSensitivity,
-        DecisionInputSignalCardinality, DecisionInputSignalConflictPolicy,
-        DecisionInputSignalProjection, DecisionInputSignalRole, DecisionInputSourceClass,
-        ValueContract,
+        DecisionInputNormalization, DecisionInputProvenanceField, DecisionInputProvenancePolicy,
+        DecisionInputSensitivity, DecisionInputSignalCardinality,
+        DecisionInputSignalConflictPolicy, DecisionInputSignalProjection, DecisionInputSignalRole,
+        DecisionInputSourceClass, ValueContract,
     };
     use jsonschema::draft202012;
     use std::path::PathBuf;
@@ -2786,6 +3014,157 @@ mod tests {
                 ],
             });
         contract
+    }
+
+    fn semantic_v3_fixture() -> (DecisionInputContract, ClassificationTaxonomy) {
+        let observed = DecisionInputAttribute {
+            id: "person_title".into(),
+            question: "What is the person's authoritative current title?".into(),
+            description: Some("A bounded, source-addressable title observation.".into()),
+            output_path: "title".into(),
+            processing: Some(DecisionInputProcessing::Observed),
+            value: ValueContract {
+                value_type: Some("string".into()),
+                ..ValueContract::default()
+            },
+            source_classes: vec![
+                DecisionInputSourceClass::PublicWeb,
+                DecisionInputSourceClass::CustomerSystem,
+            ],
+            ..DecisionInputAttribute::default()
+        };
+        let classified = DecisionInputAttribute {
+            id: "persona".into(),
+            question: "Which closed buyer persona does the evidence support?".into(),
+            output_path: "persona".into(),
+            processing: Some(DecisionInputProcessing::ModelClassified),
+            classification_taxonomy: Some(ClassificationTaxonomyRef {
+                id: "buyer-persona".into(),
+                version: "1".into(),
+            }),
+            value: ValueContract {
+                value_type: Some("string".into()),
+                enum_values: vec!["GTM Systems Owner".into(), "Other".into()],
+                ..ValueContract::default()
+            },
+            ..DecisionInputAttribute::default()
+        };
+        let contract = DecisionInputContract {
+            id: "gtm.prospect-context".into(),
+            version: "3".into(),
+            normalization: DecisionInputNormalization {
+                prompt: "normalize-prospect-row".into(),
+                prompt_version: "3".into(),
+                normalized_schema_ref: crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3
+                    .into(),
+            },
+            attributes: vec![observed, classified],
+            ..DecisionInputContract::default()
+        };
+        let taxonomy = ClassificationTaxonomy {
+            id: "buyer-persona".into(),
+            version: "1".into(),
+            output_attribute: "persona".into(),
+            contributor_attribute_ids: vec!["person_title".into()],
+            source_classes: vec![
+                DecisionInputSourceClass::PublicWeb,
+                DecisionInputSourceClass::CustomerSystem,
+            ],
+            minimum_evidence: ClassificationMinimumEvidence {
+                observed_contributors: 1,
+            },
+            basis_max_chars: 500,
+            ambiguity_policy: ClassificationAmbiguityPolicy::HumanReview,
+            no_match_policy: ClassificationNoMatchPolicy::Gap,
+            conflict_policy: ClassificationConflictPolicy::HumanReview,
+            values: vec![
+                ClassificationTaxonomyValue {
+                    value: "GTM Systems Owner".into(),
+                    definition: "Owns or builds technical systems used by GTM teams.".into(),
+                    positive_indicators: vec!["owns GTM engineering".into()],
+                    exclusions: vec!["uses tools without owning the system".into()],
+                },
+                ClassificationTaxonomyValue {
+                    value: "Other".into(),
+                    definition: "Does not satisfy the GTM systems owner definition.".into(),
+                    positive_indicators: vec![],
+                    exclusions: vec![],
+                },
+            ],
+        };
+        (contract, taxonomy)
+    }
+
+    #[test]
+    fn v3_collection_contracts_include_only_observed_attributes() {
+        let (contract, _) = semantic_v3_fixture();
+        let contracts = vec![&contract];
+
+        let collection = collection_specification(&contracts);
+        let request = source_attempt_request_schema("semantic-job", &contracts);
+        let results = collected_attempt_results_schema("semantic-job", &contracts);
+
+        assert_eq!(collection["provider_neutral"], true);
+        assert_eq!(collection["attributes"].as_array().unwrap().len(), 1);
+        assert_eq!(collection["attributes"][0]["attribute_id"], "person_title");
+        let request_text = serde_json::to_string(&request).unwrap();
+        let results_text = serde_json::to_string(&results).unwrap();
+        assert!(request_text.contains("person_title"));
+        assert!(results_text.contains("person_title"));
+        assert!(!request_text.contains("\"persona\""));
+        assert!(!results_text.contains("\"persona\""));
+        for forbidden in ["monid", "deepline", "clay", "firecrawl"] {
+            assert!(
+                !collection
+                    .to_string()
+                    .to_ascii_lowercase()
+                    .contains(forbidden)
+            );
+        }
+    }
+
+    #[test]
+    fn v3_taxonomy_compilation_is_canonical_and_preserves_criteria() {
+        let (contract, taxonomy) = semantic_v3_fixture();
+        let mut reordered = taxonomy.clone();
+        reordered.source_classes.reverse();
+        reordered.values.reverse();
+
+        let mut first = crate::starter::starter_manifest("Test", "test", "gtm");
+        first.decision_input_contracts = vec![contract.clone()];
+        first.classification_taxonomies = vec![taxonomy];
+        let mut second = crate::starter::starter_manifest("Test", "test", "gtm");
+        second.decision_input_contracts = vec![contract.clone()];
+        second.classification_taxonomies = vec![reordered];
+
+        let first_selected = selected_classification_taxonomies(&first, &[&contract]);
+        let second_selected = selected_classification_taxonomies(&second, &[&contract]);
+        let first_compiled = semantic_v3_specifications(&first_selected, &[&contract])
+            .unwrap()
+            .unwrap();
+        let second_compiled = semantic_v3_specifications(&second_selected, &[&contract])
+            .unwrap()
+            .unwrap();
+        let first_spec = &first_compiled["classification_specification"];
+        let second_spec = &second_compiled["classification_specification"];
+
+        assert_eq!(first_spec, second_spec);
+        assert_eq!(
+            first_compiled["taxonomy_set_sha256"],
+            second_compiled["taxonomy_set_sha256"]
+        );
+        assert_eq!(
+            first_spec["taxonomies"][0]["values"][0]["definition"],
+            "Owns or builds technical systems used by GTM teams."
+        );
+        assert_eq!(
+            first_spec["taxonomies"][0]["minimum_evidence"]["observed_contributors"],
+            1
+        );
+        assert_eq!(
+            first_compiled["collection_specification"]["provider_neutral"],
+            true
+        );
     }
 
     fn signal_aware_clay_example(name: &str) -> PathBuf {

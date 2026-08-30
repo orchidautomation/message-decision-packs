@@ -54,6 +54,8 @@ pub(crate) const OUTPUT_KIND_DECISION_INPUT_NORMALIZATION: &str = "decision-inpu
 // classification payload; runtime fails closed on overflow.
 pub(crate) const V3_BASIS_MAX_CHARS_DEFAULT: usize = 500;
 pub(crate) const V3_MAX_CLASSIFICATIONS_PER_ENVELOPE: usize = 32;
+pub(crate) const V3_MAX_TAXONOMY_VALUES: usize = 32;
+pub(crate) const V3_MAX_TAXONOMY_CONTRIBUTORS: usize = 16;
 pub(crate) const V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE: usize = 32;
 pub(crate) const V3_MAX_GAPS_PER_ENVELOPE: usize = 32;
 pub(crate) const V3_MAX_DERIVED_FROM_PER_CLASSIFICATION: usize = 16;
