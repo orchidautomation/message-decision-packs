@@ -308,6 +308,9 @@ pub(crate) fn prompt_output_schema_for_ref(schema_ref: &str) -> Option<Value> {
         PROMPT_CARD_PATCH_SCHEMA_REF | PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF => {
             Some(schema(SchemaTarget::PromptOutput))
         }
+        crate::constants::NORMALIZED_SEMANTIC_PROVIDER_SCHEMA_REF_V3 => {
+            Some(crate::commands::v3_normalization::v3_semantic_provider_schema())
+        }
         _ => None,
     }
 }

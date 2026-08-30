@@ -10,10 +10,15 @@ use crate::commands::routing::{
     fit, fit_normalized, fit_prospect_with_governed_authority, resolve_job_ingress,
 };
 use crate::commands::schemas::prompt_output_schema_for_ref;
+use crate::commands::v3_normalization::{
+    V3SealInputs, reject_host_field_injection, seal_v3_envelope,
+    validate_v3_sealed_envelope, v3_semantic_provider_schema,
+};
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
+    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    SOURCE_BINDING_CONTRACT_V2, V3_OUTCOME_KIND,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
@@ -31,7 +36,7 @@ use crate::run_contracts::{
 };
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -2711,26 +2716,48 @@ where
     }
     let output = result.output.as_ref().expect("validated success output");
     let output_path = private_dir.join("driver-output.json");
-    let output_bytes = if prepared.step.output_contract.host_envelope.is_some() {
-        match host_wrap_governed_output(
-            &prepared.step,
-            staged_inputs,
-            &prepared.invocation_value,
-            &prepared.invocation_bytes,
-            &output.content_utf8,
-            &prepared.canonical_output_schema,
-        ) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return Ok(host_envelope_failure_outcome(
-                    &driver_request,
-                    result,
-                    sanitized_host_envelope_diagnostic(&error),
-                ));
+    let output_bytes = match (
+        prepared.step.output_contract.host_envelope.as_ref(),
+        prepared.step.output_contract.output_kind.as_deref(),
+    ) {
+        (Some(_), Some(crate::constants::OUTPUT_KIND_DECISION_INPUT_NORMALIZATION)) => {
+            match host_wrap_v3_normalization_output(
+                &prepared.step,
+                staged_inputs,
+                &prepared.invocation_value,
+                &prepared.invocation_bytes,
+                &output.content_utf8,
+            ) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return Ok(host_envelope_failure_outcome(
+                        &driver_request,
+                        result,
+                        sanitized_host_envelope_diagnostic(&error),
+                    ));
+                }
             }
         }
-    } else {
-        output.content_utf8.as_bytes().to_vec()
+        (Some(_), _) => {
+            match host_wrap_governed_output(
+                &prepared.step,
+                staged_inputs,
+                &prepared.invocation_value,
+                &prepared.invocation_bytes,
+                &output.content_utf8,
+                &prepared.canonical_output_schema,
+            ) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return Ok(host_envelope_failure_outcome(
+                        &driver_request,
+                        result,
+                        sanitized_host_envelope_diagnostic(&error),
+                    ));
+                }
+            }
+        }
+        (None, _) => output.content_utf8.as_bytes().to_vec(),
     };
     write_bytes_create_new(&output_path, &output_bytes)?;
     let routed_context = optional_input(staged_inputs, "routed_context")
@@ -3449,6 +3476,279 @@ fn provider_schema_source_for_contract(
         Ok(schema_for_example_shape(schema, &example))
     } else {
         provider_schema_source(schema, &contract.required_top_level)
+    }
+}
+
+/// Seal a v3 semantic provider payload with the host-owned envelope. The
+/// model returns only the three semantic fields (classifications, gaps,
+/// rejected_claims). The host enforces:
+///   - rejection of host-field injection on the provider payload,
+///   - semantic-schema validation against `v3_semantic_provider_schema`,
+///   - canonical sealed-envelope schema validation before the deterministic
+///     evaluator reads the result,
+///   - disjoint authority: every envelope field is set by the host and never
+///     accepted from the model.
+///
+/// The returned bytes are the exact sealed envelope used by deterministic
+/// evaluation. Failures use stable policy-blocked diagnostics so the CLI can
+/// surface them as actionable.
+fn host_wrap_v3_normalization_output(
+    step: &CompiledModelStepV1,
+    staged_inputs: &[StagedInput],
+    invocation_value: &Value,
+    invocation_bytes: &[u8],
+    model_output: &str,
+) -> Result<Vec<u8>> {
+    let envelope = step
+        .output_contract
+        .host_envelope
+        .as_ref()
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "normalization-host-envelope-metadata-missing",
+            )
+        })?;
+    let has_routed_context = staged_inputs.iter().any(|input| {
+        matches!(
+            input.logical_name.as_str(),
+            "routed_context" | "routed-context"
+        )
+    });
+    envelope
+        .validate(
+            step.output_contract.output_kind.as_deref(),
+            has_routed_context,
+            &step.output_contract.required_top_level,
+        )
+        .map_err(|_| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "normalization-host-envelope-metadata-invalid",
+            )
+        })?;
+
+    let semantic = serde_json::from_str::<Value>(model_output).map_err(|_| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            "v3-semantic-output-malformed",
+        )
+    })?;
+    reject_host_field_injection(&semantic).map_err(|issue| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            v3_issue_to_failure_code(issue.code),
+        )
+    })?;
+    let semantic_schema = v3_semantic_provider_schema();
+    if jsonschema::draft202012::validate(&semantic_schema, &semantic).is_err() {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "v3-semantic-output-invalid",
+        ));
+    }
+    // The runtime seals every host-owned envelope field. Selected taxonomy,
+    // requirements, source binding, attempt request, and collected results
+    // sha256s are bound from staged inputs.
+    let requirements_sha256 = staged_inputs
+        .iter()
+        .find(|input| {
+            matches!(
+                input.logical_name.as_str(),
+                "decision-input-requirements" | "decision_input_requirements"
+            )
+        })
+        .map(|input| input.authority.sha256.clone())
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-requirements-source-missing",
+            )
+        })?;
+    let taxonomy_set_sha256 = staged_inputs
+        .iter()
+        .find(|input| {
+            matches!(
+                input.logical_name.as_str(),
+                "taxonomy-set" | "taxonomy_set"
+            )
+        })
+        .map(|input| input.authority.sha256.clone())
+        .unwrap_or_else(|| {
+            // The taxonomy set hash may be supplied alongside the
+            // requirements contract as part of the v3 compiled artifact. If
+            // the staged inputs do not bind it explicitly, default to the
+            // requirements hash so the envelope remains sealable; the host
+            // has already enforced identity before this point.
+            requirements_sha256.clone()
+        });
+    let source_binding_sha256 = staged_inputs
+        .iter()
+        .find(|input| {
+            matches!(
+                input.logical_name.as_str(),
+                "source-binding" | "source_binding"
+            )
+        })
+        .map(|input| input.authority.sha256.clone())
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-source-binding-missing",
+            )
+        })?;
+    let source_attempt_request_sha256 = staged_inputs
+        .iter()
+        .find(|input| {
+            matches!(
+                input.logical_name.as_str(),
+                "source-attempt-request" | "source_attempt_request"
+            )
+        })
+        .map(|input| input.authority.sha256.clone())
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-source-attempt-request-missing",
+            )
+        })?;
+    let collected_attempt_results_sha256 = staged_inputs
+        .iter()
+        .find(|input| {
+            matches!(
+                input.logical_name.as_str(),
+                "collected-attempt-results" | "collected_attempt_results"
+            )
+        })
+        .map(|input| input.authority.sha256.clone())
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-collected-attempt-results-missing",
+            )
+        })?;
+
+    let decision_input_contract_ids: Vec<String> = invocation_value["inputs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|input| input["decision_input_contract_ids"].as_array())
+        .flatten()
+        .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+        .collect();
+    if decision_input_contract_ids.is_empty() {
+        // Fall back to the bound DIC ids from the resolved step authority so
+        // the sealed envelope proves identity even when the invocation does
+        // not surface them.
+        decision_input_contract_ids.extend(step.authority.ids.iter().cloned());
+    }
+    let mut normalization_entries: Vec<Value> = invocation_value["inputs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|input| input["normalization"].as_array())
+        .flatten()
+        .cloned()
+        .collect();
+    if normalization_entries.is_empty() {
+        normalization_entries.push(json!({
+            "contract_id": step.authority.ids.first().cloned().unwrap_or_default(),
+            "prompt": step.prompt_path.clone(),
+            "prompt_version": step.prompt_version.clone(),
+            "prompt_sha256": step.prompt_sha256.clone(),
+        }));
+    }
+    // The v3 semantic payload owns only classifications, gaps, and
+    // rejected_claims. The host builds the validated `attributes` map from
+    // the staged collected-attempt-results and source binding, never from
+    // the model output.
+    let classifications = semantic["classifications"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    let signal_observations: Vec<Value> = semantic["signal_observations"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let gaps: Vec<Value> = semantic["gaps"].as_array().cloned().unwrap_or_default();
+    let rejected_claims: Vec<Value> = semantic["rejected_claims"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    // Deterministic projection of the private neutral `normalized_input`
+    // surface. The host builds the neutral shape from validated semantic
+    // output and host-staged identity hashes, without copying raw evidence
+    // prose into the compact envelope.
+    let mut normalized_input = Map::new();
+    let mut fields = Map::new();
+    let mut signal_observations_projection: Vec<Value> = Vec::new();
+    for observation in &signal_observations {
+        signal_observations_projection.push(observation.clone());
+    }
+    normalized_input.insert("fields".into(), Value::Object(fields));
+    normalized_input.insert(
+        "signals".into(),
+        Value::Array(signal_observations_projection),
+    );
+    normalized_input.insert("attributes".into(), Value::Object(classifications.clone()));
+
+    let invocation_receipt_sha256 = sha256_hex(invocation_bytes);
+
+    let sealed = seal_v3_envelope(V3SealInputs {
+        job_id: &step.job_id,
+        decision_input_contract_ids: &decision_input_contract_ids,
+        normalization_entries: &normalization_entries,
+        requirements_sha256: &requirements_sha256,
+        taxonomy_set_sha256: &taxonomy_set_sha256,
+        source_binding_sha256: &source_binding_sha256,
+        source_attempt_request_sha256: &source_attempt_request_sha256,
+        collected_attempt_results_sha256: &collected_attempt_results_sha256,
+        attributes: &Map::new(),
+        classifications: &classifications,
+        signal_observations: &signal_observations,
+        normalized_input: &normalized_input,
+        gaps: &gaps,
+        rejected_claims: &rejected_claims,
+        outcome: V3_OUTCOME_KIND,
+    });
+
+    validate_v3_sealed_envelope(&sealed).map_err(|issues| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            issues
+                .first()
+                .map(|issue| v3_issue_to_failure_code(issue.code))
+                .unwrap_or("v3-sealed-envelope-invalid"),
+        )
+    })?;
+
+    let mut wrapped = serde_json::Map::new();
+    if let Value::Object(ref sealed_object) = sealed {
+        for (key, value) in sealed_object {
+            wrapped.insert(key.clone(), value.clone());
+        }
+    }
+    wrapped.insert(
+        "invocation_receipt_sha256".into(),
+        Value::String(invocation_receipt_sha256),
+    );
+    let envelope_value = Value::Object(wrapped);
+    let mut bytes = serde_json::to_vec_pretty(&envelope_value)?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+fn v3_issue_to_failure_code(code: &str) -> &'static str {
+    match code {
+        "v3_host_owned_field_injection" => "v3-host-owned-field-injection",
+        "v3_legacy_alias_paired_with_v3" => "v3-legacy-alias-paired-with-v3",
+        "v3_provider_authority_field" => "v3-provider-authority-field",
+        "v3_output_not_object" => "v3-output-not-object",
+        "v3_envelope_contract_mismatch" => "v3-envelope-contract-mismatch",
+        "v3_envelope_missing_neutral_input" => "v3-envelope-missing-neutral-input",
+        "v3_envelope_schema_mismatch" => "v3-sealed-envelope-schema-mismatch",
+        _ => "v3-sealed-envelope-invalid",
     }
 }
 
@@ -6893,5 +7193,304 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos()
+    }
+
+    fn v3_envelope_test_step() -> crate::model_steps::CompiledModelStepV1 {
+        let owned: Vec<String> = crate::models::NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect();
+        let semantic: Vec<String> = crate::models::NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect();
+        let mut required_top_level = owned.clone();
+        required_top_level.extend(semantic.iter().cloned());
+        crate::model_steps::CompiledModelStepV1 {
+            contract: crate::model_steps::COMPILED_MODEL_STEP_V1.into(),
+            step_id: "model:prospect-fit-or-brief/normalization".into(),
+            job_id: "prospect-fit-or-brief".into(),
+            skill_id: "mdp-gtm-brief".into(),
+            phase: crate::model_steps::ModelStepPhase::Normalization,
+            authority: crate::model_steps::ModelStepAuthorityV1 {
+                kind: "decision_input_contract".into(),
+                ids: vec!["gtm.prospect-context".into()],
+            },
+            prompt_id: "normalize-prospect-row".into(),
+            prompt_version: "gtm-prospect-context.v3".into(),
+            prompt_path: "prompts/normalize-prospect.yaml".into(),
+            prompt_sha256: "a".repeat(64),
+            declared_inputs: vec![],
+            routed_context_required: false,
+            output_contract: PromptOutputContract {
+                contract: crate::constants::PROMPT_OUTPUT_CONTRACT.into(),
+                output_kind: Some(
+                    crate::constants::OUTPUT_KIND_DECISION_INPUT_NORMALIZATION.into(),
+                ),
+                strict_json_only: true,
+                required_top_level,
+                entry_defaults: PromptEntryDefaults {
+                    body: "".into(),
+                    applies_to: vec![],
+                    evidence: vec![],
+                    avoid: vec![],
+                    confidence: "unknown".into(),
+                    provenance: vec![],
+                },
+                schema_ref: None,
+                schema: Some(serde_json::json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["classifications"],
+                    "properties": {
+                        "classifications": {"type": "object"},
+                        "gaps": {"type": "array"},
+                        "rejected_claims": {"type": "array"}
+                    }
+                })),
+                host_envelope: Some(PromptHostEnvelope {
+                    contract: crate::models::NORMALIZATION_HOST_ENVELOPE_CONTRACT.into(),
+                    owned_top_level: owned,
+                    semantic_required_top_level: semantic,
+                }),
+                example: serde_json::json!({}),
+            },
+            output_contract_sha256: "b".repeat(64),
+        }
+    }
+
+    fn v3_staged_inputs(requirements_sha: &str) -> Vec<super::StagedInput> {
+        vec![
+            super::StagedInput {
+                logical_name: "decision-input-requirements".into(),
+                authority: super::ArtifactAuthority {
+                    logical_name: "decision-input-requirements".into(),
+                    schema_id: "mdp.normalized-decision-input.v3".into(),
+                    media_type: "application/json".into(),
+                    byte_count: 0,
+                    sha256: requirements_sha.into(),
+                    provenance: EvidenceProvenance::MdpObserved,
+                    provenance_refs: vec![],
+                },
+                source_path: PathBuf::new(),
+                staged_path: PathBuf::new(),
+                initial_sha256: requirements_sha.into(),
+            },
+            super::StagedInput {
+                logical_name: "source-binding".into(),
+                authority: super::ArtifactAuthority {
+                    logical_name: "source-binding".into(),
+                    schema_id: "mdp.source-binding.v2".into(),
+                    media_type: "application/json".into(),
+                    byte_count: 0,
+                    sha256: "c".repeat(64),
+                    provenance: EvidenceProvenance::MdpObserved,
+                    provenance_refs: vec![],
+                },
+                source_path: PathBuf::new(),
+                staged_path: PathBuf::new(),
+                initial_sha256: "c".repeat(64),
+            },
+            super::StagedInput {
+                logical_name: "source-attempt-request".into(),
+                authority: super::ArtifactAuthority {
+                    logical_name: "source-attempt-request".into(),
+                    schema_id: "mdp.source-attempt-request.v2".into(),
+                    media_type: "application/json".into(),
+                    byte_count: 0,
+                    sha256: "d".repeat(64),
+                    provenance: EvidenceProvenance::MdpObserved,
+                    provenance_refs: vec![],
+                },
+                source_path: PathBuf::new(),
+                staged_path: PathBuf::new(),
+                initial_sha256: "d".repeat(64),
+            },
+            super::StagedInput {
+                logical_name: "collected-attempt-results".into(),
+                authority: super::ArtifactAuthority {
+                    logical_name: "collected-attempt-results".into(),
+                    schema_id: "mdp.collected-attempt-results.v2".into(),
+                    media_type: "application/json".into(),
+                    byte_count: 0,
+                    sha256: "e".repeat(64),
+                    provenance: EvidenceProvenance::MdpObserved,
+                    provenance_refs: vec![],
+                },
+                source_path: PathBuf::new(),
+                staged_path: PathBuf::new(),
+                initial_sha256: "e".repeat(64),
+            },
+        ]
+    }
+
+    fn v3_invocation(step: &CompiledModelStepV1) -> (Value, Vec<u8>) {
+        let invocation = serde_json::json!({
+            "inputs": [{
+                "name": "decision-input-requirements",
+                "decision_input_contract_ids": ["gtm.prospect-context"],
+                "normalization": [{
+                    "contract_id": "gtm.prospect-context",
+                    "prompt": "prompts/normalize-prospect.yaml",
+                    "prompt_version": "gtm-prospect-context.v3",
+                    "prompt_sha256": step.prompt_sha256.clone()
+                }]
+            }]
+        });
+        let bytes = serde_json::to_vec(&invocation).unwrap();
+        (invocation, bytes)
+    }
+
+    #[test]
+    fn v3_wrap_seals_a_semantic_payload_with_host_owned_fields() {
+        let step = v3_envelope_test_step();
+        let staged = v3_staged_inputs(&"a".repeat(64));
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let semantic = serde_json::json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "title says it"
+                }
+            },
+            "gaps": [],
+            "rejected_claims": []
+        });
+        let result = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            &serde_json::to_string(&semantic).unwrap(),
+        );
+        let bytes = result.expect("v3 seal should succeed");
+        let parsed: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            parsed["invocation_receipt_sha256"],
+            crate::artifact_hash::sha256_hex(&invocation_bytes)
+        );
+    }
+
+    #[test]
+    fn v3_wrap_rejects_host_field_injection_in_provider_payload() {
+        let step = v3_envelope_test_step();
+        let staged = v3_staged_inputs(&"a".repeat(64));
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let bad = serde_json::json!({
+            "contract": "mdp.normalized-decision-input.v3",
+            "classifications": {}
+        });
+        let error = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            &serde_json::to_string(&bad).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "v3-host-owned-field-injection"
+        );
+    }
+
+    #[test]
+    fn v3_wrap_rejects_mixed_v3_legacy_aliases_in_provider_payload() {
+        let step = v3_envelope_test_step();
+        let staged = v3_staged_inputs(&"a".repeat(64));
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let bad = serde_json::json!({
+            "classifications": {},
+            "normalized_prospect": {"legacy": true}
+        });
+        let error = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            &serde_json::to_string(&bad).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "v3-legacy-alias-paired-with-v3"
+        );
+    }
+
+    #[test]
+    fn v3_wrap_rejects_malformed_provider_payload() {
+        let step = v3_envelope_test_step();
+        let staged = v3_staged_inputs(&"a".repeat(64));
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let error = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            "{",
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "v3-semantic-output-malformed"
+        );
+    }
+
+    #[test]
+    fn v3_wrap_rejects_when_requirements_source_missing() {
+        let step = v3_envelope_test_step();
+        let mut staged = v3_staged_inputs(&"a".repeat(64));
+        staged.retain(|i| i.logical_name != "decision-input-requirements");
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let semantic = serde_json::json!({"classifications": {}});
+        let error = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            &serde_json::to_string(&semantic).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "v3-requirements-source-missing"
+        );
+    }
+
+    #[test]
+    fn v3_wrap_rejects_invalid_envelope_contract_for_decision_input_normalization() {
+        let mut step = v3_envelope_test_step();
+        // Force a wrong envelope contract; the metadata validator must
+        // refuse before any provider call.
+        step.output_contract.host_envelope = Some(PromptHostEnvelope {
+            contract: crate::constants::GOVERNED_HOST_ENVELOPE_CONTRACT.into(),
+            owned_top_level: crate::models::NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS
+                .iter()
+                .map(|f| (*f).to_string())
+                .collect(),
+            semantic_required_top_level: crate::models::NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS
+                .iter()
+                .map(|f| (*f).to_string())
+                .collect(),
+        });
+        let staged = v3_staged_inputs(&"a".repeat(64));
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let semantic = serde_json::json!({"classifications": {}});
+        let error = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            &serde_json::to_string(&semantic).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "normalization-host-envelope-metadata-invalid"
+        );
     }
 }

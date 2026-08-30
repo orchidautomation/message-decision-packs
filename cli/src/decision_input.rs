@@ -167,6 +167,132 @@ pub(crate) fn from_gtm_normalized(
     from_wire_object(prospect, AdapterKind::GtmProspect)
 }
 
+/// V3 ingress: derive the private neutral `DecisionInput` from a sealed
+/// `normalized_input` block. The v3 wire does not carry prospect or
+/// opportunity vocabulary; the host projects fields, signals, and attributes
+/// from the sealed envelope without copying raw evidence prose. v3 envelopes
+/// must not coexist with v0/v1/v2 aliases — if `normalized_prospect` or
+/// `normalized_opportunity` are also present, the caller already failed
+/// envelope validation and this function refuses to interpret the payload.
+pub(crate) fn from_v3_normalized(
+    envelope: &Map<String, Value>,
+) -> Result<DecisionInput, AdapterError> {
+    if envelope.contains_key("normalized_prospect")
+        || envelope.contains_key("normalized_opportunity")
+    {
+        return Err(AdapterError::Invalid(
+            "v3 envelope cannot mix normalized_input with legacy aliases",
+        ));
+    }
+    let normalized_input = match envelope.get("normalized_input") {
+        Some(value) => value,
+        None => {
+            return Err(AdapterError::Invalid(
+                "v3 envelope is missing its normalized_input",
+            ))
+        }
+    };
+    let object = normalized_input.as_object().ok_or(AdapterError::Invalid(
+        "normalized_input must be an object",
+    ))?;
+    let allowed_top_level: BTreeSet<&str> =
+        ["fields", "signals", "attributes"].into_iter().collect();
+    if object.keys().any(|key| !allowed_top_level.contains(key.as_str())) {
+        return Err(AdapterError::Invalid(
+            "normalized_input contains an unknown top-level field",
+        ));
+    }
+    let mut fields = BTreeMap::new();
+    let mut signals = Vec::new();
+    let mut attributes = BTreeMap::new();
+    for (key, value) in object {
+        match key.as_str() {
+            "fields" => {
+                let fields_object = value.as_object().ok_or(AdapterError::Invalid(
+                    "normalized_input.fields must be an object",
+                ))?;
+                for (field, field_value) in fields_object {
+                    if field_value.is_null()
+                        || field_value.is_string()
+                        || field_value.is_number()
+                        || field_value.is_boolean()
+                    {
+                        if !field_value.is_null() {
+                            fields.insert(field.clone(), field_value.clone());
+                        }
+                    } else {
+                        return Err(AdapterError::Invalid(
+                            "normalized_input.fields must contain scalar values",
+                        ));
+                    }
+                }
+            }
+            "signals" => {
+                signals = value
+                    .as_array()
+                    .ok_or(AdapterError::Invalid(
+                        "normalized_input.signals must be an array",
+                    ))?
+                    .iter()
+                    .map(|signal| {
+                        let signal = signal.as_object().ok_or(AdapterError::Invalid(
+                            "normalized_input.signals must contain objects",
+                        ))?;
+                        let allowed_signal_fields = [
+                            "id",
+                            "title",
+                            "source",
+                            "confidence",
+                            "freshness",
+                            "state_as",
+                            "projection_id",
+                            "qualified_projection_id",
+                            "contributor_attribute_ids",
+                            "roles",
+                            "kind",
+                            "value",
+                            "source_class",
+                            "source_locator",
+                            "observed_at",
+                            "attempt_ids",
+                            "contract",
+                            "contract_id",
+                            "receipt",
+                        ];
+                        if signal
+                            .keys()
+                            .any(|key| !allowed_signal_fields.contains(&key.as_str()))
+                        {
+                            return Err(AdapterError::Invalid(
+                                "normalized_input.signals contains an unknown field",
+                            ));
+                        }
+                        Ok(Value::Object(
+                            signal
+                                .iter()
+                                .filter(|(_, value)| !value.is_null())
+                                .map(|(key, value)| (key.clone(), value.clone()))
+                                .collect(),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, AdapterError>>()?;
+            }
+            "attributes" => {
+                attributes = value
+                    .as_object()
+                    .ok_or(AdapterError::Invalid(
+                        "normalized_input.attributes must be an object",
+                    ))?
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+            }
+            _ => {}
+        }
+    }
+    DecisionInput::new(fields, signals, attributes)
+}
+
 pub(crate) fn from_proposal_output(
     output: &Map<String, Value>,
 ) -> Result<DecisionInput, AdapterError> {
@@ -394,6 +520,82 @@ mod tests {
             json!({"name": "Taylor", "title": "Lead", "company": "ExampleCo", "amount": 10}),
         );
         assert!(from_proposal_output(&output).is_err());
+    }
+
+    #[test]
+    fn v3_envelope_without_legacy_aliases_yields_neutral_input() {
+        let envelope = Map::from_iter([
+            (
+                "normalized_input".into(),
+                json!({
+                    "fields": {"status": "open", "company": "ExampleCo"},
+                    "signals": [
+                        {"id": "fit", "title": "Strong fit", "source": "synthetic"}
+                    ],
+                    "attributes": {"person_title": "Engineering Lead"}
+                }),
+            ),
+        ]);
+        let input = from_v3_normalized(&envelope).unwrap();
+        assert_eq!(input.field("status"), Some(&json!("open")));
+        assert_eq!(input.field("company"), Some(&json!("ExampleCo")));
+        assert_eq!(input.signals().len(), 1);
+        assert_eq!(
+            input.attributes().get("person_title"),
+            Some(&json!("Engineering Lead"))
+        );
+    }
+
+    #[test]
+    fn v3_envelope_rejects_legacy_aliases() {
+        let envelope = Map::from_iter([
+            ("normalized_input".into(), json!({"fields": {}, "signals": [], "attributes": {}})),
+            (
+                "normalized_prospect".into(),
+                json!({"name": "Taylor"}),
+            ),
+        ]);
+        let error = from_v3_normalized(&envelope).unwrap_err();
+        assert!(matches!(
+            error,
+            AdapterError::Invalid(
+                "v3 envelope cannot mix normalized_input with legacy aliases"
+            )
+        ));
+    }
+
+    #[test]
+    fn v3_envelope_rejects_unknown_top_level() {
+        let envelope = Map::from_iter([
+            (
+                "normalized_input".into(),
+                json!({"fields": {}, "signals": [], "attributes": {}, "extra": true}),
+            ),
+        ]);
+        let error = from_v3_normalized(&envelope).unwrap_err();
+        assert!(matches!(
+            error,
+            AdapterError::Invalid(
+                "normalized_input contains an unknown top-level field"
+            )
+        ));
+    }
+
+    #[test]
+    fn v3_envelope_rejects_non_scalar_field() {
+        let envelope = Map::from_iter([
+            (
+                "normalized_input".into(),
+                json!({"fields": {"bad": {"nested": true}}, "signals": [], "attributes": {}}),
+            ),
+        ]);
+        let error = from_v3_normalized(&envelope).unwrap_err();
+        assert!(matches!(
+            error,
+            AdapterError::Invalid(
+                "normalized_input.fields must contain scalar values"
+            )
+        ));
     }
 
     #[test]
