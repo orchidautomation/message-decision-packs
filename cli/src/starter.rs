@@ -147,6 +147,7 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
         required_primitives: gtm_required_primitives(),
         primitive_map: gtm_primitive_map(),
         decision_input_contracts: vec![starter_prospect_decision_input_contract()],
+        classification_taxonomies: Vec::new(),
         input_contracts: vec![InputContract {
             id: "prospect".to_string(),
             description: Some(
@@ -731,6 +732,8 @@ fn starter_decision_input_attribute(
         question: question.to_string(),
         description: None,
         output_path: output_path.to_string(),
+        processing: None,
+        classification_taxonomy: None,
         value,
         requirement,
         applies_when: Vec::new(),

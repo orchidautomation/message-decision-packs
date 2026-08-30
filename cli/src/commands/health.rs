@@ -1,20 +1,21 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, GENERATED_PACK_DIRECTORIES,
     GOVERNED_HOST_ENVELOPE_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT_V3,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 
 use crate::models::{
     Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
-    DecisionInputDisposition, DecisionInputRequirement, GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
-    GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, InputContract, MAX_SIGNAL_CONTRIBUTORS,
-    MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE,
-    MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest, NORMALIZATION_HOST_ENVELOPE_CONTRACT,
-    NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS, NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
-    PrimitiveMapping, ProductFoundationBinding, ProductFoundationConditionFact,
-    ProductFoundationEntryRef, ProductFoundationFacetKind, Profile, ProfileEval, ProfileJob,
-    PromptFile, QualificationGates, TargetIdentity, ValueContract,
+    DecisionInputDisposition, DecisionInputProcessing, DecisionInputRequirement,
+    GOVERNED_HOST_ENVELOPE_OWNED_FIELDS, GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, InputContract,
+    MAX_SIGNAL_CONTRIBUTORS, MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN,
+    MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE, MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest,
+    NORMALIZATION_HOST_ENVELOPE_CONTRACT, NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+    NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS, PrimitiveMapping, ProductFoundationBinding,
+    ProductFoundationConditionFact, ProductFoundationEntryRef, ProductFoundationFacetKind, Profile,
+    ProfileEval, ProfileJob, PromptFile, QualificationGates, TargetIdentity, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -1479,6 +1480,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "required_primitives",
             "primitive_map",
             "decision_input_contracts",
+            "classification_taxonomies",
             "input_contracts",
             "jobs",
             "profile_eval",
@@ -1536,6 +1538,40 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         ".mdp/manifest.yaml#/decision_input_contracts",
         issues,
     );
+    validate_sequence_object_keys_with_severity(
+        yaml_get(&value, "classification_taxonomies"),
+        &[
+            "id",
+            "version",
+            "output_attribute",
+            "contributor_attribute_ids",
+            "source_classes",
+            "minimum_evidence",
+            "basis_max_chars",
+            "ambiguity_policy",
+            "no_match_policy",
+            "conflict_policy",
+            "values",
+        ],
+        ".mdp/manifest.yaml#/classification_taxonomies",
+        "manifest_classification_taxonomy_unknown_field",
+        "error",
+        issues,
+    );
+    if let Some(taxonomies) =
+        yaml_get(&value, "classification_taxonomies").and_then(YamlValue::as_sequence)
+    {
+        for (index, taxonomy) in taxonomies.iter().enumerate() {
+            validate_object_keys_with_severity(
+                yaml_get(taxonomy, "minimum_evidence").unwrap_or(&YamlValue::Null),
+                &["observed_contributors"],
+                &format!(".mdp/manifest.yaml#/classification_taxonomies/{index}/minimum_evidence"),
+                "manifest_classification_minimum_evidence_unknown_field",
+                "error",
+                issues,
+            );
+        }
+    }
     validate_sequence_object_keys(
         yaml_get(&value, "input_contracts"),
         &[
@@ -3392,11 +3428,265 @@ fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: 
     }
 }
 
+fn validate_classification_taxonomies(manifest: &Manifest, issues: &mut Vec<Value>) {
+    let mut taxonomy_keys = BTreeSet::new();
+    let mut referenced = BTreeSet::new();
+    let attributes = manifest
+        .decision_input_contracts
+        .iter()
+        .flat_map(|contract| {
+            contract
+                .attributes
+                .iter()
+                .map(move |attribute| (contract, attribute))
+        })
+        .collect::<Vec<_>>();
+
+    for (_, attribute) in &attributes {
+        if let Some(reference) = &attribute.classification_taxonomy {
+            referenced.insert((reference.id.clone(), reference.version.clone()));
+        }
+    }
+
+    for (index, taxonomy) in manifest.classification_taxonomies.iter().enumerate() {
+        let path = format!(".mdp/manifest.yaml#/classification_taxonomies/{index}");
+        let key = (taxonomy.id.clone(), taxonomy.version.clone());
+        if taxonomy.id.trim().is_empty() || taxonomy.version.trim().is_empty() {
+            issues.push(issue(
+                "classification_taxonomy_identity_invalid",
+                "error",
+                &path,
+                "classification taxonomies require non-blank id and version",
+            ));
+        } else if !taxonomy_keys.insert(key.clone()) {
+            issues.push(issue(
+                "classification_taxonomy_duplicate",
+                "error",
+                format!("{path}/id"),
+                "classification taxonomy id and version must be unique",
+            ));
+        }
+        if !referenced.contains(&key) {
+            issues.push(issue(
+                "classification_taxonomy_unused",
+                "error",
+                &path,
+                "every authored taxonomy must be referenced by a model-classified attribute",
+            ));
+        }
+        if taxonomy.contributor_attribute_ids.is_empty()
+            || taxonomy.contributor_attribute_ids.len()
+                > crate::constants::V3_MAX_TAXONOMY_CONTRIBUTORS
+        {
+            issues.push(issue(
+                "classification_taxonomy_contributors_empty",
+                "error",
+                format!("{path}/contributor_attribute_ids"),
+                "classification taxonomies require a bounded set of observed contributor attributes",
+            ));
+        }
+        let contributor_ids = taxonomy
+            .contributor_attribute_ids
+            .iter()
+            .map(|id| id.to_ascii_lowercase())
+            .collect::<BTreeSet<_>>();
+        if contributor_ids.len() != taxonomy.contributor_attribute_ids.len() {
+            issues.push(issue(
+                "classification_taxonomy_contributor_duplicate",
+                "error",
+                format!("{path}/contributor_attribute_ids"),
+                "taxonomy contributor attributes must be unique",
+            ));
+        }
+        let contributor_attributes = attributes
+            .iter()
+            .filter(|(_, attribute)| {
+                contributor_ids.contains(&attribute.id.to_ascii_lowercase())
+                    && attribute.effective_processing() == DecisionInputProcessing::Observed
+            })
+            .collect::<Vec<_>>();
+        if contributor_ids.iter().any(|id| {
+            !contributor_attributes
+                .iter()
+                .any(|(_, attribute)| attribute.id.eq_ignore_ascii_case(id))
+        }) {
+            issues.push(issue(
+                "classification_taxonomy_contributor_invalid",
+                "error",
+                format!("{path}/contributor_attribute_ids"),
+                "contributors must resolve uniquely to observed Decision Input attributes",
+            ));
+        }
+        if taxonomy.minimum_evidence.observed_contributors == 0
+            || taxonomy.minimum_evidence.observed_contributors as usize > contributor_ids.len()
+        {
+            issues.push(issue(
+                "classification_taxonomy_minimum_evidence_invalid",
+                "error",
+                format!("{path}/minimum_evidence/observed_contributors"),
+                "minimum evidence must be between one and the contributor count",
+            ));
+        }
+        if taxonomy.source_classes.is_empty()
+            || taxonomy
+                .source_classes
+                .iter()
+                .collect::<BTreeSet<_>>()
+                .len()
+                != taxonomy.source_classes.len()
+        {
+            issues.push(issue(
+                "classification_taxonomy_source_classes_invalid",
+                "error",
+                format!("{path}/source_classes"),
+                "taxonomy source classes must be non-empty and unique",
+            ));
+        }
+        for source_class in &taxonomy.source_classes {
+            if !contributor_attributes
+                .iter()
+                .any(|(_, attribute)| attribute.source_classes.contains(source_class))
+            {
+                issues.push(issue(
+                    "classification_taxonomy_source_class_unsupported",
+                    "error",
+                    format!("{path}/source_classes"),
+                    "every taxonomy source class must be accepted by an observed contributor",
+                ));
+            }
+        }
+        if taxonomy.basis_max_chars == 0
+            || taxonomy.basis_max_chars > crate::constants::V3_BASIS_MAX_CHARS_HARD_LIMIT
+        {
+            issues.push(issue(
+                "classification_taxonomy_basis_limit_invalid",
+                "error",
+                format!("{path}/basis_max_chars"),
+                "basis_max_chars must be within the v3 bounded explanation limit",
+            ));
+        }
+        let values = taxonomy
+            .values
+            .iter()
+            .map(|value| value.value.as_str())
+            .collect::<BTreeSet<_>>();
+        if values.is_empty()
+            || values.len() > crate::constants::V3_MAX_TAXONOMY_VALUES
+            || values.len() != taxonomy.values.len()
+        {
+            issues.push(issue(
+                "classification_taxonomy_values_invalid",
+                "error",
+                format!("{path}/values"),
+                "taxonomy values must be bounded, non-empty, and unique",
+            ));
+        }
+        for (value_index, value) in taxonomy.values.iter().enumerate() {
+            if value.value.trim().is_empty() || value.definition.trim().is_empty() {
+                issues.push(issue(
+                    "classification_taxonomy_value_criteria_incomplete",
+                    "error",
+                    format!("{path}/values/{value_index}"),
+                    "every value requires a non-blank value and definition",
+                ));
+            }
+            for (field, criteria) in [
+                ("positive_indicators", &value.positive_indicators),
+                ("exclusions", &value.exclusions),
+            ] {
+                if criteria.iter().any(|criterion| criterion.trim().is_empty())
+                    || criteria.iter().collect::<BTreeSet<_>>().len() != criteria.len()
+                {
+                    issues.push(issue(
+                        "classification_taxonomy_value_criteria_invalid",
+                        "error",
+                        format!("{path}/values/{value_index}/{field}"),
+                        "classification criteria must be non-blank and unique when provided",
+                    ));
+                }
+            }
+        }
+    }
+
+    for (job_index, job) in manifest.jobs.iter().enumerate() {
+        let mut selected_contract_ids = job
+            .decision_input_contracts
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        for input_contract_id in &job.input_contracts {
+            if let Some(input_contract) = manifest
+                .input_contracts
+                .iter()
+                .find(|contract| contract.id == *input_contract_id)
+            {
+                selected_contract_ids.extend(
+                    input_contract
+                        .decision_input_contracts
+                        .iter()
+                        .map(String::as_str),
+                );
+            }
+        }
+        let selected_attributes = manifest
+            .decision_input_contracts
+            .iter()
+            .filter(|contract| selected_contract_ids.contains(contract.id.as_str()))
+            .flat_map(|contract| contract.attributes.iter())
+            .collect::<Vec<_>>();
+        for attribute in selected_attributes.iter().filter(|attribute| {
+            attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+        }) {
+            let Some(reference) = attribute.classification_taxonomy.as_ref() else {
+                continue;
+            };
+            let Some(taxonomy) = manifest.classification_taxonomies.iter().find(|taxonomy| {
+                taxonomy.id == reference.id && taxonomy.version == reference.version
+            }) else {
+                continue;
+            };
+            let contributors_available = taxonomy.contributor_attribute_ids.iter().all(|id| {
+                selected_attributes
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.id == *id
+                            && candidate.effective_processing() == DecisionInputProcessing::Observed
+                    })
+                    .count()
+                    == 1
+            });
+            if !contributors_available {
+                issues.push(issue(
+                    "classification_taxonomy_job_contributors_unavailable",
+                    "error",
+                    format!(".mdp/manifest.yaml#/jobs/{job_index}/decision_input_contracts"),
+                    "every taxonomy contributor must resolve exactly once to an observed attribute in the job-selected Decision Input Contract set",
+                ));
+            }
+            for source_class in &taxonomy.source_classes {
+                if !selected_attributes.iter().any(|candidate| {
+                    taxonomy.contributor_attribute_ids.contains(&candidate.id)
+                        && candidate.effective_processing() == DecisionInputProcessing::Observed
+                        && candidate.source_classes.contains(source_class)
+                }) {
+                    issues.push(issue(
+                        "classification_taxonomy_job_source_class_unsupported",
+                        "error",
+                        format!(".mdp/manifest.yaml#/jobs/{job_index}/decision_input_contracts"),
+                        "every taxonomy source class must be supported by a selected observed contributor",
+                    ));
+                }
+            }
+        }
+    }
+}
+
 fn validate_decision_input_contracts(
     manifest: &Manifest,
     prompt_inventory: &PromptInventory,
     issues: &mut Vec<Value>,
 ) {
+    validate_classification_taxonomies(manifest, issues);
     let mut contract_ids = BTreeSet::new();
     for (contract_index, contract) in manifest.decision_input_contracts.iter().enumerate() {
         let path = format!(".mdp/manifest.yaml#/decision_input_contracts/{contract_index}");
@@ -3453,7 +3743,11 @@ fn validate_decision_input_contracts(
                     ),
                 ));
             }
-            let expected_normalized_contract = if contract.signal_projections.is_empty() {
+            let expected_normalized_contract = if contract.attributes.iter().any(|attribute| {
+                attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+            }) {
+                NORMALIZED_DECISION_INPUT_CONTRACT_V3
+            } else if contract.signal_projections.is_empty() {
                 NORMALIZED_DECISION_INPUT_CONTRACT
             } else {
                 NORMALIZED_DECISION_INPUT_CONTRACT_V2
@@ -3494,7 +3788,11 @@ fn validate_decision_input_contracts(
                 "decision input normalization must declare a prompt version",
             ));
         }
-        let expected_normalized_contract = if contract.signal_projections.is_empty() {
+        let expected_normalized_contract = if contract.attributes.iter().any(|attribute| {
+            attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+        }) {
+            NORMALIZED_DECISION_INPUT_CONTRACT_V3
+        } else if contract.signal_projections.is_empty() {
             NORMALIZED_DECISION_INPUT_CONTRACT
         } else {
             NORMALIZED_DECISION_INPUT_CONTRACT_V2
@@ -3821,6 +4119,75 @@ fn validate_decision_input_attributes(
             );
         }
         validate_value_contract(&attribute.value, &format!("{attribute_path}/value"), issues);
+        match attribute.effective_processing() {
+            DecisionInputProcessing::Observed => {
+                if attribute.classification_taxonomy.is_some() {
+                    issues.push(issue(
+                        "decision_input_observed_taxonomy_forbidden",
+                        "error",
+                        format!("{attribute_path}/classification_taxonomy"),
+                        "observed attributes cannot reference a classification taxonomy",
+                    ));
+                }
+            }
+            DecisionInputProcessing::ModelClassified => {
+                if !attribute.source_classes.is_empty() {
+                    issues.push(issue(
+                        "decision_input_classified_source_classes_forbidden",
+                        "error",
+                        format!("{attribute_path}/source_classes"),
+                        "model-classified attributes are derived from taxonomy contributors and cannot own collection source classes",
+                    ));
+                }
+                let Some(reference) = attribute.classification_taxonomy.as_ref() else {
+                    issues.push(issue(
+                        "decision_input_classification_taxonomy_missing",
+                        "error",
+                        format!("{attribute_path}/classification_taxonomy"),
+                        "model-classified attributes require an exact taxonomy id and version",
+                    ));
+                    continue;
+                };
+                let taxonomy = manifest.classification_taxonomies.iter().find(|taxonomy| {
+                    taxonomy.id == reference.id && taxonomy.version == reference.version
+                });
+                let Some(taxonomy) = taxonomy else {
+                    issues.push(issue(
+                        "decision_input_classification_taxonomy_unknown",
+                        "error",
+                        format!("{attribute_path}/classification_taxonomy"),
+                        "classification taxonomy reference must resolve exactly",
+                    ));
+                    continue;
+                };
+                if taxonomy.output_attribute != attribute.id {
+                    issues.push(issue(
+                        "decision_input_classification_taxonomy_output_mismatch",
+                        "error",
+                        format!("{attribute_path}/classification_taxonomy"),
+                        "taxonomy output_attribute must equal the classified attribute id",
+                    ));
+                }
+                let declared_values = attribute
+                    .value
+                    .enum_values
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                let taxonomy_values = taxonomy
+                    .canonical_values()
+                    .into_iter()
+                    .collect::<BTreeSet<_>>();
+                if declared_values.is_empty() || declared_values != taxonomy_values {
+                    issues.push(issue(
+                        "decision_input_classification_value_domain_mismatch",
+                        "error",
+                        format!("{attribute_path}/value/enum"),
+                        "classified attribute enum must exactly equal the referenced taxonomy values",
+                    ));
+                }
+            }
+        }
         if attribute.requirement == DecisionInputRequirement::Conditional
             && attribute.applies_when.is_empty()
         {
@@ -3952,7 +4319,9 @@ fn validate_decision_input_attributes(
                 "decision effects must be unique",
             ));
         }
-        if attribute.source_classes.is_empty() {
+        if attribute.effective_processing() == DecisionInputProcessing::Observed
+            && attribute.source_classes.is_empty()
+        {
             issues.push(issue(
                 "decision_input_attribute_source_classes_empty",
                 "error",
@@ -4885,6 +5254,10 @@ fn validate_decision_input_contract_shapes(
         else {
             continue;
         };
+        let v3_contract = yaml_get(contract, "normalization")
+            .and_then(|normalization| yaml_get(normalization, "normalized_schema_ref"))
+            .and_then(YamlValue::as_str)
+            == Some(NORMALIZED_DECISION_INPUT_CONTRACT_V3);
         for (attribute_index, attribute) in attributes.iter().enumerate() {
             let attribute_path = format!("{contract_path}/attributes/{attribute_index}");
             validate_object_keys_with_severity(
@@ -4894,6 +5267,8 @@ fn validate_decision_input_contract_shapes(
                     "question",
                     "description",
                     "output_path",
+                    "processing",
+                    "classification_taxonomy",
                     "value",
                     "requirement",
                     "applies_when",
@@ -4929,6 +5304,31 @@ fn validate_decision_input_contract_shapes(
                 "manifest_decision_input_attribute_required_field_missing",
                 issues,
             );
+            if v3_contract && yaml_get(attribute, "processing").is_none() {
+                issues.push(issue(
+                    "manifest_decision_input_processing_required_for_v3",
+                    "error",
+                    format!("{attribute_path}/processing"),
+                    "v3 producers must explicitly declare observed or model-classified processing",
+                ));
+            }
+            if let Some(reference) = yaml_get(attribute, "classification_taxonomy") {
+                validate_object_keys_with_severity(
+                    reference,
+                    &["id", "version"],
+                    &format!("{attribute_path}/classification_taxonomy"),
+                    "manifest_classification_taxonomy_ref_unknown_field",
+                    "error",
+                    issues,
+                );
+                validate_required_object_keys(
+                    reference,
+                    &["id", "version"],
+                    &format!("{attribute_path}/classification_taxonomy"),
+                    "manifest_classification_taxonomy_ref_required_field_missing",
+                    issues,
+                );
+            }
             validate_object_keys_with_severity(
                 yaml_get(attribute, "value").unwrap_or(&YamlValue::Null),
                 &["type", "format", "enum", "required", "description"],
@@ -6858,6 +7258,125 @@ mod tests {
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
         root
+    }
+
+    fn semantic_manifest() -> Manifest {
+        use crate::models::{
+            ClassificationAmbiguityPolicy, ClassificationConflictPolicy,
+            ClassificationMinimumEvidence, ClassificationNoMatchPolicy, ClassificationTaxonomy,
+            ClassificationTaxonomyRef, ClassificationTaxonomyValue, DecisionInputAttribute,
+            DecisionInputNormalization, DecisionInputSourceClass, ValueContract,
+        };
+
+        let mut manifest = crate::starter::starter_manifest("Test", "test", "gtm");
+        manifest.decision_input_contracts = vec![DecisionInputContract {
+            id: "gtm.prospect-context".into(),
+            version: "3".into(),
+            normalization: DecisionInputNormalization {
+                prompt: "normalize-prospect-row".into(),
+                prompt_version: "3".into(),
+                normalized_schema_ref: NORMALIZED_DECISION_INPUT_CONTRACT_V3.into(),
+            },
+            attributes: vec![
+                DecisionInputAttribute {
+                    id: "person_title".into(),
+                    question: "What is the authoritative current title?".into(),
+                    output_path: "title".into(),
+                    processing: Some(DecisionInputProcessing::Observed),
+                    source_classes: vec![DecisionInputSourceClass::PublicWeb],
+                    value: ValueContract {
+                        value_type: Some("string".into()),
+                        ..ValueContract::default()
+                    },
+                    ..DecisionInputAttribute::default()
+                },
+                DecisionInputAttribute {
+                    id: "persona".into(),
+                    question: "Which closed buyer persona is supported?".into(),
+                    output_path: "persona".into(),
+                    processing: Some(DecisionInputProcessing::ModelClassified),
+                    classification_taxonomy: Some(ClassificationTaxonomyRef {
+                        id: "buyer-persona".into(),
+                        version: "1".into(),
+                    }),
+                    value: ValueContract {
+                        value_type: Some("string".into()),
+                        enum_values: vec!["GTM Systems Owner".into(), "Other".into()],
+                        ..ValueContract::default()
+                    },
+                    ..DecisionInputAttribute::default()
+                },
+            ],
+            ..DecisionInputContract::default()
+        }];
+        manifest.classification_taxonomies = vec![ClassificationTaxonomy {
+            id: "buyer-persona".into(),
+            version: "1".into(),
+            output_attribute: "persona".into(),
+            contributor_attribute_ids: vec!["person_title".into()],
+            source_classes: vec![DecisionInputSourceClass::PublicWeb],
+            minimum_evidence: ClassificationMinimumEvidence {
+                observed_contributors: 1,
+            },
+            basis_max_chars: 500,
+            ambiguity_policy: ClassificationAmbiguityPolicy::HumanReview,
+            no_match_policy: ClassificationNoMatchPolicy::Gap,
+            conflict_policy: ClassificationConflictPolicy::HumanReview,
+            values: vec![
+                ClassificationTaxonomyValue {
+                    value: "GTM Systems Owner".into(),
+                    definition: "Owns or builds technical GTM systems.".into(),
+                    positive_indicators: vec![],
+                    exclusions: vec![],
+                },
+                ClassificationTaxonomyValue {
+                    value: "Other".into(),
+                    definition: "Does not satisfy the systems-owner definition.".into(),
+                    positive_indicators: vec![],
+                    exclusions: vec![],
+                },
+            ],
+        }];
+        manifest
+    }
+
+    #[test]
+    fn taxonomy_health_enforces_job_scoped_observed_contributors() {
+        let manifest = semantic_manifest();
+        let mut issues = Vec::new();
+        validate_classification_taxonomies(&manifest, &mut issues);
+        assert!(issues.is_empty(), "{issues:#?}");
+
+        let mut invalid = manifest;
+        invalid.decision_input_contracts[0].attributes[0].processing =
+            Some(DecisionInputProcessing::ModelClassified);
+        let mut issues = Vec::new();
+        validate_classification_taxonomies(&invalid, &mut issues);
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "classification_taxonomy_contributor_invalid"
+                || issue["code"] == "classification_taxonomy_job_contributors_unavailable"
+        }));
+    }
+
+    #[test]
+    fn classified_attribute_health_enforces_exact_taxonomy_value_domain() {
+        let mut manifest = semantic_manifest();
+        manifest.decision_input_contracts[0].attributes[1]
+            .value
+            .enum_values
+            .push("Invented".into());
+        let contract = &manifest.decision_input_contracts[0];
+        let mut issues = Vec::new();
+        validate_decision_input_attributes(
+            &manifest,
+            contract,
+            &BTreeSet::new(),
+            ".mdp/manifest.yaml#/decision_input_contracts/0",
+            &mut issues,
+        );
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "decision_input_classification_value_domain_mismatch"
+        }));
     }
 
     #[test]

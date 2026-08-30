@@ -1488,6 +1488,7 @@ mod tests {
             required_primitives: vec![],
             primitive_map: BTreeMap::new(),
             decision_input_contracts: vec![],
+            classification_taxonomies: vec![],
             input_contracts: vec![],
             jobs: vec![],
             profile_eval: Default::default(),

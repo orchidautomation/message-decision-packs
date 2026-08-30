@@ -26,12 +26,47 @@ deterministic decision.
     roles, attribute contributors, bounded cardinality, conflict policy, and
     decision effects. Use v2 normalization; do not widen the v1 envelope.
 
+## Semantic v3: Observe Facts, Classify Taxonomy Values
+
+For a v3-producing contract, declare `processing` explicitly on every
+attribute:
+
+- `observed` means the host must collect a bounded, source-addressable fact.
+  It belongs in the collection specification and source-attempt ledger.
+- `model-classified` means the normalizer derives one closed value from
+  observed contributor attempts. It never receives a fake source attempt.
+
+Define classification meaning once in the manifest-level
+`classification_taxonomies` array. Each taxonomy must pin an ID and version,
+the classified output attribute, observed contributor attribute IDs, eligible
+source classes, nested `minimum_evidence.observed_contributors`, a bounded
+`basis_max_chars`, the closed ambiguity/no-match/conflict policies, and its
+closed values. Each value requires a definition; add positive indicators and
+exclusions when they materially distinguish nearby values. The classified
+attribute's value enum must exactly equal the taxonomy values. Do not copy
+definitions or allowed values into prompts, skills, or host code as a second
+authority.
+
+The job-scoped compiler emits two different artifacts:
+
+- `collection_specification`: what observed evidence the host must supply,
+  including provenance, freshness, sensitivity, statuses, and value shape;
+- `classification_specification`: the exact selected taxonomy definitions,
+  criteria, policies, evidence minimum, and basis bound, plus a canonical
+  taxonomy-set hash.
+
+These contracts specify **what** must be supplied and classified, never where
+to retrieve it or which tool to use. Keep Monid, Deepline, Clay, browser,
+customer-system, and other acquisition instructions in host orchestration,
+not pack authority. A classification basis explains the mapping and cites
+`derived_from` attempt IDs; it is not proof or model confidence.
+
 The contract owns the questions. The prompt normalizes answers supplied by the
 host. A collector may use customer-approved systems or permitted public
 research, but that collection is not an MDP skill and does not run inside the
 deterministic CLI.
 
-## Minimal Shape
+## Legacy v1/v2 Minimal Shape
 
 For a newly generated GTM pack, the minimum prospect contract must answer the
 person/account identity, persona and segment, why-now trigger, and reviewed
@@ -104,8 +139,9 @@ positive winner-selection policy is allowed.
 
 ## No-Draft Boundary
 
-Normalization never drafts. The normalized envelope must set
-`draft_allowed: false`. Only a later deterministic ready decision may release
+Normalization never drafts. Legacy v1/v2 normalized envelopes must set
+`draft_allowed: false`; sealed v3 envelopes omit model-authored outcome and
+draft fields entirely. Only a later deterministic ready decision may release
 compiled context to a customer-funded generator or sequencer. These outcomes
 always block copy:
 

@@ -11,11 +11,12 @@ use crate::conformance::{
 use crate::constants::{
     FORMAT_VERSION, GOVERNED_HOST_ENVELOPE_CONTRACT, NATIVE_NORMALIZE_REQUEST_CONTRACT,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_OUTPUT_VALIDATION_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
-    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
-    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V3, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
+    PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::model_steps::{
     COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1, compiled_model_step_schema,
@@ -2854,6 +2855,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "required_primitives": primitive_id_array_schema(),
             "primitive_map": primitive_map_schema(),
             "decision_input_contracts": decision_input_contracts_schema(),
+            "classification_taxonomies": classification_taxonomies_schema(),
             "input_contracts": input_contracts_schema(),
             "jobs": profile_jobs_schema(),
             "profile_eval": profile_eval_schema(),
@@ -2977,6 +2979,13 @@ fn input_contracts_schema() -> Value {
     })
 }
 
+fn classification_taxonomies_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": crate::commands::v3_normalization::v3_classification_taxonomy_schema()
+    })
+}
+
 fn decision_input_contracts_schema() -> Value {
     json!({
         "type": "array",
@@ -2987,26 +2996,24 @@ fn decision_input_contracts_schema() -> Value {
             "additionalProperties": false,
             "allOf": [{
                 "if": {
-                    "required": ["signal_projections"],
-                    "properties": {"signal_projections": {"minItems": 1}}
+                    "properties": {"normalization": {"properties": {
+                        "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT_V3}
+                    }}}
                 },
                 "then": {
-                    "properties": {
-                        "normalization": {
-                            "properties": {
-                                "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT_V2}
-                            }
-                        }
-                    }
+                    "properties": {"attributes": {"items": {"required": ["processing"]}}}
                 },
                 "else": {
-                    "properties": {
-                        "normalization": {
-                            "properties": {
-                                "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
-                            }
-                        }
-                    }
+                    "if": {
+                        "required": ["signal_projections"],
+                        "properties": {"signal_projections": {"minItems": 1}}
+                    },
+                    "then": {"properties": {"normalization": {"properties": {
+                        "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT_V2}
+                    }}}},
+                    "else": {"properties": {"normalization": {"properties": {
+                        "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
+                    }}}}
                 }
             }],
             "properties": {
@@ -3020,7 +3027,7 @@ fn decision_input_contracts_schema() -> Value {
                     "properties": {
                         "prompt": non_blank_string_schema(),
                         "prompt_version": non_blank_string_schema(),
-                        "normalized_schema_ref": {"enum": [NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2]}
+                        "normalized_schema_ref": {"enum": [NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT_V3]}
                     }
                 },
                 "source_classes": {
@@ -3185,6 +3192,20 @@ pub(crate) fn signal_observation_v2_schema() -> Value {
 fn decision_input_attribute_schema() -> Value {
     json!({
         "type": "object",
+        "allOf": [{
+            "if": {
+                "required": ["processing"],
+                "properties": {"processing": {"const": "model-classified"}}
+            },
+            "then": {
+                "required": ["classification_taxonomy"],
+                "properties": {"source_classes": {"maxItems": 0}}
+            },
+            "else": {
+                "not": {"required": ["classification_taxonomy"]},
+                "properties": {"source_classes": {"minItems": 1}}
+            }
+        }],
         "required": [
             "id",
             "question",
@@ -3206,6 +3227,16 @@ fn decision_input_attribute_schema() -> Value {
             "output_path": {
                 "type": "string",
                 "pattern": "^(name|title|company|company_domain|source_kind|synthetic|linkedin_url|company_url|background|trigger|persona|segment|attributes\\.[A-Za-z][A-Za-z0-9_-]{0,63})$"
+            },
+            "processing": {"enum": ["observed", "model-classified"]},
+            "classification_taxonomy": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                    "id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"},
+                    "version": non_blank_string_schema()
+                }
             },
             "value": value_contract_schema(),
             "requirement": {"enum": ["required", "optional", "conditional", "hard-gate"]},
@@ -3230,7 +3261,6 @@ fn decision_input_attribute_schema() -> Value {
             },
             "source_classes": {
                 "type": "array",
-                "minItems": 1,
                 "uniqueItems": true,
                 "items": decision_input_source_class_schema()
             },
@@ -5069,6 +5099,84 @@ mod tests {
     use jsonschema::draft202012;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn decision_attribute_base() -> Value {
+        json!({
+            "id": "person_title",
+            "question": "What is the authoritative current title?",
+            "output_path": "title",
+            "value": {"type": "string"},
+            "requirement": "required",
+            "decision_effects": ["readiness"],
+            "source_classes": ["public_web"],
+            "provenance": {"required": true, "required_fields": ["attempt_id"]},
+            "confidence": {"required": false},
+            "freshness": {"required": false, "allow_unknown": true},
+            "sensitivity": "public",
+            "status_behavior": {}
+        })
+    }
+
+    #[test]
+    fn decision_attribute_processing_is_closed_and_legacy_omission_stays_observed() {
+        let schema = decision_input_attribute_schema();
+        let legacy = decision_attribute_base();
+        let legacy_validation = draft202012::validate(&schema, &legacy);
+        assert!(legacy_validation.is_ok(), "{legacy_validation:?}");
+
+        let mut classified = decision_attribute_base();
+        classified["processing"] = json!("model-classified");
+        classified["classification_taxonomy"] = json!({"id": "buyer-persona", "version": "1"});
+        classified["source_classes"] = json!([]);
+        assert!(draft202012::validate(&schema, &classified).is_ok());
+
+        let mut missing_taxonomy = classified.clone();
+        missing_taxonomy
+            .as_object_mut()
+            .unwrap()
+            .remove("classification_taxonomy");
+        assert!(draft202012::validate(&schema, &missing_taxonomy).is_err());
+
+        let mut observed_with_taxonomy = legacy.clone();
+        observed_with_taxonomy["processing"] = json!("observed");
+        observed_with_taxonomy["classification_taxonomy"] =
+            json!({"id": "buyer-persona", "version": "1"});
+        assert!(draft202012::validate(&schema, &observed_with_taxonomy).is_err());
+    }
+
+    #[test]
+    fn taxonomy_schema_uses_nested_minimum_evidence_and_closed_policies() {
+        let schema = &classification_taxonomies_schema()["items"];
+        let valid = json!({
+            "id": "buyer-persona",
+            "version": "1",
+            "output_attribute": "persona",
+            "contributor_attribute_ids": ["person_title"],
+            "source_classes": ["public_web"],
+            "minimum_evidence": {"observed_contributors": 1},
+            "basis_max_chars": 500,
+            "ambiguity_policy": "human-review",
+            "no_match_policy": "gap",
+            "conflict_policy": "human-review",
+            "values": [{
+                "value": "GTM Systems Owner",
+                "definition": "Owns or builds technical systems used by GTM teams."
+            }]
+        });
+        assert!(draft202012::validate(schema, &valid).is_ok());
+
+        let mut flat_minimum = valid.clone();
+        flat_minimum
+            .as_object_mut()
+            .unwrap()
+            .remove("minimum_evidence");
+        flat_minimum["minimum_evidence_observed_contributors"] = json!(1);
+        assert!(draft202012::validate(schema, &flat_minimum).is_err());
+
+        let mut open_policy = valid;
+        open_policy["ambiguity_policy"] = json!("model-choice");
+        assert!(draft202012::validate(schema, &open_policy).is_err());
+    }
 
     #[test]
     fn route_budget_schemas_are_versioned_and_summary_excludes_route_arrays() {

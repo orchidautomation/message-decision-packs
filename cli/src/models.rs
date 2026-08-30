@@ -33,6 +33,8 @@ pub(crate) struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) decision_input_contracts: Vec<DecisionInputContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) classification_taxonomies: Vec<ClassificationTaxonomy>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) input_contracts: Vec<InputContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) jobs: Vec<ProfileJob>,
@@ -347,6 +349,10 @@ pub(crate) struct DecisionInputAttribute {
     pub(crate) description: Option<String>,
     #[serde(default)]
     pub(crate) output_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) processing: Option<DecisionInputProcessing>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) classification_taxonomy: Option<ClassificationTaxonomyRef>,
     #[serde(default)]
     pub(crate) value: ValueContract,
     pub(crate) requirement: DecisionInputRequirement,
@@ -366,6 +372,95 @@ pub(crate) struct DecisionInputAttribute {
     pub(crate) sensitivity: DecisionInputSensitivity,
     #[serde(default)]
     pub(crate) status_behavior: BTreeMap<DecisionInputAttemptStatus, DecisionInputDisposition>,
+}
+
+impl DecisionInputAttribute {
+    pub(crate) fn effective_processing(&self) -> DecisionInputProcessing {
+        self.processing.unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DecisionInputProcessing {
+    #[default]
+    Observed,
+    ModelClassified,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClassificationTaxonomyRef {
+    pub(crate) id: String,
+    pub(crate) version: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClassificationTaxonomy {
+    pub(crate) id: String,
+    pub(crate) version: String,
+    pub(crate) output_attribute: String,
+    pub(crate) contributor_attribute_ids: Vec<String>,
+    pub(crate) source_classes: Vec<DecisionInputSourceClass>,
+    pub(crate) minimum_evidence: ClassificationMinimumEvidence,
+    #[serde(default = "default_classification_basis_max_chars")]
+    pub(crate) basis_max_chars: usize,
+    pub(crate) ambiguity_policy: ClassificationAmbiguityPolicy,
+    pub(crate) no_match_policy: ClassificationNoMatchPolicy,
+    pub(crate) conflict_policy: ClassificationConflictPolicy,
+    pub(crate) values: Vec<ClassificationTaxonomyValue>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClassificationMinimumEvidence {
+    pub(crate) observed_contributors: u32,
+}
+
+impl ClassificationTaxonomy {
+    pub(crate) fn canonical_values(&self) -> Vec<String> {
+        let mut values = self
+            .values
+            .iter()
+            .map(|definition| definition.value.clone())
+            .collect::<Vec<_>>();
+        values.sort();
+        values
+    }
+}
+
+fn default_classification_basis_max_chars() -> usize {
+    crate::constants::V3_BASIS_MAX_CHARS_DEFAULT
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClassificationTaxonomyValue {
+    pub(crate) value: String,
+    pub(crate) definition: String,
+    #[serde(default)]
+    pub(crate) positive_indicators: Vec<String>,
+    #[serde(default)]
+    pub(crate) exclusions: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ClassificationAmbiguityPolicy {
+    HumanReview,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ClassificationNoMatchPolicy {
+    Gap,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ClassificationConflictPolicy {
+    HumanReview,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
