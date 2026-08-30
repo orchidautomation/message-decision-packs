@@ -17,8 +17,8 @@ use crate::commands::v3_normalization::{
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
-    V3_OUTCOME_KIND,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V3, ROUTED_CONTEXT_CONTRACT,
+    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2, V3_OUTCOME_KIND,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
@@ -2958,7 +2958,9 @@ fn canonical_output_schema_for_step(
         .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "output-schema-missing"))?;
     if matches!(
         schema_ref,
-        NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+        NORMALIZED_DECISION_INPUT_CONTRACT
+            | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+            | NORMALIZED_DECISION_INPUT_CONTRACT_V3
     ) {
         let compiled = requirements(staged_pack, job_id)
             .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-readiness-unavailable"))?;
@@ -3459,7 +3461,7 @@ fn provider_schema_source_for_contract(
     if let Some(host_envelope) = contract.host_envelope.as_ref() {
         host_envelope
             .validate(
-                Some("governed-artifact"),
+                contract.output_kind.as_deref(),
                 true,
                 &contract.required_top_level,
             )
@@ -7328,6 +7330,23 @@ mod tests {
         });
         let bytes = serde_json::to_vec(&invocation).unwrap();
         (invocation, bytes)
+    }
+
+    #[test]
+    fn v3_provider_preflight_projects_only_semantic_fields() {
+        let step = v3_envelope_test_step();
+        let canonical = crate::commands::v3_normalization::v3_sealed_envelope_schema();
+
+        let source = provider_schema_source_for_contract(&canonical, &step.output_contract)
+            .expect("normalization host envelope should pass provider preflight");
+
+        assert_eq!(
+            source["required"],
+            serde_json::json!(["classifications", "gaps", "rejected_claims"])
+        );
+        assert!(source["properties"].get("classifications").is_some());
+        assert!(source["properties"].get("contract").is_none());
+        assert!(source["properties"].get("normalized_input").is_none());
     }
 
     #[test]
