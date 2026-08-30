@@ -5,7 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED_VERSION="27.1.0"
 MAX_CANDIDATES=24
 BUILD_TIMEOUT_SECONDS=120
-TEST_TIMEOUT_SECONDS=180
+# The unmutated CLI suite now runs close to three minutes on hosted runners.
+# Keep enough headroom for normal runner variance so the mutation gate tests
+# authority changes rather than intermittently timing out its baseline.
+TEST_TIMEOUT_SECONDS=240
 SELECTOR='(from_run|permits_projection)'
 MUTATION_FILE='src/authority/mod.rs'
 

@@ -13,7 +13,7 @@ const expectedShardMatrix = ['0/4', '1/4', '2/4', '3/4']
 const expectedVersion = '27.1.0'
 const expectedMaxCandidates = 24
 const expectedBuildTimeout = 120
-const expectedTestTimeout = 180
+const expectedTestTimeout = 240
 const expectedSelector = '(from_run|permits_projection)'
 const expectedFile = 'src/authority/mod.rs'
 
@@ -203,7 +203,7 @@ assert.match(
 assert.match(
   script,
   new RegExp(`TEST_TIMEOUT_SECONDS=${expectedTestTimeout}`),
-  'authority mutation script must cap test timeout at 180s',
+  'authority mutation script must cap test timeout at 240s',
 )
 assert.ok(
   script.includes(`SELECTOR='${expectedSelector}'`),
