@@ -26,6 +26,7 @@ pub(crate) mod skills;
 pub(crate) mod source_binding;
 pub(crate) mod synthetic_chain;
 
+pub(crate) mod v3_normalization;
 pub(crate) use authoring::{
     PACK_AUTHORING_RESULT_V1, apply_pack_change_set, preview_pack_change_set,
 };

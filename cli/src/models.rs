@@ -793,6 +793,31 @@ pub(crate) const GOVERNED_HOST_ENVELOPE_OWNED_FIELDS: &[&str] = &[
 pub(crate) const GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS: &[&str] =
     &["selected_authority", "artifact", "gaps", "rejected_claims"];
 
+// v3 normalization host envelope (MDP-287). The model owns exactly three
+// semantic fields; everything else is sealed by the host. The same
+// `PromptHostEnvelope` shape is reused for every supported output kind, but
+// its fixed field sets change per kind to enforce a disjoint authority split.
+pub(crate) const NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS: &[&str] = &[
+    "contract",
+    "job_id",
+    "decision_input_contracts",
+    "normalization",
+    "requirements_sha256",
+    "taxonomy_set_sha256",
+    "source_binding_sha256",
+    "source_attempt_request_sha256",
+    "collected_attempt_results_sha256",
+    "attributes",
+    "signal_observations",
+    "normalized_input",
+    "outcome",
+];
+
+pub(crate) const NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS: &[&str] =
+    &["classifications", "gaps", "rejected_claims"];
+
+pub(crate) const NORMALIZATION_HOST_ENVELOPE_CONTRACT: &str = "mdp.normalization-host-envelope.v1";
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PromptHostEnvelope {
@@ -805,6 +830,25 @@ impl PromptHostEnvelope {
     pub(crate) fn validate(
         &self,
         output_kind: Option<&str>,
+        has_routed_context: bool,
+        required_top_level: &[String],
+    ) -> Result<(), String> {
+        match output_kind {
+            Some(crate::constants::OUTPUT_KIND_GOVERNED_ARTIFACT) => {
+                self.validate_governed_artifact(has_routed_context, required_top_level)
+            }
+            Some(crate::constants::OUTPUT_KIND_DECISION_INPUT_NORMALIZATION) => {
+                self.validate_normalization(has_routed_context, required_top_level)
+            }
+            Some(other) => Err(format!(
+                "host envelope is not authorized for output kind {other}"
+            )),
+            None => Err("host envelope requires an explicit output_kind".into()),
+        }
+    }
+
+    fn validate_governed_artifact(
+        &self,
         has_routed_context: bool,
         required_top_level: &[String],
     ) -> Result<(), String> {
@@ -831,12 +875,46 @@ impl PromptHostEnvelope {
             &expected_required_top_level,
             "required_top_level",
         )?;
-        if output_kind != Some("governed-artifact") {
-            return Err("host envelope is supported only for governed-artifact outputs".into());
-        }
         if !has_routed_context {
             return Err("host envelope requires a required routed_context input".into());
         }
+        Ok(())
+    }
+
+    fn validate_normalization(
+        &self,
+        _has_routed_context: bool,
+        required_top_level: &[String],
+    ) -> Result<(), String> {
+        if self.contract != NORMALIZATION_HOST_ENVELOPE_CONTRACT {
+            return Err(format!(
+                "normalization host envelope contract must be {NORMALIZATION_HOST_ENVELOPE_CONTRACT}"
+            ));
+        }
+        validate_fixed_fields(
+            &self.owned_top_level,
+            NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+            "owned_top_level",
+        )?;
+        validate_fixed_fields(
+            &self.semantic_required_top_level,
+            NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
+            "semantic_required_top_level",
+        )?;
+        let expected_required_top_level = NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS
+            .iter()
+            .chain(NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+            .copied()
+            .collect::<Vec<_>>();
+        validate_fixed_fields(
+            required_top_level,
+            &expected_required_top_level,
+            "required_top_level",
+        )?;
+        // The v3 normalization host envelope does NOT require a routed_context
+        // input. It binds decisions through compiled source binding, attempt
+        // request, collected results, and the requirements/taxonomy-set
+        // hashes already declared in the sealed envelope.
         Ok(())
     }
 }

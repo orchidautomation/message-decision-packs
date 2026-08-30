@@ -10,9 +10,11 @@ use crate::models::{
     DecisionInputDisposition, DecisionInputRequirement, GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
     GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, InputContract, MAX_SIGNAL_CONTRIBUTORS,
     MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE,
-    MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest, PrimitiveMapping, ProductFoundationBinding,
-    ProductFoundationConditionFact, ProductFoundationEntryRef, ProductFoundationFacetKind, Profile,
-    ProfileEval, ProfileJob, PromptFile, QualificationGates, TargetIdentity, ValueContract,
+    MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest, NORMALIZATION_HOST_ENVELOPE_CONTRACT,
+    NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS, NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
+    PrimitiveMapping, ProductFoundationBinding, ProductFoundationConditionFact,
+    ProductFoundationEntryRef, ProductFoundationFacetKind, Profile, ProfileEval, ProfileJob,
+    PromptFile, QualificationGates, TargetIdentity, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -5933,15 +5935,13 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
         return;
     };
     let envelope_path = format!("{path}#/output_contract/host_envelope");
-    if envelope.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
-        issues.push(issue(
-            "prompt_host_envelope_contract",
-            "error",
-            format!("{envelope_path}/contract"),
-            format!("host envelope contract must be {GOVERNED_HOST_ENVELOPE_CONTRACT}"),
-        ));
-    }
-    let mut validate_fields = |fields: &[String], expected: &[&str], field_name: &str| {
+    fn validate_fields(
+        fields: &[String],
+        expected: &[&str],
+        field_name: &str,
+        envelope_path: &str,
+        issues: &mut Vec<Value>,
+    ) {
         let actual = fields.iter().map(String::as_str).collect::<BTreeSet<_>>();
         let expected = expected.iter().copied().collect::<BTreeSet<_>>();
         if fields.len() != actual.len() || actual != expected {
@@ -5952,46 +5952,111 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
                 format!("{field_name} must contain the fixed MDP field set without duplicates"),
             ));
         }
-    };
-    validate_fields(
-        &envelope.owned_top_level,
-        GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
-        "owned_top_level",
-    );
-    validate_fields(
-        &envelope.semantic_required_top_level,
-        GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
-        "semantic_required_top_level",
-    );
-    let expected_required_top_level = GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
-        .iter()
-        .chain(GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
-        .copied()
-        .collect::<Vec<_>>();
-    validate_fields(
-        &prompt.output_contract.required_top_level,
-        &expected_required_top_level,
-        "required_top_level",
-    );
-    if prompt.output_contract.output_kind.as_deref() != Some("governed-artifact") {
-        issues.push(issue(
-            "prompt_host_envelope_output_kind",
-            "error",
-            envelope_path,
-            "host envelope is supported only for governed-artifact outputs",
-        ));
     }
-    if !prompt
-        .inputs
-        .iter()
-        .any(|input| input.required && input.name == "routed_context")
-    {
-        issues.push(issue(
-            "prompt_host_envelope_routed_context_missing",
-            "error",
-            format!("{path}#/inputs"),
-            "host envelope requires a required routed_context input",
-        ));
+    match prompt.output_contract.output_kind.as_deref() {
+        Some("governed-artifact") => {
+            if envelope.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
+                issues.push(issue(
+                    "prompt_host_envelope_contract",
+                    "error",
+                    format!("{envelope_path}/contract"),
+                    format!("host envelope contract must be {GOVERNED_HOST_ENVELOPE_CONTRACT}"),
+                ));
+            }
+            validate_fields(
+                &envelope.owned_top_level,
+                GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+                "owned_top_level",
+                &envelope_path,
+                issues,
+            );
+            validate_fields(
+                &envelope.semantic_required_top_level,
+                GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
+                "semantic_required_top_level",
+                &envelope_path,
+                issues,
+            );
+            let expected_required_top_level = GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+                .iter()
+                .chain(GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+                .copied()
+                .collect::<Vec<_>>();
+            validate_fields(
+                &prompt.output_contract.required_top_level,
+                &expected_required_top_level,
+                "required_top_level",
+                &envelope_path,
+                issues,
+            );
+            if !prompt
+                .inputs
+                .iter()
+                .any(|input| input.required && input.name == "routed_context")
+            {
+                issues.push(issue(
+                    "prompt_host_envelope_routed_context_missing",
+                    "error",
+                    format!("{path}#/inputs"),
+                    "host envelope requires a required routed_context input",
+                ));
+            }
+        }
+        Some("decision-input-normalization") => {
+            if envelope.contract != NORMALIZATION_HOST_ENVELOPE_CONTRACT {
+                issues.push(issue(
+                    "prompt_host_envelope_contract",
+                    "error",
+                    format!("{envelope_path}/contract"),
+                    format!(
+                        "normalization host envelope contract must be {NORMALIZATION_HOST_ENVELOPE_CONTRACT}"
+                    ),
+                ));
+            }
+            validate_fields(
+                &envelope.owned_top_level,
+                NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+                "owned_top_level",
+                &envelope_path,
+                issues,
+            );
+            validate_fields(
+                &envelope.semantic_required_top_level,
+                NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
+                "semantic_required_top_level",
+                &envelope_path,
+                issues,
+            );
+            validate_fields(
+                &prompt.output_contract.required_top_level,
+                &NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS
+                    .iter()
+                    .chain(NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+                    .copied()
+                    .collect::<Vec<_>>(),
+                "required_top_level",
+                &envelope_path,
+                issues,
+            );
+        }
+        Some(other) => {
+            issues.push(issue(
+                "prompt_host_envelope_output_kind",
+                "error",
+                envelope_path,
+                format!(
+                    "host envelope is not authorized for output kind {other}; expected governed-artifact or decision-input-normalization"
+                ),
+            ));
+        }
+        None => {
+            issues.push(issue(
+                "prompt_host_envelope_output_kind",
+                "error",
+                envelope_path,
+                "host envelope requires an explicit output_kind",
+            ));
+        }
     }
 }
 

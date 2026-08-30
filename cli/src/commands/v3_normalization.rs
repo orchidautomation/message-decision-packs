@@ -1,0 +1,1405 @@
+//! Profile-neutral semantic normalization v3 (MDP-287).
+//!
+//! The v3 wire is the first normalized decision-input contract whose
+//! canonical `normalized_input` payload is profile neutral. The model emits a
+//! bounded semantic-only provider payload (`classifications`, `gaps`,
+//! `rejected_claims`) bound to one canonical classification taxonomy per
+//! classified attribute. The host seals every host-owned field on top of the
+//! validated semantic payload before downstream deterministic evaluation.
+//!
+//! This module owns:
+//!
+//! - The semantic provider payload types and JSON Schema.
+//! - The sealed v3 envelope JSON Schema (canonical contract).
+//! - Validation that rejects host-field injection, unknown enums, mixed
+//!   v3/legacy representations, malformed payloads, and incompatible
+//!   structured-output schemas.
+//! - Deterministic projection to the private neutral `normalized_input`
+//!   surface used by `decision_input`.
+//!
+//! v0/v1/v2 envelopes remain readable through their existing validators.
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
+
+use crate::constants::{
+    CLASSIFICATION_TAXONOMY_CONTRACT_V3, NORMALIZED_DECISION_INPUT_CONTRACT_V3,
+    NORMALIZED_SEMANTIC_PROVIDER_SCHEMA_REF_V3, REQUIREMENTS_HASH_LABEL_V3,
+    TAXONOMY_SET_HASH_LABEL_V3, V3_AMBIGUITY_POLICY_HUMAN_REVIEW, V3_BASIS_MAX_CHARS_DEFAULT,
+    V3_BASIS_MAX_CHARS_HARD_LIMIT, V3_CLASSIFICATION_STATUS_AMBIGUOUS,
+    V3_CLASSIFICATION_STATUS_CLASSIFIED, V3_CLASSIFICATION_STATUS_NO_MATCH,
+    V3_CLASSIFICATION_STATUS_UNSUPPORTED, V3_CONFLICT_POLICY_HUMAN_REVIEW, V3_IDENTIFIER_MAX_LEN,
+    V3_MAX_CLASSIFICATIONS_PER_ENVELOPE, V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+    V3_MAX_GAPS_PER_ENVELOPE, V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE, V3_NO_MATCH_POLICY_GAP,
+};
+use crate::models::{
+    NORMALIZATION_HOST_ENVELOPE_CONTRACT, NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+};
+
+// =============================================================================
+// Closed enums and bounded identifiers for the v3 semantic payload.
+// =============================================================================
+
+/// Closed set of classification statuses the provider may emit. Anything
+/// outside this set fails the v3 envelope before deterministic evaluation.
+pub(crate) const V3_CLASSIFICATION_STATUSES: &[&str] = &[
+    V3_CLASSIFICATION_STATUS_CLASSIFIED,
+    V3_CLASSIFICATION_STATUS_AMBIGUOUS,
+    V3_CLASSIFICATION_STATUS_NO_MATCH,
+    V3_CLASSIFICATION_STATUS_UNSUPPORTED,
+];
+
+/// Closed set of policy identifiers that may appear in the authored
+/// classification taxonomy. Packs must pick from this set; the host seals the
+/// chosen policy as part of the taxonomy identity.
+pub(crate) const V3_POLICY_KINDS: &[&str] = &[
+    V3_AMBIGUITY_POLICY_HUMAN_REVIEW,
+    V3_NO_MATCH_POLICY_GAP,
+    V3_CONFLICT_POLICY_HUMAN_REVIEW,
+];
+
+// =============================================================================
+// Authored and compiled classification taxonomy.
+// =============================================================================
+
+/// Authored classification taxonomy used by packs. A pack may declare one or
+/// more taxonomies; one canonical taxonomy is selected per classified
+/// attribute for the current job. The runtime stamps the selected taxonomy
+/// identity and the canonical SHA-256 over the selected taxonomy set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ClassificationTaxonomyV3 {
+    pub(crate) id: String,
+    pub(crate) version: String,
+    pub(crate) output_attribute: String,
+    #[serde(default)]
+    pub(crate) contributor_attribute_ids: Vec<String>,
+    #[serde(default)]
+    pub(crate) source_classes: Vec<String>,
+    #[serde(default)]
+    pub(crate) minimum_evidence_observed_contributors: u32,
+    #[serde(default = "default_basis_max_chars")]
+    pub(crate) basis_max_chars: usize,
+    #[serde(default)]
+    pub(crate) ambiguity_policy: Option<String>,
+    #[serde(default)]
+    pub(crate) no_match_policy: Option<String>,
+    #[serde(default)]
+    pub(crate) conflict_policy: Option<String>,
+    pub(crate) values: Vec<ClassificationTaxonomyValueV3>,
+}
+
+fn default_basis_max_chars() -> usize {
+    V3_BASIS_MAX_CHARS_DEFAULT
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ClassificationTaxonomyValueV3 {
+    pub(crate) value: String,
+    #[serde(default)]
+    pub(crate) definition: Option<String>,
+    #[serde(default)]
+    pub(crate) positive_indicators: Vec<String>,
+    #[serde(default)]
+    pub(crate) exclusions: Vec<String>,
+}
+
+impl ClassificationTaxonomyV3 {
+    /// Returns the canonical taxonomy value domain, sorted for stable
+    /// hashing. The selected taxonomies form a precise value authority that
+    /// downstream checks compare against the attribute's value contract.
+    #[allow(dead_code)] // Reserved for the U1/U2 taxonomy compiler lane.
+    pub(crate) fn canonical_values(&self) -> Vec<String> {
+        let mut values: Vec<String> = self.values.iter().map(|v| v.value.clone()).collect();
+        values.sort();
+        values
+    }
+}
+
+// =============================================================================
+// Semantic-only provider payload.
+// =============================================================================
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct SemanticClassificationV3 {
+    pub(crate) status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) value: Option<String>,
+    pub(crate) taxonomy_id: String,
+    pub(crate) taxonomy_version: String,
+    pub(crate) derived_from: Vec<String>,
+    pub(crate) basis: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct SemanticGapV3 {
+    pub(crate) attribute: String,
+    pub(crate) reason: String,
+    #[serde(default)]
+    pub(crate) derived_from: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) taxonomy_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct SemanticRejectedClaimV3 {
+    pub(crate) claim: String,
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct SemanticProviderPayloadV3 {
+    pub(crate) classifications: BTreeMap<String, SemanticClassificationV3>,
+    #[serde(default)]
+    pub(crate) gaps: Vec<SemanticGapV3>,
+    #[serde(default)]
+    pub(crate) rejected_claims: Vec<SemanticRejectedClaimV3>,
+}
+
+// =============================================================================
+// Issues produced by v3 validation.
+// =============================================================================
+
+/// Stable, machine-readable diagnostic produced by v3 validators. The CLI
+/// projects these into actionable diagnostics and `--v3` audit output.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct V3Issue {
+    pub(crate) code: &'static str,
+    pub(crate) path: String,
+    pub(crate) expected: String,
+    pub(crate) observed: String,
+}
+
+impl V3Issue {
+    fn new(code: &'static str, path: impl Into<String>, expected: &str, observed: &str) -> Self {
+        Self {
+            code,
+            path: path.into(),
+            expected: expected.into(),
+            observed: observed.into(),
+        }
+    }
+}
+
+/// Reasons a v3 envelope seals successfully but the deterministic decision
+/// evaluator should not produce a ready route. The runtime uses these to
+/// build the deterministic read paths without consuming semantic authority.
+#[allow(dead_code)] // Reserved for the deterministic decision integration lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum V3DeterministicReadiness {
+    /// Sealed envelope is ready for downstream evaluation.
+    Ready,
+    /// Classification marked ambiguous or no-match: ready route must wait.
+    ProceedWithoutDecision,
+    /// Some classifications marked unsupported or inputs are missing.
+    InsufficientContext,
+}
+
+// =============================================================================
+// Canonical v3 schema constructors.
+// =============================================================================
+
+/// JSON Schema for the bounded semantic-only provider payload. Holds only the
+/// three fixed semantic fields. Anything else in provider output is an
+/// injection that the host rejects before sealing.
+pub(crate) fn v3_semantic_provider_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Semantic Normalization v3 Provider Payload",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["classifications"],
+        "properties": {
+            "classifications": {
+                "type": "object",
+                "maxProperties": V3_MAX_CLASSIFICATIONS_PER_ENVELOPE,
+                "additionalProperties": v3_classification_object_schema()
+            },
+            "gaps": {
+                "type": "array",
+                "maxItems": V3_MAX_GAPS_PER_ENVELOPE,
+                "items": v3_gap_object_schema()
+            },
+            "rejected_claims": {
+                "type": "array",
+                "maxItems": V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE,
+                "items": v3_rejected_claim_object_schema()
+            }
+        }
+    })
+}
+
+fn v3_classification_object_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
+        "properties": {
+            "status": { "enum": V3_CLASSIFICATION_STATUSES },
+            "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": V3_IDENTIFIER_MAX_LEN
+            },
+            "taxonomy_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+                "minLength": 1,
+                "maxLength": V3_IDENTIFIER_MAX_LEN
+            },
+            "taxonomy_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": V3_IDENTIFIER_MAX_LEN
+            },
+            "derived_from": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+                "uniqueItems": true,
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": V3_IDENTIFIER_MAX_LEN
+                }
+            },
+            "basis": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": V3_BASIS_MAX_CHARS_HARD_LIMIT
+            }
+        }
+    })
+}
+
+fn v3_gap_object_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["attribute", "reason"],
+        "properties": {
+            "attribute": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": V3_IDENTIFIER_MAX_LEN
+            },
+            "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": V3_IDENTIFIER_MAX_LEN
+            },
+            "derived_from": {
+                "type": "array",
+                "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+                "items": { "type": "string", "minLength": 1 }
+            },
+            "taxonomy_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+                "minLength": 1,
+                "maxLength": V3_IDENTIFIER_MAX_LEN
+            }
+        }
+    })
+}
+
+fn v3_rejected_claim_object_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "reason"],
+        "properties": {
+            "claim": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string", "minLength": 1 }
+        }
+    })
+}
+
+/// Canonical sealed v3 envelope JSON Schema. Differs from the provider
+/// payload in that the host owns every envelope field; the schema enforces
+/// the disjoint authority.
+pub(crate) fn v3_sealed_envelope_schema() -> Value {
+    let sha256 = json!({
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "minLength": 64,
+        "maxLength": 64
+    });
+    let normalization_entry = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract_id", "prompt", "prompt_version"],
+        "properties": {
+            "contract_id": { "type": "string", "minLength": 1 },
+            "prompt": { "type": "string", "minLength": 1 },
+            "prompt_version": { "type": "string", "minLength": 1 },
+            "prompt_sha256": sha256.clone()
+        }
+    });
+    let attributes = json!({
+        "type": "object",
+        "additionalProperties": { "type": "object" }
+    });
+    let normalized_input = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fields", "signals", "attributes"],
+        "properties": {
+            "fields": { "type": "object" },
+            "signals": {
+                "type": "array",
+                "items": { "type": "object" }
+            },
+            "attributes": attributes.clone()
+        }
+    });
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Normalized Decision Input v3 Sealed Envelope",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "contract",
+            "job_id",
+            "decision_input_contracts",
+            "normalization",
+            "attributes",
+            "classifications",
+            "normalized_input"
+        ],
+        "properties": {
+            "contract": { "const": NORMALIZED_DECISION_INPUT_CONTRACT_V3 },
+            "job_id": { "type": "string", "minLength": 1 },
+            "decision_input_contracts": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+            },
+            "normalization": {
+                "type": "array",
+                "minItems": 1,
+                "items": normalization_entry
+            },
+            "requirements_sha256": sha256.clone(),
+            "taxonomy_set_sha256": sha256.clone(),
+            "source_binding_sha256": sha256.clone(),
+            "source_attempt_request_sha256": sha256.clone(),
+            "collected_attempt_results_sha256": sha256.clone(),
+            "attributes": attributes,
+            "classifications": { "type": "object" },
+            "signal_observations": {
+                "type": "array",
+                "items": { "type": "object" }
+            },
+            "normalized_input": normalized_input,
+            "gaps": {
+                "type": "array",
+                "items": { "type": "object" }
+            },
+            "rejected_claims": {
+                "type": "array",
+                "items": { "type": "object" }
+            },
+            "outcome": { "type": "string" }
+        }
+    })
+}
+
+/// Schema for the authored classification taxonomy. Packs publish this so the
+/// compiler can read it back. U1 (MDP-286) owns the manifest authoring
+/// surface. This module only exposes the schema to keep U3 clean.
+pub(crate) fn v3_classification_taxonomy_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Classification Taxonomy v3",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "id", "version", "output_attribute", "values"
+        ],
+        "properties": {
+            "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+            "version": { "type": "string", "minLength": 1 },
+            "output_attribute": { "type": "string", "minLength": 1 },
+            "contributor_attribute_ids": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+            },
+            "source_classes": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+            },
+            "minimum_evidence_observed_contributors": { "type": "integer", "minimum": 0 },
+            "basis_max_chars": { "type": "integer", "minimum": 1, "maximum": V3_BASIS_MAX_CHARS_HARD_LIMIT },
+            "ambiguity_policy": { "enum": V3_POLICY_KINDS },
+            "no_match_policy": { "enum": V3_POLICY_KINDS },
+            "conflict_policy": { "enum": V3_POLICY_KINDS },
+            "values": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["value", "definition"],
+                    "properties": {
+                        "value": { "type": "string", "minLength": 1 },
+                        "definition": { "type": "string", "minLength": 1 },
+                        "positive_indicators": { "type": "array", "items": { "type": "string" } },
+                        "exclusions": { "type": "array", "items": { "type": "string" } }
+                    }
+                }
+            }
+        }
+    })
+}
+
+// =============================================================================
+// Provider output hardening: reject host-field injection and mixed v3/legacy.
+// =============================================================================
+
+/// Reject provider output that tries to set host-owned top-level fields or
+/// that carries any of the legacy v0-v2 aliases. Both cases fail closed.
+pub(crate) fn reject_host_field_injection(provider_output: &Value) -> Result<(), V3Issue> {
+    let object = provider_output
+        .as_object()
+        .ok_or_else(|| V3Issue::new("v3_output_not_object", "$", "object", "non-object"))?;
+    if object.contains_key("normalized_prospect") {
+        return Err(V3Issue::new(
+            "v3_legacy_alias_paired_with_v3",
+            "$.normalized_prospect",
+            "absent or v3-input only",
+            "present",
+        ));
+    }
+    if object.contains_key("normalized_opportunity") {
+        return Err(V3Issue::new(
+            "v3_legacy_alias_paired_with_v3",
+            "$.normalized_opportunity",
+            "absent or v3-input only",
+            "present",
+        ));
+    }
+    for forbidden in [
+        "outcome",
+        "draft_allowed",
+        "prompt_id",
+        "prompt_sha256",
+        "invocation_receipt_sha256",
+        "context_sha256",
+    ] {
+        if object.contains_key(forbidden) {
+            return Err(V3Issue::new(
+                "v3_provider_authority_field",
+                format!("$.{forbidden}"),
+                "absent",
+                "present",
+            ));
+        }
+    }
+    for field in NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS {
+        if object.contains_key(*field) {
+            return Err(V3Issue::new(
+                "v3_host_owned_field_injection",
+                format!("$.{field}"),
+                "absent",
+                "present",
+            ));
+        }
+    }
+    Ok(())
+}
+
+// =============================================================================
+// Validators for v3 sealed input.
+// =============================================================================
+
+/// Validate a sealed v3 envelope against the canonical schema plus the
+/// disjoint authority checks. The runtime calls this after the provider
+/// output and host-owned fields are merged.
+pub(crate) fn validate_v3_sealed_envelope(value: &Value) -> Result<(), Vec<V3Issue>> {
+    let mut issues = Vec::new();
+    let Some(object) = value.as_object() else {
+        issues.push(V3Issue::new(
+            "v3_envelope_not_object",
+            "$",
+            "object",
+            serde_json::to_string(value)
+                .unwrap_or_else(|_| "<unserializable>".into())
+                .as_str(),
+        ));
+        return Err(issues);
+    };
+
+    if object.get("contract").and_then(Value::as_str) != Some(NORMALIZED_DECISION_INPUT_CONTRACT_V3)
+    {
+        issues.push(V3Issue::new(
+            "v3_envelope_contract_mismatch",
+            "$.contract",
+            NORMALIZED_DECISION_INPUT_CONTRACT_V3,
+            object
+                .get("contract")
+                .and_then(Value::as_str)
+                .unwrap_or("<missing>"),
+        ));
+    }
+    if object.contains_key("normalized_prospect") {
+        issues.push(V3Issue::new(
+            "v3_legacy_alias_paired_with_v3",
+            "$.normalized_prospect",
+            "absent",
+            "present",
+        ));
+    }
+    if object.contains_key("normalized_opportunity") {
+        issues.push(V3Issue::new(
+            "v3_legacy_alias_paired_with_v3",
+            "$.normalized_opportunity",
+            "absent",
+            "present",
+        ));
+    }
+    if !object.contains_key("normalized_input") {
+        issues.push(V3Issue::new(
+            "v3_envelope_missing_neutral_input",
+            "$.normalized_input",
+            "object",
+            "<missing>",
+        ));
+    }
+    let schema = v3_sealed_envelope_schema();
+    if let Err(error) = jsonschema::draft202012::validate(&schema, value) {
+        issues.push(V3Issue::new(
+            "v3_envelope_schema_mismatch",
+            "$",
+            "matches mdp.normalized-decision-input.v3",
+            error.to_string().as_str(),
+        ));
+    }
+    if issues.is_empty() {
+        Ok(())
+    } else {
+        Err(issues)
+    }
+}
+
+/// Validate the semantic payload against the selected classification
+/// taxonomies and a trusted set of attempt identifiers. Failures are stable
+/// diagnostic codes surfaced to the runtime CLI.
+pub(crate) fn validate_v3_semantic_payload(
+    payload: &Value,
+    selected_taxonomies: &[ClassificationTaxonomyV3],
+    observed_attribute_ids: &[String],
+    known_attempt_ids: &[String],
+) -> Result<(), Vec<V3Issue>> {
+    let mut issues = Vec::new();
+    if let Err(issue) = reject_host_field_injection(payload) {
+        issues.push(issue);
+    }
+
+    let semantic = match parse_semantic_payload(payload) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            issues.push(error);
+            return Err(issues);
+        }
+    };
+
+    if semantic.classifications.len() > V3_MAX_CLASSIFICATIONS_PER_ENVELOPE {
+        issues.push(V3Issue::new(
+            "v3_classification_envelope_overflow",
+            "$.classifications",
+            "at most 32 entries",
+            semantic.classifications.len().to_string().as_str(),
+        ));
+    }
+
+    let taxonomy_index: std::collections::HashMap<(String, String), &ClassificationTaxonomyV3> =
+        selected_taxonomies
+            .iter()
+            .map(|taxonomy| ((taxonomy.id.clone(), taxonomy.version.clone()), taxonomy))
+            .collect();
+    let mut seen_attribute_ids: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for (attribute_id, classification) in &semantic.classifications {
+        if !seen_attribute_ids.insert(attribute_id.clone()) {
+            issues.push(V3Issue::new(
+                "v3_classification_duplicate_attribute",
+                format!("$.classifications.{attribute_id}"),
+                "unique attribute id",
+                "duplicate",
+            ));
+        }
+        if !V3_CLASSIFICATION_STATUSES.contains(&classification.status.as_str()) {
+            issues.push(V3Issue::new(
+                "v3_classification_invalid_status",
+                format!("$.classifications.{attribute_id}.status"),
+                "closed enum value",
+                classification.status.as_str(),
+            ));
+        }
+        let key = (
+            classification.taxonomy_id.clone(),
+            classification.taxonomy_version.clone(),
+        );
+        let Some(taxonomy) = taxonomy_index.get(&key) else {
+            issues.push(V3Issue::new(
+                "v3_classification_unknown_taxonomy",
+                format!("$.classifications.{attribute_id}"),
+                "selected taxonomy id + version",
+                format!(
+                    "{}@{}",
+                    classification.taxonomy_id, classification.taxonomy_version
+                )
+                .as_str(),
+            ));
+            continue;
+        };
+        if classification.status == V3_CLASSIFICATION_STATUS_CLASSIFIED {
+            if classification.value.is_none() {
+                issues.push(V3Issue::new(
+                    "v3_classification_missing_value",
+                    format!("$.classifications.{attribute_id}.value"),
+                    "non-empty value",
+                    "<missing>",
+                ));
+                continue;
+            }
+            let value = classification.value.as_ref().expect("present above");
+            let allowed = taxonomy.canonical_values();
+            if !allowed.iter().any(|v| v == value) {
+                issues.push(V3Issue::new(
+                    "v3_classification_unknown_value",
+                    format!("$.classifications.{attribute_id}.value"),
+                    &format!("one of {:?}", allowed),
+                    value.as_str(),
+                ));
+                continue;
+            }
+        } else if classification.value.is_some() {
+            issues.push(V3Issue::new(
+                "v3_classification_forbidden_value",
+                format!("$.classifications.{attribute_id}.value"),
+                "<missing>",
+                classification.value.as_deref().unwrap_or("<null>"),
+            ));
+        }
+        if classification.derived_from.is_empty() {
+            issues.push(V3Issue::new(
+                "v3_classification_missing_derived_from",
+                format!("$.classifications.{attribute_id}.derived_from"),
+                "non-empty",
+                "[]",
+            ));
+        }
+        if classification.derived_from.len() > V3_MAX_DERIVED_FROM_PER_CLASSIFICATION {
+            issues.push(V3Issue::new(
+                "v3_classification_derived_from_overflow",
+                format!("$.classifications.{attribute_id}.derived_from"),
+                "at most 16 ids",
+                classification.derived_from.len().to_string().as_str(),
+            ));
+        }
+        for attempt_id in &classification.derived_from {
+            if !known_attempt_ids.iter().any(|id| id == attempt_id) {
+                issues.push(V3Issue::new(
+                    "v3_classification_unknown_evidence_ref",
+                    format!("$.classifications.{attribute_id}.derived_from"),
+                    "collected attempt_id",
+                    attempt_id.as_str(),
+                ));
+            }
+        }
+        if classification.basis.trim().is_empty() {
+            issues.push(V3Issue::new(
+                "v3_classification_basis_empty",
+                format!("$.classifications.{attribute_id}.basis"),
+                "non-empty bounded basis",
+                "<empty>",
+            ));
+        } else if classification.basis.chars().count() > taxonomy.basis_max_chars {
+            issues.push(V3Issue::new(
+                "v3_classification_basis_too_long",
+                format!("$.classifications.{attribute_id}.basis"),
+                &format!("<= {} chars", taxonomy.basis_max_chars),
+                classification.basis.chars().count().to_string().as_str(),
+            ));
+        }
+        if !observed_attribute_ids.iter().any(|id| id == attribute_id) {
+            issues.push(V3Issue::new(
+                "v3_classification_unknown_attribute",
+                format!("$.classifications.{attribute_id}"),
+                "compiled decision input attribute id",
+                attribute_id.as_str(),
+            ));
+        }
+    }
+
+    for (index, gap) in semantic.gaps.iter().enumerate() {
+        if !observed_attribute_ids.iter().any(|id| id == &gap.attribute) {
+            issues.push(V3Issue::new(
+                "v3_gap_unknown_attribute",
+                format!("$.gaps[{index}].attribute"),
+                "compiled decision input attribute id",
+                gap.attribute.as_str(),
+            ));
+        }
+        for attempt_id in &gap.derived_from {
+            if !known_attempt_ids.iter().any(|id| id == attempt_id) {
+                issues.push(V3Issue::new(
+                    "v3_gap_unknown_evidence_ref",
+                    format!("$.gaps[{index}].derived_from"),
+                    "collected attempt_id",
+                    attempt_id.as_str(),
+                ));
+            }
+        }
+    }
+    for claim in &semantic.rejected_claims {
+        if claim.claim.trim().is_empty() {
+            issues.push(V3Issue::new(
+                "v3_rejected_claim_empty",
+                "$.rejected_claims[*].claim",
+                "non-empty",
+                "<empty>",
+            ));
+        }
+    }
+    if issues.is_empty() {
+        Ok(())
+    } else {
+        Err(issues)
+    }
+}
+
+fn parse_semantic_payload(value: &Value) -> Result<SemanticProviderPayloadV3, V3Issue> {
+    serde_json::from_value::<SemanticProviderPayloadV3>(value.clone()).map_err(|error| {
+        V3Issue::new(
+            "v3_semantic_payload_malformed",
+            "$",
+            "object matching mdp.normalization-semantic-provider.v3",
+            error.to_string().as_str(),
+        )
+    })
+}
+
+// =============================================================================
+// Deterministic envelope sealer.
+// =============================================================================
+
+/// Build an authoritative, host-owned, sealed v3 envelope. Returns the
+/// canonical envelope JSON. The runtime never accepts provider output that
+/// pre-populates these fields.
+pub(crate) struct V3SealInputs<'a> {
+    pub(crate) job_id: &'a str,
+    pub(crate) decision_input_contract_ids: &'a [String],
+    pub(crate) normalization_entries: &'a [Value],
+    pub(crate) requirements_sha256: &'a str,
+    pub(crate) taxonomy_set_sha256: &'a str,
+    pub(crate) source_binding_sha256: &'a str,
+    pub(crate) source_attempt_request_sha256: &'a str,
+    pub(crate) collected_attempt_results_sha256: &'a str,
+    pub(crate) attributes: &'a Map<String, Value>,
+    pub(crate) classifications: &'a Map<String, Value>,
+    pub(crate) signal_observations: &'a [Value],
+    pub(crate) normalized_input: &'a Map<String, Value>,
+    pub(crate) gaps: &'a [Value],
+    pub(crate) rejected_claims: &'a [Value],
+    pub(crate) outcome: &'a str,
+}
+
+pub(crate) fn seal_v3_envelope(inputs: V3SealInputs<'_>) -> Value {
+    json!({
+        "contract": NORMALIZED_DECISION_INPUT_CONTRACT_V3,
+        "job_id": inputs.job_id,
+        "decision_input_contracts": inputs.decision_input_contract_ids,
+        "normalization": inputs.normalization_entries,
+        REQUIREMENTS_HASH_LABEL_V3: inputs.requirements_sha256,
+        TAXONOMY_SET_HASH_LABEL_V3: inputs.taxonomy_set_sha256,
+        "source_binding_sha256": inputs.source_binding_sha256,
+        "source_attempt_request_sha256": inputs.source_attempt_request_sha256,
+        "collected_attempt_results_sha256": inputs.collected_attempt_results_sha256,
+        "attributes": Value::Object(inputs.attributes.clone()),
+        "classifications": Value::Object(inputs.classifications.clone()),
+        "signal_observations": inputs.signal_observations,
+        "normalized_input": Value::Object(inputs.normalized_input.clone()),
+        "gaps": inputs.gaps,
+        "rejected_claims": inputs.rejected_claims,
+        "outcome": inputs.outcome,
+    })
+}
+
+// =============================================================================
+// Provider schema preflight: invalid structured-output schemas fail closed
+// before any driver invocation. This is the v3 specialization of the
+// existing `project_output_schema_for_openai` preflight.
+// =============================================================================
+
+/// Project the v3 semantic-provider schema into the canonical OpenAI
+/// projection. Returns an unsupported-schema error if the projected schema
+/// loses required fields.
+#[allow(dead_code)] // Reserved for the v3 provider schema preflight integration.
+pub(crate) fn project_v3_semantic_provider_schema_for_openai() -> Result<Value, &'static str> {
+    let canonical = v3_semantic_provider_schema();
+    let properties = canonical
+        .get("properties")
+        .and_then(Value::as_object)
+        .ok_or("v3-semantic-schema-properties-missing")?;
+    // Reject if the contracted field set is missing or empty; the provider
+    // would silently emit unsupported payloads.
+    let required: Vec<String> = ["classifications", "gaps", "rejected_claims"]
+        .iter()
+        .map(|field| (*field).to_string())
+        .collect();
+    for field in &required {
+        if !properties.contains_key(field) {
+            return Err("v3-semantic-required-field-missing-from-schema");
+        }
+    }
+    Ok(json!({
+        "type": "object",
+        "properties": {
+            "classifications": {
+                "type": "object",
+                "additionalProperties": {"type": "object"}
+            },
+            "gaps": {"type": "array", "items": {"type": "object"}},
+            "rejected_claims": {"type": "array", "items": {"type": "object"}}
+        },
+        "required": required,
+        "additionalProperties": false
+    }))
+}
+
+// =============================================================================
+// Identity helpers.
+// =============================================================================
+
+/// Stable identity labels used to attach run receipts and bundle bindings.
+/// Kept here so that run bundles know which authority binding a v3 envelope
+/// proves without copying private prose.
+#[allow(dead_code)] // Reserved for receipt/bundle identity binding in the U3 integration.
+pub(crate) fn v3_identity_labels() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("contract", NORMALIZED_DECISION_INPUT_CONTRACT_V3),
+        (
+            "semantic_schema",
+            NORMALIZED_SEMANTIC_PROVIDER_SCHEMA_REF_V3,
+        ),
+        ("taxonomy_contract", CLASSIFICATION_TAXONOMY_CONTRACT_V3),
+        ("host_envelope", NORMALIZATION_HOST_ENVELOPE_CONTRACT),
+    ]
+}
+
+// =============================================================================
+// Tests.
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn sample_taxonomy() -> ClassificationTaxonomyV3 {
+        ClassificationTaxonomyV3 {
+            id: "buyer-persona".into(),
+            version: "1".into(),
+            output_attribute: "persona".into(),
+            contributor_attribute_ids: vec!["person_title".into(), "responsibilities".into()],
+            source_classes: vec!["synthetic_fixture".into()],
+            minimum_evidence_observed_contributors: 1,
+            basis_max_chars: 500,
+            ambiguity_policy: Some(V3_AMBIGUITY_POLICY_HUMAN_REVIEW.into()),
+            no_match_policy: Some(V3_NO_MATCH_POLICY_GAP.into()),
+            conflict_policy: Some(V3_CONFLICT_POLICY_HUMAN_REVIEW.into()),
+            values: vec![
+                ClassificationTaxonomyValueV3 {
+                    value: "GTM Systems Owner".into(),
+                    definition: Some("Owns or builds technical GTM systems.".into()),
+                    positive_indicators: vec![],
+                    exclusions: vec![],
+                },
+                ClassificationTaxonomyValueV3 {
+                    value: "Quota-Carrying Seller".into(),
+                    definition: Some("Quota-carrying seller without system ownership.".into()),
+                    positive_indicators: vec![],
+                    exclusions: vec![],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn sealed_v3_envelope_rejects_legacy_alias_payload() {
+        let mut sealed = seal_v3_envelope(V3SealInputs {
+            job_id: "prospect-fit-or-brief",
+            decision_input_contract_ids: &["gtm.prospect-context".into()],
+            normalization_entries: &[json!({
+                "contract_id": "gtm.prospect-context",
+                "prompt": "prompts/normalize-prospect.yaml",
+                "prompt_version": "gtm-prospect-context.v3",
+            })],
+            requirements_sha256: &"a".repeat(64),
+            taxonomy_set_sha256: &"b".repeat(64),
+            source_binding_sha256: &"c".repeat(64),
+            source_attempt_request_sha256: &"d".repeat(64),
+            collected_attempt_results_sha256: &"e".repeat(64),
+            attributes: &Map::new(),
+            classifications: &Map::new(),
+            signal_observations: &[],
+            normalized_input: &Map::from_iter([
+                ("fields".into(), json!({})),
+                ("signals".into(), json!([])),
+                ("attributes".into(), json!({})),
+            ]),
+            gaps: &[],
+            rejected_claims: &[],
+            outcome: "ready",
+        });
+        sealed
+            .as_object_mut()
+            .unwrap()
+            .insert("normalized_prospect".into(), json!({"legacy": true}));
+        let result = validate_v3_sealed_envelope(&sealed);
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_legacy_alias_paired_with_v3")
+        );
+    }
+
+    #[test]
+    fn sealed_v3_envelope_passes_for_well_built_envelope() {
+        let sealed = seal_v3_envelope(V3SealInputs {
+            job_id: "prospect-fit-or-brief",
+            decision_input_contract_ids: &["gtm.prospect-context".into()],
+            normalization_entries: &[json!({
+                "contract_id": "gtm.prospect-context",
+                "prompt": "prompts/normalize-prospect.yaml",
+                "prompt_version": "gtm-prospect-context.v3",
+            })],
+            requirements_sha256: &"a".repeat(64),
+            taxonomy_set_sha256: &"b".repeat(64),
+            source_binding_sha256: &"c".repeat(64),
+            source_attempt_request_sha256: &"d".repeat(64),
+            collected_attempt_results_sha256: &"e".repeat(64),
+            attributes: &Map::new(),
+            classifications: &Map::new(),
+            signal_observations: &[],
+            normalized_input: &Map::from_iter([
+                ("fields".into(), json!({})),
+                ("signals".into(), json!([])),
+                ("attributes".into(), json!({})),
+            ]),
+            gaps: &[],
+            rejected_claims: &[],
+            outcome: "ready",
+        });
+        let validated = validate_v3_sealed_envelope(&sealed);
+        if let Err(errors) = validated {
+            panic!("sealed envelope unexpected errors: {errors:?}");
+        }
+    }
+
+    #[test]
+    fn provider_payload_rejects_host_field_injection() {
+        let payload = json!({
+            "contract": "mdp.normalized-decision-input.v3",
+            "classifications": {}
+        });
+        let error = reject_host_field_injection(&payload).unwrap_err();
+        assert_eq!(error.code, "v3_host_owned_field_injection");
+        assert_eq!(error.path, "$.contract");
+    }
+
+    #[test]
+    fn provider_payload_rejects_mixed_v3_legacy_aliases() {
+        for forbidden in ["normalized_prospect", "normalized_opportunity"] {
+            let payload = json!({
+                "classifications": {},
+                forbidden: {"legacy": true}
+            });
+            let error = reject_host_field_injection(&payload).unwrap_err();
+            assert_eq!(error.code, "v3_legacy_alias_paired_with_v3");
+        }
+    }
+
+    #[test]
+    fn provider_payload_rejects_outcome_or_draft_authority() {
+        for forbidden in ["outcome", "draft_allowed", "prompt_id", "prompt_sha256"] {
+            let payload = json!({
+                "classifications": {},
+                forbidden: "x"
+            });
+            let error = reject_host_field_injection(&payload).unwrap_err();
+            assert_eq!(error.code, "v3_provider_authority_field");
+        }
+    }
+
+    #[test]
+    fn semantic_payload_rejects_unknown_evidence_ref() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-XXX"],
+                    "basis": "title says it"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_evidence_ref")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_unknown_taxonomy() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "unknown",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "title says it"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_taxonomy")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_unknown_value() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "value": "NotInTaxonomy",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "title says it"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_value")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_unknown_status() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "ready",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "title says it"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_invalid_status")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_basis_overflow() {
+        let long_basis: String = std::iter::repeat('x').take(600).collect();
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": long_basis
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_basis_too_long")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_forbidden_value_when_not_classified() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "ambiguous",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001", "synthetic-attempt-002"],
+                    "basis": "two candidate titles disagree"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &[
+                "synthetic-attempt-001".into(),
+                "synthetic-attempt-002".into(),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_forbidden_value")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_missing_value_when_classified() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "title says it"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_missing_value")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_empty_derived_from() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": [],
+                    "basis": "title says it"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_missing_derived_from")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_unknown_attribute() {
+        let payload = json!({
+            "classifications": {
+                "bogus": {
+                    "status": "classified",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "title says it"
+                }
+            }
+        });
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_attribute")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_malformed_provider_payload() {
+        let payload = json!("just-a-string");
+        let error = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_semantic_payload_malformed"
+                    || issue.code == "v3_output_not_object")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_accepts_classified_valid_status() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "classified",
+                    "value": "GTM Systems Owner",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "title says it"
+                }
+            },
+            "gaps": [],
+            "rejected_claims": []
+        });
+        let result = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        );
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn semantic_payload_accepts_no_match_status_without_value() {
+        let payload = json!({
+            "classifications": {
+                "persona": {
+                    "status": "no-match",
+                    "taxonomy_id": "buyer-persona",
+                    "taxonomy_version": "1",
+                    "derived_from": ["synthetic-attempt-001"],
+                    "basis": "no role evidence found"
+                }
+            }
+        });
+        let result = validate_v3_semantic_payload(
+            &payload,
+            &[sample_taxonomy()],
+            &["persona".into()],
+            &["synthetic-attempt-001".into()],
+        );
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn provider_schema_preflight_returns_projectable_shape() {
+        let projected = project_v3_semantic_provider_schema_for_openai().unwrap();
+        assert_eq!(projected["type"], "object");
+        assert_eq!(
+            projected["required"],
+            json!(["classifications", "gaps", "rejected_claims"])
+        );
+        assert_eq!(projected["additionalProperties"], false);
+    }
+
+    #[test]
+    fn provider_schema_preflight_includes_three_fixed_semantic_fields() {
+        let projected = project_v3_semantic_provider_schema_for_openai().unwrap();
+        let properties = projected["properties"].as_object().unwrap();
+        for field in ["classifications", "gaps", "rejected_claims"] {
+            assert!(
+                properties.contains_key(field),
+                "missing provider property {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn v3_identity_labels_include_contract_semantic_taxonomy_and_envelope() {
+        let labels: std::collections::BTreeMap<&'static str, &'static str> =
+            v3_identity_labels().into_iter().collect();
+        assert_eq!(
+            labels.get("contract").copied(),
+            Some(NORMALIZED_DECISION_INPUT_CONTRACT_V3)
+        );
+        assert_eq!(
+            labels.get("semantic_schema").copied(),
+            Some(NORMALIZED_SEMANTIC_PROVIDER_SCHEMA_REF_V3)
+        );
+        assert_eq!(
+            labels.get("taxonomy_contract").copied(),
+            Some(CLASSIFICATION_TAXONOMY_CONTRACT_V3)
+        );
+        assert_eq!(
+            labels.get("host_envelope").copied(),
+            Some(NORMALIZATION_HOST_ENVELOPE_CONTRACT)
+        );
+    }
+}
