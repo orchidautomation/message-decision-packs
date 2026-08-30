@@ -11,14 +11,14 @@ use crate::commands::routing::{
 };
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::commands::v3_normalization::{
-    V3SealInputs, reject_host_field_injection, seal_v3_envelope,
-    validate_v3_sealed_envelope, v3_semantic_provider_schema,
+    V3SealInputs, reject_host_field_injection, seal_v3_envelope, v3_semantic_provider_schema,
+    validate_v3_sealed_envelope,
 };
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
-    SOURCE_BINDING_CONTRACT_V2, V3_OUTCOME_KIND,
+    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
+    V3_OUTCOME_KIND,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
@@ -3499,16 +3499,12 @@ fn host_wrap_v3_normalization_output(
     invocation_bytes: &[u8],
     model_output: &str,
 ) -> Result<Vec<u8>> {
-    let envelope = step
-        .output_contract
-        .host_envelope
-        .as_ref()
-        .ok_or_else(|| {
-            run_failure(
-                RunFailureKind::PolicyBlocked,
-                "normalization-host-envelope-metadata-missing",
-            )
-        })?;
+    let envelope = step.output_contract.host_envelope.as_ref().ok_or_else(|| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            "normalization-host-envelope-metadata-missing",
+        )
+    })?;
     let has_routed_context = staged_inputs.iter().any(|input| {
         matches!(
             input.logical_name.as_str(),
@@ -3567,12 +3563,7 @@ fn host_wrap_v3_normalization_output(
         })?;
     let taxonomy_set_sha256 = staged_inputs
         .iter()
-        .find(|input| {
-            matches!(
-                input.logical_name.as_str(),
-                "taxonomy-set" | "taxonomy_set"
-            )
-        })
+        .find(|input| matches!(input.logical_name.as_str(), "taxonomy-set" | "taxonomy_set"))
         .map(|input| input.authority.sha256.clone())
         .unwrap_or_else(|| {
             // The taxonomy set hash may be supplied alongside the
@@ -3591,12 +3582,7 @@ fn host_wrap_v3_normalization_output(
             )
         })
         .map(|input| input.authority.sha256.clone())
-        .ok_or_else(|| {
-            run_failure(
-                RunFailureKind::PolicyBlocked,
-                "v3-source-binding-missing",
-            )
-        })?;
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "v3-source-binding-missing"))?;
     let source_attempt_request_sha256 = staged_inputs
         .iter()
         .find(|input| {
@@ -3628,7 +3614,7 @@ fn host_wrap_v3_normalization_output(
             )
         })?;
 
-    let decision_input_contract_ids: Vec<String> = invocation_value["inputs"]
+    let mut decision_input_contract_ids: Vec<String> = invocation_value["inputs"]
         .as_array()
         .into_iter()
         .flatten()
@@ -3681,7 +3667,7 @@ fn host_wrap_v3_normalization_output(
     // output and host-staged identity hashes, without copying raw evidence
     // prose into the compact envelope.
     let mut normalized_input = Map::new();
-    let mut fields = Map::new();
+    let fields = Map::new();
     let mut signal_observations_projection: Vec<Value> = Vec::new();
     for observation in &signal_observations {
         signal_observations_projection.push(observation.clone());
@@ -4871,10 +4857,11 @@ mod tests {
     use super::{
         RunDeadline, RunFailure, RunFailureKind, execute_generative_step, execute_run_inner,
         execute_run_inner_with_driver, governed_normalization_outcome, gtm_lineage_schema_ids,
-        gtm_success_artifacts, host_wrap_governed_output, project_output_schema_for_openai,
-        provider_max_output_tokens, provider_schema_source, provider_schema_source_for_contract,
-        routed_context_shape_diagnostic, routed_context_validation_diagnostic, seal_driver_request,
-        seal_driver_result, validate_driver_result, validate_request,
+        gtm_success_artifacts, host_wrap_governed_output, host_wrap_v3_normalization_output,
+        project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
+        provider_schema_source_for_contract, routed_context_shape_diagnostic,
+        routed_context_validation_diagnostic, seal_driver_request, seal_driver_result,
+        validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
@@ -7324,7 +7311,9 @@ mod tests {
         ]
     }
 
-    fn v3_invocation(step: &CompiledModelStepV1) -> (Value, Vec<u8>) {
+    fn v3_invocation(
+        step: &crate::model_steps::CompiledModelStepV1,
+    ) -> (serde_json::Value, Vec<u8>) {
         let invocation = serde_json::json!({
             "inputs": [{
                 "name": "decision-input-requirements",
@@ -7368,7 +7357,7 @@ mod tests {
             &serde_json::to_string(&semantic).unwrap(),
         );
         let bytes = result.expect("v3 seal should succeed");
-        let parsed: Value = serde_json::from_slice(&bytes).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(
             parsed["invocation_receipt_sha256"],
             crate::artifact_hash::sha256_hex(&invocation_bytes)
@@ -7426,14 +7415,9 @@ mod tests {
         let step = v3_envelope_test_step();
         let staged = v3_staged_inputs(&"a".repeat(64));
         let (invocation, invocation_bytes) = v3_invocation(&step);
-        let error = host_wrap_v3_normalization_output(
-            &step,
-            &staged,
-            &invocation,
-            &invocation_bytes,
-            "{",
-        )
-        .unwrap_err();
+        let error =
+            host_wrap_v3_normalization_output(&step, &staged, &invocation, &invocation_bytes, "{")
+                .unwrap_err();
         assert_eq!(
             error.downcast_ref::<RunFailure>().unwrap().code(),
             "v3-semantic-output-malformed"

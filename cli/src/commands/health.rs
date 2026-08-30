@@ -8,14 +8,13 @@ use crate::constants::{
 use crate::models::{
     Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
     DecisionInputDisposition, DecisionInputRequirement, GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
-    GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, InputContract,
-    MAX_SIGNAL_CONTRIBUTORS, NORMALIZATION_HOST_ENVELOPE_CONTRACT,
-    NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
-    NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
+    GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, InputContract, MAX_SIGNAL_CONTRIBUTORS,
     MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE,
-    MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest, PrimitiveMapping, ProductFoundationBinding,
-    ProductFoundationConditionFact, ProductFoundationEntryRef, ProductFoundationFacetKind, Profile,
-    ProfileEval, ProfileJob, PromptFile, QualificationGates, TargetIdentity, ValueContract,
+    MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest, NORMALIZATION_HOST_ENVELOPE_CONTRACT,
+    NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS, NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
+    PrimitiveMapping, ProductFoundationBinding, ProductFoundationConditionFact,
+    ProductFoundationEntryRef, ProductFoundationFacetKind, Profile, ProfileEval, ProfileJob,
+    PromptFile, QualificationGates, TargetIdentity, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -5936,7 +5935,13 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
         return;
     };
     let envelope_path = format!("{path}#/output_contract/host_envelope");
-    let mut validate_fields = |fields: &[String], expected: &[&str], field_name: &str| {
+    fn validate_fields(
+        fields: &[String],
+        expected: &[&str],
+        field_name: &str,
+        envelope_path: &str,
+        issues: &mut Vec<Value>,
+    ) {
         let actual = fields.iter().map(String::as_str).collect::<BTreeSet<_>>();
         let expected = expected.iter().copied().collect::<BTreeSet<_>>();
         if fields.len() != actual.len() || actual != expected {
@@ -5947,7 +5952,7 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
                 format!("{field_name} must contain the fixed MDP field set without duplicates"),
             ));
         }
-    };
+    }
     match prompt.output_contract.output_kind.as_deref() {
         Some("governed-artifact") => {
             if envelope.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
@@ -5962,11 +5967,15 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
                 &envelope.owned_top_level,
                 GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
                 "owned_top_level",
+                &envelope_path,
+                issues,
             );
             validate_fields(
                 &envelope.semantic_required_top_level,
                 GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
                 "semantic_required_top_level",
+                &envelope_path,
+                issues,
             );
             let expected_required_top_level = GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
                 .iter()
@@ -5977,6 +5986,8 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
                 &prompt.output_contract.required_top_level,
                 &expected_required_top_level,
                 "required_top_level",
+                &envelope_path,
+                issues,
             );
             if !prompt
                 .inputs
@@ -6006,16 +6017,26 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
                 &envelope.owned_top_level,
                 NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
                 "owned_top_level",
+                &envelope_path,
+                issues,
             );
             validate_fields(
                 &envelope.semantic_required_top_level,
                 NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
                 "semantic_required_top_level",
+                &envelope_path,
+                issues,
             );
             validate_fields(
                 &prompt.output_contract.required_top_level,
-                NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+                &NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS
+                    .iter()
+                    .chain(NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+                    .copied()
+                    .collect::<Vec<_>>(),
                 "required_top_level",
+                &envelope_path,
+                issues,
             );
         }
         Some(other) => {

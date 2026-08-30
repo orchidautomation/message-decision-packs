@@ -189,15 +189,18 @@ pub(crate) fn from_v3_normalized(
         None => {
             return Err(AdapterError::Invalid(
                 "v3 envelope is missing its normalized_input",
-            ))
+            ));
         }
     };
-    let object = normalized_input.as_object().ok_or(AdapterError::Invalid(
-        "normalized_input must be an object",
-    ))?;
+    let object = normalized_input
+        .as_object()
+        .ok_or(AdapterError::Invalid("normalized_input must be an object"))?;
     let allowed_top_level: BTreeSet<&str> =
         ["fields", "signals", "attributes"].into_iter().collect();
-    if object.keys().any(|key| !allowed_top_level.contains(key.as_str())) {
+    if object
+        .keys()
+        .any(|key| !allowed_top_level.contains(key.as_str()))
+    {
         return Err(AdapterError::Invalid(
             "normalized_input contains an unknown top-level field",
         ));
@@ -524,18 +527,16 @@ mod tests {
 
     #[test]
     fn v3_envelope_without_legacy_aliases_yields_neutral_input() {
-        let envelope = Map::from_iter([
-            (
-                "normalized_input".into(),
-                json!({
-                    "fields": {"status": "open", "company": "ExampleCo"},
-                    "signals": [
-                        {"id": "fit", "title": "Strong fit", "source": "synthetic"}
-                    ],
-                    "attributes": {"person_title": "Engineering Lead"}
-                }),
-            ),
-        ]);
+        let envelope = Map::from_iter([(
+            "normalized_input".into(),
+            json!({
+                "fields": {"status": "open", "company": "ExampleCo"},
+                "signals": [
+                    {"id": "fit", "title": "Strong fit", "source": "synthetic"}
+                ],
+                "attributes": {"person_title": "Engineering Lead"}
+            }),
+        )]);
         let input = from_v3_normalized(&envelope).unwrap();
         assert_eq!(input.field("status"), Some(&json!("open")));
         assert_eq!(input.field("company"), Some(&json!("ExampleCo")));
@@ -549,52 +550,42 @@ mod tests {
     #[test]
     fn v3_envelope_rejects_legacy_aliases() {
         let envelope = Map::from_iter([
-            ("normalized_input".into(), json!({"fields": {}, "signals": [], "attributes": {}})),
             (
-                "normalized_prospect".into(),
-                json!({"name": "Taylor"}),
+                "normalized_input".into(),
+                json!({"fields": {}, "signals": [], "attributes": {}}),
             ),
+            ("normalized_prospect".into(), json!({"name": "Taylor"})),
         ]);
         let error = from_v3_normalized(&envelope).unwrap_err();
         assert!(matches!(
             error,
-            AdapterError::Invalid(
-                "v3 envelope cannot mix normalized_input with legacy aliases"
-            )
+            AdapterError::Invalid("v3 envelope cannot mix normalized_input with legacy aliases")
         ));
     }
 
     #[test]
     fn v3_envelope_rejects_unknown_top_level() {
-        let envelope = Map::from_iter([
-            (
-                "normalized_input".into(),
-                json!({"fields": {}, "signals": [], "attributes": {}, "extra": true}),
-            ),
-        ]);
+        let envelope = Map::from_iter([(
+            "normalized_input".into(),
+            json!({"fields": {}, "signals": [], "attributes": {}, "extra": true}),
+        )]);
         let error = from_v3_normalized(&envelope).unwrap_err();
         assert!(matches!(
             error,
-            AdapterError::Invalid(
-                "normalized_input contains an unknown top-level field"
-            )
+            AdapterError::Invalid("normalized_input contains an unknown top-level field")
         ));
     }
 
     #[test]
     fn v3_envelope_rejects_non_scalar_field() {
-        let envelope = Map::from_iter([
-            (
-                "normalized_input".into(),
-                json!({"fields": {"bad": {"nested": true}}, "signals": [], "attributes": {}}),
-            ),
-        ]);
+        let envelope = Map::from_iter([(
+            "normalized_input".into(),
+            json!({"fields": {"bad": {"nested": true}}, "signals": [], "attributes": {}}),
+        )]);
         let error = from_v3_normalized(&envelope).unwrap_err();
         assert!(matches!(
             error,
-            AdapterError::Invalid(
-                "normalized_input.fields must contain scalar values"
-            )
+            AdapterError::Invalid("normalized_input.fields must contain scalar values")
         ));
     }
 

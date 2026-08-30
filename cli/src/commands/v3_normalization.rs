@@ -21,22 +21,20 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
 
 use crate::constants::{
     CLASSIFICATION_TAXONOMY_CONTRACT_V3, NORMALIZED_DECISION_INPUT_CONTRACT_V3,
     NORMALIZED_SEMANTIC_PROVIDER_SCHEMA_REF_V3, REQUIREMENTS_HASH_LABEL_V3,
-    TAXONOMY_SET_HASH_LABEL_V3, V3_AMBIGUITY_POLICY_HUMAN_REVIEW,
-    V3_BASIS_MAX_CHARS_DEFAULT, V3_BASIS_MAX_CHARS_HARD_LIMIT,
-    V3_CLASSIFICATION_STATUS_AMBIGUOUS, V3_CLASSIFICATION_STATUS_CLASSIFIED,
-    V3_CLASSIFICATION_STATUS_NO_MATCH, V3_CLASSIFICATION_STATUS_UNSUPPORTED,
-    V3_CONFLICT_POLICY_HUMAN_REVIEW, V3_IDENTIFIER_MAX_LEN,
+    TAXONOMY_SET_HASH_LABEL_V3, V3_AMBIGUITY_POLICY_HUMAN_REVIEW, V3_BASIS_MAX_CHARS_DEFAULT,
+    V3_BASIS_MAX_CHARS_HARD_LIMIT, V3_CLASSIFICATION_STATUS_AMBIGUOUS,
+    V3_CLASSIFICATION_STATUS_CLASSIFIED, V3_CLASSIFICATION_STATUS_NO_MATCH,
+    V3_CLASSIFICATION_STATUS_UNSUPPORTED, V3_CONFLICT_POLICY_HUMAN_REVIEW, V3_IDENTIFIER_MAX_LEN,
     V3_MAX_CLASSIFICATIONS_PER_ENVELOPE, V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
-    V3_MAX_GAPS_PER_ENVELOPE, V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE,
-    V3_NO_MATCH_POLICY_GAP,
+    V3_MAX_GAPS_PER_ENVELOPE, V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE, V3_NO_MATCH_POLICY_GAP,
 };
 use crate::models::{
     NORMALIZATION_HOST_ENVELOPE_CONTRACT, NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
-    NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
 };
 
 // =============================================================================
@@ -151,7 +149,7 @@ pub(crate) struct SemanticRejectedClaimV3 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct SemanticProviderPayloadV3 {
-    pub(crate) classifications: Map<String, SemanticClassificationV3>,
+    pub(crate) classifications: BTreeMap<String, SemanticClassificationV3>,
     #[serde(default)]
     pub(crate) gaps: Vec<SemanticGapV3>,
     #[serde(default)]
@@ -467,16 +465,6 @@ pub(crate) fn reject_host_field_injection(provider_output: &Value) -> Result<(),
     let object = provider_output
         .as_object()
         .ok_or_else(|| V3Issue::new("v3_output_not_object", "$", "object", "non-object"))?;
-    for field in NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS {
-        if object.contains_key(*field) {
-            return Err(V3Issue::new(
-                "v3_host_owned_field_injection",
-                format!("$.{field}"),
-                "absent",
-                "present",
-            ));
-        }
-    }
     if object.contains_key("normalized_prospect") {
         return Err(V3Issue::new(
             "v3_legacy_alias_paired_with_v3",
@@ -510,6 +498,16 @@ pub(crate) fn reject_host_field_injection(provider_output: &Value) -> Result<(),
             ));
         }
     }
+    for field in NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS {
+        if object.contains_key(*field) {
+            return Err(V3Issue::new(
+                "v3_host_owned_field_injection",
+                format!("$.{field}"),
+                "absent",
+                "present",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -534,8 +532,7 @@ pub(crate) fn validate_v3_sealed_envelope(value: &Value) -> Result<(), Vec<V3Iss
         return Err(issues);
     };
 
-    if object.get("contract").and_then(Value::as_str)
-        != Some(NORMALIZED_DECISION_INPUT_CONTRACT_V3)
+    if object.get("contract").and_then(Value::as_str) != Some(NORMALIZED_DECISION_INPUT_CONTRACT_V3)
     {
         issues.push(V3Issue::new(
             "v3_envelope_contract_mismatch",
@@ -614,23 +611,14 @@ pub(crate) fn validate_v3_semantic_payload(
             "v3_classification_envelope_overflow",
             "$.classifications",
             "at most 32 entries",
-            semantic
-                .classifications
-                .len()
-                .to_string()
-                .as_str(),
+            semantic.classifications.len().to_string().as_str(),
         ));
     }
 
     let taxonomy_index: std::collections::HashMap<(String, String), &ClassificationTaxonomyV3> =
         selected_taxonomies
             .iter()
-            .map(|taxonomy| {
-                (
-                    (taxonomy.id.clone(), taxonomy.version.clone()),
-                    taxonomy,
-                )
-            })
+            .map(|taxonomy| ((taxonomy.id.clone(), taxonomy.version.clone()), taxonomy))
             .collect();
     let mut seen_attribute_ids: std::collections::HashSet<String> =
         std::collections::HashSet::new();
@@ -928,13 +916,13 @@ mod tests {
             values: vec![
                 ClassificationTaxonomyValueV3 {
                     value: "GTM Systems Owner".into(),
-                    definition: "Owns or builds technical GTM systems.".into(),
+                    definition: Some("Owns or builds technical GTM systems.".into()),
                     positive_indicators: vec![],
                     exclusions: vec![],
                 },
                 ClassificationTaxonomyValueV3 {
                     value: "Quota-Carrying Seller".into(),
-                    definition: "Quota-carrying seller without system ownership.".into(),
+                    definition: Some("Quota-carrying seller without system ownership.".into()),
                     positive_indicators: vec![],
                     exclusions: vec![],
                 },
@@ -960,23 +948,26 @@ mod tests {
             attributes: &Map::new(),
             classifications: &Map::new(),
             signal_observations: &[],
-            normalized_input: &Map::from_iter([(
-                "fields".into(),
-                json!({}),
-            )]),
+            normalized_input: &Map::from_iter([
+                ("fields".into(), json!({})),
+                ("signals".into(), json!([])),
+                ("attributes".into(), json!({})),
+            ]),
             gaps: &[],
             rejected_claims: &[],
             outcome: "ready",
         });
-        sealed.as_object_mut().unwrap().insert(
-            "normalized_prospect".into(),
-            json!({"legacy": true}),
-        );
+        sealed
+            .as_object_mut()
+            .unwrap()
+            .insert("normalized_prospect".into(), json!({"legacy": true}));
         let result = validate_v3_sealed_envelope(&sealed);
         let error = result.unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_legacy_alias_paired_with_v3"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_legacy_alias_paired_with_v3")
+        );
     }
 
     #[test]
@@ -997,10 +988,11 @@ mod tests {
             attributes: &Map::new(),
             classifications: &Map::new(),
             signal_observations: &[],
-            normalized_input: &Map::from_iter([(
-                "fields".into(),
-                json!({}),
-            )]),
+            normalized_input: &Map::from_iter([
+                ("fields".into(), json!({})),
+                ("signals".into(), json!([])),
+                ("attributes".into(), json!({})),
+            ]),
             gaps: &[],
             rejected_claims: &[],
             outcome: "ready",
@@ -1067,9 +1059,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_unknown_evidence_ref"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_evidence_ref")
+        );
     }
 
     #[test]
@@ -1093,9 +1087,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_unknown_taxonomy"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_taxonomy")
+        );
     }
 
     #[test]
@@ -1119,9 +1115,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_unknown_value"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_value")
+        );
     }
 
     #[test]
@@ -1145,9 +1143,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_invalid_status"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_invalid_status")
+        );
     }
 
     #[test]
@@ -1172,9 +1172,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_basis_too_long"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_basis_too_long")
+        );
     }
 
     #[test]
@@ -1195,12 +1197,17 @@ mod tests {
             &payload,
             &[sample_taxonomy()],
             &["persona".into()],
-            &["synthetic-attempt-001".into(), "synthetic-attempt-002".into()],
+            &[
+                "synthetic-attempt-001".into(),
+                "synthetic-attempt-002".into(),
+            ],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_forbidden_value"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_forbidden_value")
+        );
     }
 
     #[test]
@@ -1223,9 +1230,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_missing_value"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_missing_value")
+        );
     }
 
     #[test]
@@ -1249,9 +1258,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_missing_derived_from"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_missing_derived_from")
+        );
     }
 
     #[test]
@@ -1275,9 +1286,11 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_classification_unknown_attribute"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_classification_unknown_attribute")
+        );
     }
 
     #[test]
@@ -1290,10 +1303,12 @@ mod tests {
             &["synthetic-attempt-001".into()],
         )
         .unwrap_err();
-        assert!(error
-            .iter()
-            .any(|issue| issue.code == "v3_semantic_payload_malformed"
-                || issue.code == "v3_output_not_object"));
+        assert!(
+            error
+                .iter()
+                .any(|issue| issue.code == "v3_semantic_payload_malformed"
+                    || issue.code == "v3_output_not_object")
+        );
     }
 
     #[test]
@@ -1359,7 +1374,10 @@ mod tests {
         let projected = project_v3_semantic_provider_schema_for_openai().unwrap();
         let properties = projected["properties"].as_object().unwrap();
         for field in ["classifications", "gaps", "rejected_claims"] {
-            assert!(properties.contains_key(field), "missing provider property {field}");
+            assert!(
+                properties.contains_key(field),
+                "missing provider property {field}"
+            );
         }
     }
 

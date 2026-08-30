@@ -808,11 +808,8 @@ pub(crate) const NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS: &[&str] = &[
     "source_attempt_request_sha256",
     "collected_attempt_results_sha256",
     "attributes",
-    "classifications",
     "signal_observations",
     "normalized_input",
-    "gaps",
-    "rejected_claims",
     "outcome",
 ];
 
@@ -906,6 +903,7 @@ impl PromptHostEnvelope {
         )?;
         let expected_required_top_level = NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS
             .iter()
+            .chain(NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
             .copied()
             .collect::<Vec<_>>();
         validate_fixed_fields(
