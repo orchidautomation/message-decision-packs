@@ -695,13 +695,14 @@ try {
   let hookCommand = ''
   let hookOutput = ''
   const hookInvocations = []
+  let hookEnvironment = process.env
   const shell = (strings, ...values) => {
     assert(strings.length === 2 && strings[0] === 'bash -lc ', 'Hook must execute through bash -lc.')
     hookCommand = `export PATH='${fakeBin}':"$PATH"; ${String(values[0])}`
     const result = spawnSync('bash', ['-lc', hookCommand], {
       cwd: launchRoot,
       env: {
-        ...process.env,
+        ...hookEnvironment,
         PATH: `${fakeBin}:${process.env.PATH}`,
       },
       encoding: 'utf8',
@@ -726,6 +727,48 @@ try {
     hookOutput.includes(`detected in ${selectedWorkspace}`),
     'Installed wrapper activation must detect the selected MDP workspace, not the parent launch directory.',
   )
+
+  hookInvocations.length = 0
+  const cacheRootWrapper = join(tempRoot, 'wrapper-cache')
+  hookEnvironment = {
+    ...process.env,
+    MDP_ACTIVATION_CACHE_ROOT: cacheRootWrapper,
+  }
+  for (const name of [
+    'MDP_HOOK_SESSION_ID',
+    'CODEX_SESSION_ID',
+    'CLAUDE_CODE_SESSION_ID',
+    'CLAUDE_SESSION_ID',
+    'CURSOR_SESSION_ID',
+    'OPENCODE_SESSION_ID',
+  ]) {
+    delete hookEnvironment[name]
+  }
+  // Pluxx 0.1.41's installed OpenCode wrapper receives input.sessionID but
+  // does not project it into the hook environment or stdin. Exercise the
+  // native chat.message path and prove MDP degrades safely instead of
+  // suppressing activation across unrelated OpenCode sessions.
+  await hooks['chat.message']({ sessionID: 'installed-wrapper' }, {})
+  const firstCallResult = hookInvocations.at(-1)
+  assert(
+    firstCallResult?.status === 0 && firstCallResult.output.includes('MDP activation:'),
+    `Installed wrapper must degrade to full activation without a propagated session identity; status=${firstCallResult?.status}, out=${firstCallResult?.output}`,
+  )
+  assert(
+    firstCallResult.command.includes('--mode=compact'),
+    `Installed wrapper must still route beforeSubmitPrompt through compact mode; command was ${firstCallResult.command}`,
+  )
+  await hooks['chat.message']({ sessionID: 'installed-wrapper' }, {})
+  const secondCallResult = hookInvocations.at(-1)
+  assert(
+    secondCallResult?.status === 0 && secondCallResult.output.includes('MDP activation:'),
+    `Installed wrapper must keep degrading to full activation without reliable session identity; status=${secondCallResult?.status}, out=${secondCallResult?.output}`,
+  )
+  assert(
+    !existsSync(cacheRootWrapper),
+    'Degraded OpenCode activation must not persist cross-session suppression state.',
+  )
+
   assert(
     hookCommand.includes(`; export PLUGIN_ROOT='${resolvedPluginRoot}';`),
     `Installed wrapper must preserve the installed plugin root; command was: ${hookCommand}`,

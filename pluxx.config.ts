@@ -40,13 +40,13 @@ export default definePlugin({
   hooks: {
     sessionStart: [
       {
-        command: 'bash "${PLUGIN_ROOT}/scripts/mdp-activate.sh"',
+        command: 'bash "${PLUGIN_ROOT}/scripts/mdp-activate.sh" --mode=full --plugin-root="${PLUGIN_ROOT}"',
         timeout: 10000,
       },
     ],
     beforeSubmitPrompt: [
       {
-        command: 'bash "${PLUGIN_ROOT}/scripts/mdp-activate.sh"',
+        command: 'bash "${PLUGIN_ROOT}/scripts/mdp-activate.sh" --mode=compact --plugin-root="${PLUGIN_ROOT}"',
         timeout: 10000,
       },
     ],
