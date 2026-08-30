@@ -695,13 +695,14 @@ try {
   let hookCommand = ''
   let hookOutput = ''
   const hookInvocations = []
+  let hookEnvironment = process.env
   const shell = (strings, ...values) => {
     assert(strings.length === 2 && strings[0] === 'bash -lc ', 'Hook must execute through bash -lc.')
     hookCommand = `export PATH='${fakeBin}':"$PATH"; ${String(values[0])}`
     const result = spawnSync('bash', ['-lc', hookCommand], {
       cwd: launchRoot,
       env: {
-        ...process.env,
+        ...hookEnvironment,
         PATH: `${fakeBin}:${process.env.PATH}`,
       },
       encoding: 'utf8',
@@ -727,52 +728,45 @@ try {
     'Installed wrapper activation must detect the selected MDP workspace, not the parent launch directory.',
   )
 
-  // Capture the selected workspace .mdp fingerprint to verify idempotence.
-  const inventoryInput = (
-    `workspace=${selectedWorkspace}\n` +
-    `plugin_root=${resolvedPluginRoot}\n` +
-    `session=installed-wrapper\n`
-  )
   hookInvocations.length = 0
   const cacheRootWrapper = join(tempRoot, 'wrapper-cache')
-  mkdirSync(cacheRootWrapper, { recursive: true })
-  const sessionEnvWrapper = {
+  hookEnvironment = {
     ...process.env,
     MDP_ACTIVATION_CACHE_ROOT: cacheRootWrapper,
-    MDP_HOOK_SESSION_ID: 'installed-wrapper',
   }
-  // First beforeSubmitPrompt call after session.created must emit a
-  // compact refresh marker (first reliable event for the pair).
-  const sessionEvent = (strings, ...values) => shell(strings, values[0])
-  const wrapperEnv = { ...sessionEnvWrapper, PATH: `${fakeBin}:${process.env.PATH}` }
-  const firstCallResult = spawnSync('bash', [
-    '-lc',
-    hookCommand.replace('; export PLUGIN_ROOT=', `; export MDP_ACTIVATION_CACHE_ROOT='${cacheRootWrapper}'; export MDP_HOOK_SESSION_ID='installed-wrapper'; export PLUGIN_ROOT=`),
-  ], {
-    cwd: launchRoot,
-    env: wrapperEnv,
-    encoding: 'utf8',
-  })
+  for (const name of [
+    'MDP_HOOK_SESSION_ID',
+    'CODEX_SESSION_ID',
+    'CLAUDE_CODE_SESSION_ID',
+    'CLAUDE_SESSION_ID',
+    'CURSOR_SESSION_ID',
+    'OPENCODE_SESSION_ID',
+  ]) {
+    delete hookEnvironment[name]
+  }
+  // Pluxx 0.1.41's installed OpenCode wrapper receives input.sessionID but
+  // does not project it into the hook environment or stdin. Exercise the
+  // native chat.message path and prove MDP degrades safely instead of
+  // suppressing activation across unrelated OpenCode sessions.
+  await hooks['chat.message']({ sessionID: 'installed-wrapper' }, {})
+  const firstCallResult = hookInvocations.at(-1)
   assert(
-    firstCallResult.status === 0 && firstCallResult.stdout.length > 0 && firstCallResult.stdout.length <= 200,
-    `Installed wrapper first beforeSubmitPrompt must emit one bounded refresh marker; status=${firstCallResult.status}, len=${firstCallResult.stdout.length}, out=${firstCallResult.stdout}`,
+    firstCallResult?.status === 0 && firstCallResult.output.includes('MDP activation:'),
+    `Installed wrapper must degrade to full activation without a propagated session identity; status=${firstCallResult?.status}, out=${firstCallResult?.output}`,
   )
   assert(
-    firstCallResult.stdout.startsWith('MDP refresh:'),
-    `Installed wrapper refresh marker must start with the bounded prefix; got ${JSON.stringify(firstCallResult.stdout)}`,
+    firstCallResult.command.includes('--mode=compact'),
+    `Installed wrapper must still route beforeSubmitPrompt through compact mode; command was ${firstCallResult.command}`,
   )
-  // Second call must be silent.
-  const secondCallResult = spawnSync('bash', [
-    '-lc',
-    hookCommand.replace('; export PLUGIN_ROOT=', `; export MDP_ACTIVATION_CACHE_ROOT='${cacheRootWrapper}'; export MDP_HOOK_SESSION_ID='installed-wrapper'; export PLUGIN_ROOT=`),
-  ], {
-    cwd: launchRoot,
-    env: wrapperEnv,
-    encoding: 'utf8',
-  })
+  await hooks['chat.message']({ sessionID: 'installed-wrapper' }, {})
+  const secondCallResult = hookInvocations.at(-1)
   assert(
-    secondCallResult.stdout.length === 0,
-    `Installed wrapper second beforeSubmitPrompt must be silent; got len=${secondCallResult.stdout.length}, out=${secondCallResult.stdout}`,
+    secondCallResult?.status === 0 && secondCallResult.output.includes('MDP activation:'),
+    `Installed wrapper must keep degrading to full activation without reliable session identity; status=${secondCallResult?.status}, out=${secondCallResult?.output}`,
+  )
+  assert(
+    !existsSync(cacheRootWrapper),
+    'Degraded OpenCode activation must not persist cross-session suppression state.',
   )
 
   assert(
