@@ -179,7 +179,17 @@ writeFileSync(
 const fs = require('node:fs')
 const path = require('node:path')
 const args = process.argv.slice(2)
-const selector = 'message-decision-packs@message-decision-packs-local'
+const marketplaceCatalog = () => {
+  try {
+    return JSON.parse(fs.readFileSync(process.env.PLUXX_CODEX_MARKETPLACE_PATH, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+const marketplaceName = process.env.PLUXX_TEST_CODEX_CANONICAL_MARKETPLACE ||
+  marketplaceCatalog().name ||
+  'message-decision-packs-local'
+const selector = 'message-decision-packs@' + marketplaceName
 const trace = (value) => {
   if (process.env.PLUXX_TEST_CODEX_TRACE) {
     fs.appendFileSync(process.env.PLUXX_TEST_CODEX_TRACE, value + '\\n')
@@ -193,21 +203,32 @@ if (
 ) {
   trace('marketplace add')
   const config = fs.readFileSync(process.env.PLUXX_CODEX_CONFIG_PATH, 'utf8')
-  if (!config.includes('[marketplaces.message-decision-packs-local]')) {
+  if (!config.includes('[marketplaces.' + marketplaceName + ']')) {
     fs.appendFileSync(
       process.env.PLUXX_CODEX_CONFIG_PATH,
-      '\\n[marketplaces.message-decision-packs-local]\\nsource_type = "local"\\nsource = "' + args[3] + '"\\n',
+      '\\n[marketplaces.' + marketplaceName + ']\\nsource_type = "local"\\nsource = "' + args[3] + '"\\n',
     )
   }
   fs.appendFileSync(process.env.PLUXX_CODEX_CONFIG_PATH, '# fake marketplace refresh\\n')
   process.stdout.write(JSON.stringify({
-    marketplaceName: 'message-decision-packs-local',
+    marketplaceName,
     installedRoot: args[3],
     alreadyAdded: false,
   }))
   process.exit(0)
 }
-if (args[0] === 'plugin' && args[1] === 'add' && args[2] === selector && args[3] === '--json') {
+if (args[0] === 'plugin' && args[1] === 'add' && args[3] === '--json') {
+  if (args[2] !== selector) {
+    process.stderr.write('plugin selector did not use the canonical marketplace: ' + args[2])
+    process.exit(19)
+  }
+  if (
+    process.env.PLUXX_TEST_EXPECTED_SELECTOR &&
+    args[2] !== process.env.PLUXX_TEST_EXPECTED_SELECTOR
+  ) {
+    process.stderr.write('unexpected plugin selector: ' + args[2])
+    process.exit(19)
+  }
   const traceContent = process.env.PLUXX_TEST_CODEX_TRACE &&
     fs.existsSync(process.env.PLUXX_TEST_CODEX_TRACE)
     ? fs.readFileSync(process.env.PLUXX_TEST_CODEX_TRACE, 'utf8')
@@ -220,7 +241,7 @@ if (args[0] === 'plugin' && args[1] === 'add' && args[2] === selector && args[3]
   if (process.env.PLUXX_TEST_CODEX_FAILURE === 'add') {
     const cache = path.join(
       process.env.CODEX_HOME,
-      'plugins/cache/message-decision-packs-local/message-decision-packs',
+      'plugins/cache/' + marketplaceName + '/message-decision-packs',
     )
     fs.mkdirSync(cache, { recursive: true })
     fs.writeFileSync(path.join(cache, 'partial'), 'partial native cache')
@@ -446,6 +467,44 @@ try {
     'Generated Codex installer must register the local marketplace before adding the plugin.',
   )
 
+  const codexMarketplacePath = join(codexHome, '.agents/plugins/marketplace.json')
+  const existingMarketplace = JSON.parse(readFileSync(codexMarketplacePath, 'utf8'))
+  existingMarketplace.name = 'personal'
+  writeFileSync(codexMarketplacePath, `${JSON.stringify(existingMarketplace, null, 2)}\n`)
+  const reusedMarketplaceTracePath = join(tempRoot, 'codex-marketplace-reuse.trace')
+  run('bash', [join(releaseRoot, 'install-codex.sh')], {
+    cwd: root,
+    environment: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      HOME: codexHome,
+      CODEX_HOME: join(codexHome, '.codex'),
+      MDP_SKIP_CLI_UPDATE: '1',
+      PLUXX_CODEX_BUNDLE_PATH: join(
+        releaseRoot,
+        'message-decision-packs-codex-latest.tar.gz',
+      ),
+      PLUXX_CODEX_CONFIG_PATH: codexConfigPath,
+      PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+      PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
+      PLUXX_CODEX_MARKETPLACE_PATH: codexMarketplacePath,
+      PLUXX_TEST_CODEX_TRACE: reusedMarketplaceTracePath,
+      PLUXX_TEST_EXPECTED_SELECTOR: 'message-decision-packs@personal',
+      PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
+      PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
+      PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
+    },
+  })
+  assert(
+    readFileSync(reusedMarketplaceTracePath, 'utf8') ===
+      'marketplace add\nplugin add\nplugin list\n',
+    'Codex installer must reuse a pre-existing canonical marketplace name.',
+  )
+  assert(
+    JSON.parse(readFileSync(codexMarketplacePath, 'utf8')).name === 'personal',
+    'Codex installer must preserve the pre-existing marketplace catalog name.',
+  )
+
   assert(
     existsSync(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')),
     'Generated Codex installer must install the local proposal runner.',
@@ -462,10 +521,9 @@ try {
     readFileSync(codexConfigPath, 'utf8').includes('hooks = true'),
     'Generated Codex installer must enable hooks in the isolated Codex config path.',
   )
-  const codexMarketplacePath = join(codexHome, '.agents/plugins/marketplace.json')
   const nativeCachePath = join(
     codexHome,
-    '.codex/plugins/cache/message-decision-packs-local/message-decision-packs',
+    '.codex/plugins/cache/personal/message-decision-packs',
   )
   mkdirSync(nativeCachePath, { recursive: true })
   writeFileSync(join(nativeCachePath, 'sentinel'), 'previous native cache')
