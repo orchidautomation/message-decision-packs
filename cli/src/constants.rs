@@ -58,7 +58,7 @@ pub(crate) const V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE: usize = 32;
 pub(crate) const V3_MAX_GAPS_PER_ENVELOPE: usize = 32;
 pub(crate) const V3_MAX_DERIVED_FROM_PER_CLASSIFICATION: usize = 16;
 pub(crate) const V3_IDENTIFIER_MAX_LEN: usize = 64;
-pub(crate) const V3_BASIS_MAX_CHARS_HARD_LIMIT: usize = 4_096;
+pub(crate) const V3_BASIS_MAX_CHARS_HARD_LIMIT: usize = 500;
 pub(crate) const V3_OUTCOME_KIND: &str = "decision-input-normalization";
 
 // Closed value enums used by the v3 semantic payload. Model output honoring
