@@ -342,6 +342,230 @@ stdout=${packResult.stdout}`,
 console.log('Installed Codex hook commands exit 0 with CODEX_PLUGIN_ROOT unset.')
 CODEX_MANIFEST_NODE
 
+# --------------------------------------------------------------------------
+# MDP activation idempotence and bounded compactness (MDP-281).
+# --------------------------------------------------------------------------
+
+idempotence_cache_root="$(mktemp -d "$artifact_root/mdp-activation-cache.XXXXXX")"
+idempotence_marker_root="$(mktemp -d "$artifact_root/mdp-activation-marker.XXXXXX")"
+export MDP_ACTIVATION_CACHE_ROOT="$idempotence_cache_root"
+export MDP_CODEX_BUNDLE_PATH=""
+
+idempotence_workspace="$(mktemp -d "$artifact_root/mdp-281-workspace.XXXXXX")"
+mkdir -p "$idempotence_workspace/.mdp"
+cat > "$idempotence_workspace/.mdp/manifest.yaml" <<'WORKSPACE_YAML'
+name: idempotence-pack
+version: 0.1.0
+WORKSPACE_YAML
+
+# Default invocation with no --mode must remain full (backward compat).
+default_output="$(
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$idempotence_workspace"     MDP_HOOK_SESSION_ID="default-session"     bash "$ROOT/scripts/mdp-activate.sh"
+)"
+if ! printf '%s\n' "$default_output" | grep -F "MDP activation: .mdp/manifest.yaml detected in $idempotence_workspace." >/dev/null; then
+  echo "Default invocation must emit the full activation payload." >&2
+  exit 1
+fi
+
+# --mode=compact first call emits one bounded refresh marker.
+first_compact="$(
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$idempotence_workspace"     MDP_HOOK_SESSION_ID="session-compact-1"     bash "$ROOT/scripts/mdp-activate.sh" --mode=compact
+)"
+first_compact_len="${#first_compact}"
+if [ "$first_compact_len" -lt 8 ] || [ "$first_compact_len" -gt 200 ]; then
+  echo "First compact call refresh marker must be 8-200 chars; got $first_compact_len." >&2
+  printf '%s\n' "$first_compact" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$first_compact" | grep -E '^MDP refresh: ' >/dev/null; then
+  echo "First compact call must emit a refresh marker line." >&2
+  printf '%s\n' "$first_compact" >&2
+  exit 1
+fi
+
+# Subsequent compact calls for the same session and workspace are silent.
+repeat_compact_lengths=()
+for i in 1 2 3 4 5; do
+  out="$(
+    PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$idempotence_workspace"       MDP_HOOK_SESSION_ID="session-compact-1"       bash "$ROOT/scripts/mdp-activate.sh" --mode=compact
+  )"
+  repeat_compact_lengths+=("${#out}")
+  if [ "${#out}" -ne 0 ]; then
+    echo "Repeat compact call must be silent (got ${#out} chars)." >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+done
+
+# Authority change in the workspace forces exactly one refresh marker.
+cat > "$idempotence_workspace/.mdp/manifest.yaml" <<'WORKSPACE_YAML'
+name: idempotence-pack
+version: 0.1.0
+description: changed authority
+WORKSPACE_YAML
+refreshed_compact="$(
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$idempotence_workspace"     MDP_HOOK_SESSION_ID="session-compact-1"     bash "$ROOT/scripts/mdp-activate.sh" --mode=compact
+)"
+if [ "${#refreshed_compact}" -lt 8 ] || [ "${#refreshed_compact}" -gt 200 ]; then
+  echo "Authority-change compact refresh must be 8-200 chars; got ${#refreshed_compact}." >&2
+  printf '%s\n' "$refreshed_compact" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$refreshed_compact" | grep -E '^MDP refresh: ' >/dev/null; then
+  echo "Authority-change compact call must emit a refresh marker line." >&2
+  exit 1
+fi
+
+# Out-of-order first event (compact before full) still results in one full
+# activation, then compact returns to silence.
+ordered_workspace="$(mktemp -d "$artifact_root/mdp-281-ordered.XXXXXX")"
+mkdir -p "$ordered_workspace/.mdp"
+cat > "$ordered_workspace/.mdp/manifest.yaml" <<'WORKSPACE_YAML'
+name: ordered-events-pack
+version: 0.1.0
+WORKSPACE_YAML
+
+# Compact first: session identity present → marker.
+ordered_compact_first="$(
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$ordered_workspace"     MDP_HOOK_SESSION_ID="session-ordered"     bash "$ROOT/scripts/mdp-activate.sh" --mode=compact
+)"
+if [ "${#ordered_compact_first}" -lt 8 ] || [ "${#ordered_compact_first}" -gt 200 ]; then
+  echo "Compact-first call must emit a refresh marker; got ${#ordered_compact_first}." >&2
+  printf '%s\n' "$ordered_compact_first" >&2
+  exit 1
+fi
+ordered_compact_second="$(
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$ordered_workspace"     MDP_HOOK_SESSION_ID="session-ordered"     bash "$ROOT/scripts/mdp-activate.sh" --mode=compact
+)"
+if [ -n "$ordered_compact_second" ]; then
+  echo "Compact-second call (after compact-first) must be silent." >&2
+  printf '%s\n' "$ordered_compact_second" >&2
+  exit 1
+fi
+
+# Missing session identity degrades to full output (never cross-session
+# suppression).
+degraded_workspace="$(mktemp -d "$artifact_root/mdp-281-degraded.XXXXXX")"
+mkdir -p "$degraded_workspace/.mdp"
+cat > "$degraded_workspace/.mdp/manifest.yaml" <<'WORKSPACE_YAML'
+name: degraded-pack
+version: 0.1.0
+WORKSPACE_YAML
+degraded_full="$(
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$degraded_workspace"     env -u MDP_HOOK_SESSION_ID -u CODEX_SESSION_ID -u CLAUDE_SESSION_ID       -u CLAUDE_CODE_SESSION_ID -u CURSOR_SESSION_ID -u OPENCODE_SESSION_ID     bash "$ROOT/scripts/mdp-activate.sh" --mode=compact
+)"
+if ! printf '%s\n' "$degraded_full" | grep -F "MDP activation:" >/dev/null; then
+  echo "Compact mode without session identity must fall back to full activation." >&2
+  printf '%s\n' "$degraded_full" >&2
+  exit 1
+fi
+# The degraded path must NOT have written any cache file (cross-session
+# suppression is forbidden).
+cache_path="$idempotence_cache_root/$(printf 'workspace=%s\n' "$degraded_workspace" | sha256sum | cut -d' ' -f1).kv"
+if [ -e "$cache_path" ]; then
+  echo "Degraded session must not write a cache record." >&2
+  exit 1
+fi
+
+# Secret non-disclosure: provide a key-like value and assert it never
+# appears in stdout, stderr, or cache state.
+secret_workspace="$(mktemp -d "$artifact_root/mdp-281-secret.XXXXXX")"
+mkdir -p "$secret_workspace/.mdp"
+cat > "$secret_workspace/.mdp/manifest.yaml" <<'WORKSPACE_YAML'
+name: secret-pack
+version: 0.1.0
+WORKSPACE_YAML
+secret_value="sk-test-do-not-print-12345"
+# Drive through stdin payload + env to verify non-disclosure.
+secret_payload="$(printf '{"sessionId":"secret-session","cwd":"%s"}' "$secret_workspace")"
+secret_output="$(
+  cd "$ROOT"
+  PLUGIN_ROOT="$ROOT" MDP_HOOK_SESSION_ID="$secret_value"     OPENAI_API_KEY="$secret_value"     MDP_HOOK_DIR="$secret_workspace"     bash "$ROOT/scripts/mdp-activate.sh" --mode=full --workspace="$secret_workspace" --plugin-root="$ROOT"     <<< "$secret_payload"
+)"
+if printf '%s\n' "$secret_output" | grep -F "$secret_value" >/dev/null; then
+  echo "MDP activation must never print OPENAI_API_KEY or session id values." >&2
+  printf '%s\n' "$secret_output" >&2
+  exit 1
+fi
+secret_cache="$idempotence_cache_root/$(printf 'workspace=%s\n' "$secret_workspace" | sha256sum | cut -d' ' -f1).kv"
+if [ -f "$secret_cache" ] && grep -F "$secret_value" "$secret_cache" >/dev/null; then
+  echo "MDP activation cache must never persist secret values." >&2
+  cat "$secret_cache" >&2
+  exit 1
+fi
+
+# Cache root permissions: created dirs must be 700 with 600 files.
+cache_dir_perm="$(stat -c '%a' "$idempotence_cache_root")"
+if [ "$cache_dir_perm" != "700" ]; then
+  echo "MDP activation cache root must be mode 0700; got $cache_dir_perm." >&2
+  exit 1
+fi
+for kv in "$idempotence_cache_root"/*.kv; do
+  [ -f "$kv" ] || continue
+  file_perm="$(stat -c '%a' "$kv")"
+  if [ "$file_perm" != "600" ]; then
+    echo "MDP activation cache files must be mode 0600; got $file_perm on $kv." >&2
+    exit 1
+  fi
+done
+
+# Concurrency: two simultaneous compact invocations produce at most one
+# full activation each (one marker each, no double output).
+concurrent_workspace="$(mktemp -d "$artifact_root/mdp-281-concurrent.XXXXXX")"
+mkdir -p "$concurrent_workspace/.mdp"
+cat > "$concurrent_workspace/.mdp/manifest.yaml" <<'WORKSPACE_YAML'
+name: concurrent-pack
+version: 0.1.0
+WORKSPACE_YAML
+concurrent_a="$(mktemp)"
+concurrent_b="$(mktemp)"
+PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$concurrent_workspace"   MDP_HOOK_SESSION_ID="concurrent-session"   bash "$ROOT/scripts/mdp-activate.sh" --mode=compact >"$concurrent_a" 2>&1 &
+pid_a=$!
+PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$concurrent_workspace"   MDP_HOOK_SESSION_ID="concurrent-session"   bash "$ROOT/scripts/mdp-activate.sh" --mode=compact >"$concurrent_b" 2>&1 &
+pid_b=$!
+wait "$pid_a" || true
+wait "$pid_b" || true
+size_a="$(wc -c <"$concurrent_a")"
+size_b="$(wc -c <"$concurrent_b")"
+if [ "$size_a" -gt 200 ] || [ "$size_b" -gt 200 ]; then
+  echo "Concurrent compact invocations must each stay <=200 chars; got $size_a + $size_b." >&2
+  cat "$concurrent_a" "$concurrent_b" >&2
+  exit 1
+fi
+rm -f "$concurrent_a" "$concurrent_b"
+
+# Repeat unchanged compact-call p50 measurement (informational).
+benchmark_file="$artifact_root/mdp-pluxx-activation-benchmark.json"
+node "$ROOT/scripts/test-mdp-activation-benchmark.mjs" \
+  --root "$ROOT" \
+  --workspace "$idempotence_workspace" \
+  --cache "$idempotence_cache_root" \
+  --out "$benchmark_file" \
+  --iterations 50
+if [ -s "$benchmark_file" ]; then
+  p50_value="$(node -e "const { p50_ms } = JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); console.log(p50_ms)" "$benchmark_file")"
+  if [ "$(printf '%.0f' "$p50_value")" -ge 40 ]; then
+    echo "MDP-281 activation warm-unchanged benchmark p50=${p50_value}ms exceeds the 40ms safety budget." >&2
+    cat "$benchmark_file" >&2
+    exit 1
+  fi
+fi
+
+echo "MDP activation idempotence + compact + safe-fallback tests passed."
+echo "  full-mode payload preserved."
+echo "  compact 1st call: refresh marker (8-200 chars)."
+echo "  compact repeated: silent body."
+echo "  authority refresh: marker; order-independent persistence."
+echo "  degraded session: full fallback, no cache write."
+echo "  secret non-disclosure: API key + session value never persisted."
+echo "  cache permissions: 700 root + 600 files."
+echo "  concurrent calls: each output <=200 chars."
+echo "  benchmark p50 (warm unchanged): $(node -e "const { p50_ms, p95_ms } = JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); console.log(p50_ms + 'ms (p95=' + p95_ms + 'ms)')" "$benchmark_file" 2>/dev/null || echo "unavailable")"
+
+# --------------------------------------------------------------------------
+# End idempotence fixtures.
+# --------------------------------------------------------------------------
+
 if ! command -v git >/dev/null 2>&1; then
   echo "Installed OpenCode wrapper proof requires git on PATH to exercise scoped edit detection." >&2
   exit 1

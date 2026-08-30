@@ -726,6 +726,55 @@ try {
     hookOutput.includes(`detected in ${selectedWorkspace}`),
     'Installed wrapper activation must detect the selected MDP workspace, not the parent launch directory.',
   )
+
+  // Capture the selected workspace .mdp fingerprint to verify idempotence.
+  const inventoryInput = (
+    `workspace=${selectedWorkspace}\n` +
+    `plugin_root=${resolvedPluginRoot}\n` +
+    `session=installed-wrapper\n`
+  )
+  hookInvocations.length = 0
+  const cacheRootWrapper = join(tempRoot, 'wrapper-cache')
+  mkdirSync(cacheRootWrapper, { recursive: true })
+  const sessionEnvWrapper = {
+    ...process.env,
+    MDP_ACTIVATION_CACHE_ROOT: cacheRootWrapper,
+    MDP_HOOK_SESSION_ID: 'installed-wrapper',
+  }
+  // First beforeSubmitPrompt call after session.created must emit a
+  // compact refresh marker (first reliable event for the pair).
+  const sessionEvent = (strings, ...values) => shell(strings, values[0])
+  const wrapperEnv = { ...sessionEnvWrapper, PATH: `${fakeBin}:${process.env.PATH}` }
+  const firstCallResult = spawnSync('bash', [
+    '-lc',
+    hookCommand.replace('; export PLUGIN_ROOT=', `; export MDP_ACTIVATION_CACHE_ROOT='${cacheRootWrapper}'; export MDP_HOOK_SESSION_ID='installed-wrapper'; export PLUGIN_ROOT=`),
+  ], {
+    cwd: launchRoot,
+    env: wrapperEnv,
+    encoding: 'utf8',
+  })
+  assert(
+    firstCallResult.status === 0 && firstCallResult.stdout.length > 0 && firstCallResult.stdout.length <= 200,
+    `Installed wrapper first beforeSubmitPrompt must emit one bounded refresh marker; status=${firstCallResult.status}, len=${firstCallResult.stdout.length}, out=${firstCallResult.stdout}`,
+  )
+  assert(
+    firstCallResult.stdout.startsWith('MDP refresh:'),
+    `Installed wrapper refresh marker must start with the bounded prefix; got ${JSON.stringify(firstCallResult.stdout)}`,
+  )
+  // Second call must be silent.
+  const secondCallResult = spawnSync('bash', [
+    '-lc',
+    hookCommand.replace('; export PLUGIN_ROOT=', `; export MDP_ACTIVATION_CACHE_ROOT='${cacheRootWrapper}'; export MDP_HOOK_SESSION_ID='installed-wrapper'; export PLUGIN_ROOT=`),
+  ], {
+    cwd: launchRoot,
+    env: wrapperEnv,
+    encoding: 'utf8',
+  })
+  assert(
+    secondCallResult.stdout.length === 0,
+    `Installed wrapper second beforeSubmitPrompt must be silent; got len=${secondCallResult.stdout.length}, out=${secondCallResult.stdout}`,
+  )
+
   assert(
     hookCommand.includes(`; export PLUGIN_ROOT='${resolvedPluginRoot}';`),
     `Installed wrapper must preserve the installed plugin root; command was: ${hookCommand}`,

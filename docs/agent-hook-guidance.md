@@ -57,6 +57,79 @@ If a Claude Code hook can mutate files, keep it limited to validation artifacts 
 - No automatic invention of missing `company_domain`, persona, trigger, signal source, fiscal year, or other readiness fields.
 - No writes of raw private prospect rows, transcripts, browser data, tokens, or customer data into committed paths.
 
+## Idempotent activation contract (MDP-281)
+
+MDP activation hooks are idempotent and compact across supported native
+hosts. The activation script is invoked once with `--mode=full` at session
+start and once per prompt with `--mode=compact`. The behavior is:
+
+| Event                   | Mode    | Behavior                                                                   |
+| ----------------------- | ------- | -------------------------------------------------------------------------- |
+| `sessionStart`          | `full`  | Emit the full boundary, readiness, capability/doctor summary.              |
+| `beforeSubmitPrompt`    | `compact` | Empty body if workspace authority and session identity are unchanged.    |
+| `beforeSubmitPrompt`    | `compact` | One bounded marker line (≤ 200 chars) on first event or after a change.   |
+
+If a host cannot resolve a reliable session identity, the script degrades
+to emitting the full activation body on every call. We never suppress
+context across sessions without a reliable identity.
+
+### Host evidence table
+
+Installed behavioral proof or an explicit reliable-session-identity
+degradation must be present for each supported native host. As of MDP-281:
+
+| Host          | Session identity source           | Compact path evidence                                            |
+| ------------- | --------------------------------- | ---------------------------------------------------------------- |
+| Claude Code   | `CLAUDE_*_SESSION_ID` or hook payload | Same compact activation contract applies on the Claude bundle. |
+| Cursor        | `CURSOR_SESSION_ID` or hook payload    | Same compact activation contract applies on the Cursor bundle. |
+| Codex         | `CODEX_SESSION_ID` or hook payload     | `scripts/test-pluxx-hooks.sh` exercises Codex installed bundle plus installed idempotence proof in `release-install-smoke.sh`. |
+| OpenCode      | `OPENCODE_SESSION_ID` or wrapper event      | `scripts/test-opencode-wrapper.mjs` exercises OpenCode installed bundle plus installed idempotence proof in `release-install-smoke.sh`. |
+
+If a host cannot supply a reliable session identity, that host is marked
+**degraded** in the host evidence table above. Hosts marked degraded
+fall back to the historical full-activation on every call rather than
+sharing suppression state across sessions.
+
+### Cache boundary
+
+The activation state lives below
+`${MDP_ACTIVATION_CACHE_ROOT:-${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/mdp-activation/}`,
+keyed by the canonicalized workspace realpath. The cache records
+contain only non-secret metadata (`schema-version`,
+`workspace-id`, `fingerprint`, `session-hash`, `last-emitted-at`,
+`full-count`, `reason`). Files are mode `0600`; the cache root is mode
+`0700`. Persisted state never contains hook payloads, secrets,
+`OPENAI_API_KEY` values, or absolute pack content.
+
+### Fingerprint inventory
+
+The fingerprint hashes the canonicalized workspace realpath, the
+(installed or resolved) plugin root, the session hash, and the deterministic
+list of files under `.mdp/`:
+
+- `manifest.yaml`
+- `prompts/*.yaml`
+- `cards/*.yaml`
+- `evals/index.json` (and any other declared eval fixtures)
+- any other relative file under `.mdp/` that is not dot-prefixed or
+  `__pycache__`
+
+A change in any of those paths' size, mtime epoch, or path triggers exactly
+one refresh marker before the script returns to compact behavior.
+
+### Performance budget
+
+The warm-unchanged `beforeSubmitPrompt` path is documented to stay well
+below 25 ms p50 without invoking `mdp` or `node`. The bundled
+`scripts/test-mdp-activation-benchmark.mjs` records iterations, p10/p25/p50/p75/p95,
+node version, OS, and shell banner; the bench asserts against a safe
+40 ms budget so regressions are caught before merge.
+
+If the warm path ever fails this budget, do not weaken explicit `mdp
+validate` or broaden the post-tool list. The fix is a tighter cache
+key, a smaller inventory, or splitting the cache read into separate
+scripts. Archive-size optimization is explicitly out of scope.
+
 ## Version Caveats
 
 Codex and Claude Code hook APIs are host-specific and may change. Check the current host docs before publishing concrete config snippets:

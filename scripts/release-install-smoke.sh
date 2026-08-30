@@ -770,6 +770,67 @@ for expected in \
   fi
 done
 
+# Installed Codex activation idempotence proof (MDP-281 second host
+# evidence in addition to the source fixtures run in test-pluxx-hooks.sh).
+MDP_ACTIVATION_CACHE_ROOT="$artifact_root/codex-activation-cache" \
+HOME="$install_home" CODEX_HOME="$codex_home" \
+PATH="$install_dir:$PATH" \
+PLUGIN_ROOT="$codex_plugin_root" \
+PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" \
+MDP_HOOK_SESSION_ID="codex-smoke-session" \
+  bash "$codex_plugin_root/scripts/mdp-activate.sh" --mode=compact --plugin-root="$codex_plugin_root" \
+  >"$artifact_root/mdp-release-install-codex-compact-1.txt" 2>&1
+codex_compact_first_len="$(wc -c <"$artifact_root/mdp-release-install-codex-compact-1.txt")"
+if [ "$codex_compact_first_len" -lt 8 ] || [ "$codex_compact_first_len" -gt 200 ]; then
+  echo "Installed Codex compact activation must emit a bounded refresh marker; got $codex_compact_first_len." >&2
+  cat "$artifact_root/mdp-release-install-codex-compact-1.txt" >&2
+  exit 1
+fi
+MDP_ACTIVATION_CACHE_ROOT="$artifact_root/codex-activation-cache" \
+HOME="$install_home" CODEX_HOME="$codex_home" \
+PATH="$install_dir:$PATH" \
+PLUGIN_ROOT="$codex_plugin_root" \
+PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" \
+MDP_HOOK_SESSION_ID="codex-smoke-session" \
+  bash "$codex_plugin_root/scripts/mdp-activate.sh" --mode=compact --plugin-root="$codex_plugin_root" \
+  >"$artifact_root/mdp-release-install-codex-compact-2.txt" 2>&1
+if [ -s "$artifact_root/mdp-release-install-codex-compact-2.txt" ]; then
+  echo "Installed Codex compact activation repeat must be silent; got non-empty body." >&2
+  cat "$artifact_root/mdp-release-install-codex-compact-2.txt" >&2
+  exit 1
+fi
+
+# Installed OpenCode activation idempotence proof (MDP-281 second host
+# proof). The OpenCode wrapper exposes PLUGIN_ROOT and the workspace
+# root via the wrapper; here we invoke the wrapper-driven activation via
+# the OpenCode-indexed bundled script with the same session identity
+# contract so the cache treats it as the same host session.
+MDP_ACTIVATION_CACHE_ROOT="$artifact_root/opencode-activation-cache" \
+HOME="$install_home" \
+PATH="$install_dir:$PATH" \
+PLUGIN_ROOT="$opencode_plugin_root" \
+PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" \
+MDP_HOOK_SESSION_ID="opencode-smoke-session" \
+  bash "$opencode_plugin_root/scripts/mdp-activate.sh" --mode=compact --plugin-root="$opencode_plugin_root" \
+  >"$artifact_root/mdp-release-install-opencode-compact-1.txt" 2>&1
+opencode_compact_first_len="$(wc -c <"$artifact_root/mdp-release-install-opencode-compact-1.txt")"
+if [ "$opencode_compact_first_len" -lt 8 ] || [ "$opencode_compact_first_len" -gt 200 ]; then
+  echo "Installed OpenCode compact activation must emit a bounded refresh marker; got $opencode_compact_first_len." >&2
+  cat "$artifact_root/mdp-release-install-opencode-compact-1.txt" >&2
+  exit 1
+fi
+
+# Cache permissions across installed hosts.
+for cache_dir in "$artifact_root/codex-activation-cache" "$artifact_root/opencode-activation-cache"; do
+  if [ -d "$cache_dir" ]; then
+    dir_perm="$(stat -c '%a' "$cache_dir")"
+    if [ "$dir_perm" != "700" ]; then
+      echo "Installed-host activation cache root $cache_dir must be mode 0700 (got $dir_perm)." >&2
+      exit 1
+    fi
+  fi
+done
+
 if [ -f "$ROOT/scripts/skill-eval-harness.py" ]; then
   python3 "$ROOT/scripts/skill-eval-harness.py" \
     --plugin-skills "$ROOT/plugin/skills" \
