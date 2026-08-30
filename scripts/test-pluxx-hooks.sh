@@ -19,8 +19,11 @@ workspace_fixture=""
 plugin_fixture=""
 proposal_fixture=""
 root_fallback_fixture=""
+codex_manifest_fixture=""
+codex_launch_fixture=""
+codex_pack_fixture=""
 cleanup() {
-  for fixture in "${workspace_fixture:-}" "${plugin_fixture:-}" "${proposal_fixture:-}" "${root_fallback_fixture:-}"; do
+  for fixture in "${workspace_fixture:-}" "${plugin_fixture:-}" "${proposal_fixture:-}" "${root_fallback_fixture:-}" "${codex_manifest_fixture:-}" "${codex_launch_fixture:-}" "${codex_pack_fixture:-}"; do
     if [ -n "$fixture" ]; then
       rm -rf "$fixture"
     fi
@@ -31,7 +34,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-PLUXX_VERSION="${PLUXX_VERSION:-0.1.40}"
+PLUXX_VERSION="${PLUXX_VERSION:-0.1.41}"
 if command -v pluxx >/dev/null 2>&1 && [ "$(pluxx --version)" = "$PLUXX_VERSION" ]; then
   PLUXX_CMD=(pluxx)
 elif command -v npx >/dev/null 2>&1; then
@@ -236,6 +239,108 @@ assert(opencodePlugin.includes('PLUXX_PLUGIN_ROOT: pluginRoot'), 'OpenCode hooks
 
 console.log('Pluxx hook fixture validation passed.')
 NODE
+
+# Stage the generated Codex bundle as the installed plugin root and execute
+# the exact descriptor commands (no wrapper-by-absolute-path shortcut) from
+# an unrelated workspace with CODEX_PLUGIN_ROOT unset. PLUXX-345's regression
+# is that the prior generator embedded ${CODEX_PLUGIN_ROOT} in the descriptor,
+# so the regression proof must be manifest-bound, not wrapper-bound.
+codex_manifest_fixture="$(mktemp -d "$artifact_root/codex-installed.XXXXXX")"
+codex_launch_fixture="$(mktemp -d "$artifact_root/codex-launched.XXXXXX")"
+codex_pack_fixture="$(mktemp -d "$artifact_root/codex-pack-launched.XXXXXX")"
+mkdir -p "$codex_pack_fixture/.mdp"
+printf 'name: codex-hook-fixture\nversion: 0.1.0\n' >"$codex_pack_fixture/.mdp/manifest.yaml"
+cp -R "$ROOT/dist/codex/." "$codex_manifest_fixture/"
+export MDP_CODEX_INSTALLED_ROOT="$codex_manifest_fixture"
+export MDP_CODEX_LAUNCH_ROOT="$codex_launch_fixture"
+export MDP_CODEX_PACK_ROOT="$codex_pack_fixture"
+
+export MDP_CODEX_INSTALLED_ROOT MDP_CODEX_LAUNCH_ROOT MDP_CODEX_PACK_ROOT
+node <<'CODEX_MANIFEST_NODE'
+const fs = require('fs')
+const { spawnSync } = require('child_process')
+
+const assert = (condition, message) => {
+  if (!condition) {
+    console.error(message)
+    process.exit(1)
+  }
+}
+
+const manifest = JSON.parse(fs.readFileSync('dist/codex/hooks/hooks.json', 'utf8'))
+const startName = 'Ses' + 'sionStart'
+const startCommand = manifest.hooks[startName]?.[0]?.hooks?.[0]?.command
+const promptCommand = manifest.hooks.UserPromptSubmit?.[0]?.hooks?.[0]?.command
+assert(typeof startCommand === 'string', 'Codex generated manifest must include a SessionStart command.')
+assert(typeof promptCommand === 'string', 'Codex generated manifest must include a UserPromptSubmit command.')
+for (const [event, command] of [[startName, startCommand], ['UserPromptSubmit', promptCommand]]) {
+  assert(
+    !command.includes('CODEX_PLUGIN_ROOT'),
+    `Codex ${event} must not depend on CODEX_PLUGIN_ROOT (got: ${command}).`,
+  )
+  assert(
+    command.includes('${PLUGIN_ROOT}'),
+    `Codex ${event} must resolve the installed plugin root via \${PLUGIN_ROOT} (got: ${command}).`,
+  )
+}
+
+const installedRoot = process.env.MDP_CODEX_INSTALLED_ROOT
+const launchRoot = process.env.MDP_CODEX_LAUNCH_ROOT
+const packRoot = process.env.MDP_CODEX_PACK_ROOT
+assert(installedRoot && launchRoot && packRoot, 'Expected installed, unrelated, and pack Codex workspaces to be staged.')
+
+// The Codex host runs the exact descriptor string with $PLUGIN_ROOT
+// expansion in its own shell. We mirror that with bash -c, supplying
+// PLUGIN_ROOT as an environment variable and explicitly unsetting the
+// legacy CODEX_PLUGIN_ROOT so the regression proof covers PLUXX-345.
+const runDescriptor = (label, command, cwd, extraEnv) => {
+  const env = { ...process.env, ...extraEnv, PLUGIN_ROOT: installedRoot }
+  delete env.CODEX_PLUGIN_ROOT
+  const result = spawnSync('bash', ['-c', command], {
+    cwd,
+    env,
+    input: '',
+    encoding: 'utf8',
+  })
+  if (result.status !== 0) {
+    console.error(`Installed Codex ${label} exited ${result.status}; expected 0.`)
+    console.error(`  command: ${command}`)
+    console.error(`  cwd:     ${cwd}`)
+    console.error(`  stdout:  ${result.stdout}`)
+    console.error(`  stderr:  ${result.stderr}`)
+    process.exit(1)
+  }
+  return result
+}
+
+// Manifest-bound regression proof for PLUXX-345: the exact SessionStart and
+// UserPromptSubmit descriptor commands must launch from an unrelated
+// workspace (no .mdp/manifest.yaml) when CODEX_PLUGIN_ROOT is unset.
+runDescriptor('SessionStart', startCommand, launchRoot, {
+  PLUGIN_ROOT: installedRoot,
+})
+runDescriptor('UserPromptSubmit', promptCommand, launchRoot, {
+  PLUGIN_ROOT: installedRoot,
+})
+
+// The same descriptor must reach scripts/mdp-activate.sh when launched from
+// a pack workspace, surfacing pack detection in the activation output.
+const packResult = runDescriptor(
+  'SessionStart in pack workspace',
+  startCommand,
+  packRoot,
+  {
+    PLUXX_HOOK_WORKSPACE_ROOT: packRoot,
+  },
+)
+assert(
+  packResult.stdout.includes(`detected in ${packRoot}`),
+  `Installed Codex SessionStart must surface pack detection from the manifest command.
+stdout=${packResult.stdout}`,
+)
+
+console.log('Installed Codex hook commands exit 0 with CODEX_PLUGIN_ROOT unset.')
+CODEX_MANIFEST_NODE
 
 if ! command -v git >/dev/null 2>&1; then
   echo "Installed OpenCode wrapper proof requires git on PATH to exercise scoped edit detection." >&2
