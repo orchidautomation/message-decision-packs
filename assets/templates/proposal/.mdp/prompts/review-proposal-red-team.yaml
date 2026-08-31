@@ -21,7 +21,7 @@ inputs:
   default: N/A
   missing_behavior: Return a gap or refusal; never load unrelated proposal authority.
   producer: pack
-- name: normalized_prospect
+- name: normalized_input
   description: Validated opportunity and requirement context.
   required: true
   default: N/A
@@ -116,7 +116,7 @@ output_contract:
         properties:
           inputs_used:
             type: array
-            items: {enum: [routed_context, normalized_prospect, supplied_material, runtime_context, prompt_receipt, invocation_receipt_sha256]}
+            items: {enum: [routed_context, normalized_input, supplied_material, runtime_context, prompt_receipt, invocation_receipt_sha256]}
       selected_authority: {type: array, items: {type: string}}
       artifact:
         type: object

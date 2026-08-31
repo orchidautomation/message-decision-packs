@@ -1,0 +1,26 @@
+command: requirements
+expect_attempt_statuses:
+- observed
+- not_found
+- not_applicable
+- blocked
+- error
+expect_available: true
+expect_no_draft_outcomes:
+- insufficient-context
+- disqualified
+- human-review
+- malformed
+- provider-error
+expect_runtime_contract_version: v3
+id: decision-input-contract
+job: bid-no-bid-review
+profile_eval:
+  category: prompt-output-validation
+  jobs:
+  - bid-no-bid-review
+  primitives:
+  - source-signals
+  - decision-criteria
+  - boundaries
+  - gaps

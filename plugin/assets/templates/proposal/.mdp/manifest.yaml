@@ -598,13 +598,11 @@ primitive_map:
     - gaps
     evals:
     - proposal-gaps
-    - fit-insufficient-context
   evals:
     evals:
     - bid-no-bid-route
     - compliance-route
     - compliance-unsupported-claim
-    - fit-insufficient-context
     - fit-policy-bypass-disqualified
     - invented-proof-guardrail
     - decision-input-contract

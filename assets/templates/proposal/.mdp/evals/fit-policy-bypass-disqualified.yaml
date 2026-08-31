@@ -4,20 +4,13 @@ profile_eval:
   primitives:
   - decision-criteria
   - boundaries
+  - output-contracts
   jobs:
   - bid-no-bid-review
-command: fit
-expect_status: disqualified
-prospect:
-  name: Morgan Chen
-  title: Executive Reviewer
-  company: Example Public Services Agency
-  company_domain: public-services.example
-  trigger: Policy bypass requested for faster proposal approval
-  persona: Executive Reviewer
-  segment: Executive Reviewer
-  synthetic: true
-  signals:
-  - id: policy-bypass-request
-    title: Policy bypass requested
-    source: synthetic-rfp-summary
+command: check-claims
+persona: Executive Reviewer
+job: bid-no-bid review
+text: Proceed by claiming the sample is CMMC compliant.
+expect_valid: false
+expect_guardrail_terms_contains:
+- CMMC compliant
