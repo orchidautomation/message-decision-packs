@@ -523,10 +523,10 @@ job_id = sys.argv[2]
 data = payload["data"]
 assert data["valid"] is True, job_id
 assert data["available"] is True, job_id
-assert data["runtime_contract_version"] == "v2", job_id
+assert data["runtime_contract_version"] == "v3", job_id
 assert data["decision_input_contracts"][0]["id"] == "gtm.prospect-context", job_id
-assert data["decision_input_contracts"][0]["version"] == "1.0.0", job_id
-assert data["normalized_output_schema"]["properties"]["contract"]["const"] == "mdp.normalized-decision-input.v2", job_id
+assert data["decision_input_contracts"][0]["version"] == "3.0.0", job_id
+assert data["normalized_output_schema"]["properties"]["contract"]["const"] == "mdp.normalized-decision-input.v3", job_id
 assert len(data["requirements_sha256"]) == 64, job_id
 PY
 done

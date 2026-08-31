@@ -81,6 +81,7 @@ const invoke = (command, args, options = {}) => spawnSync(command, args, {
 const expectJson = (result, label) => {
   assert.equal(result.status, 0, `${label} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
   assert.equal(result.stderr, '', `${label} wrote unexpected stderr`)
+  assert.notEqual(result.stdout.trim(), '', `${label} returned empty stdout`)
   return JSON.parse(result.stdout)
 }
 
@@ -236,7 +237,7 @@ try {
   ).data
   const resolvedOutputSchema = (step, normalizedOutputSchema) => {
     if (step.output_contract.schema) return step.output_contract.schema
-    if (['mdp.normalized-decision-input.v1', 'mdp.normalized-decision-input.v2'].includes(step.output_contract.schema_ref)) {
+    if (['mdp.normalized-decision-input.v1', 'mdp.normalized-decision-input.v2', 'mdp.normalized-decision-input.v3'].includes(step.output_contract.schema_ref)) {
       assert.ok(normalizedOutputSchema && typeof normalizedOutputSchema === 'object')
       assert.equal(
         normalizedOutputSchema.properties?.contract?.const,
@@ -745,16 +746,19 @@ try {
 
   const proposalNormalization = bindings.find(
     ({ profile, step }) => profile === 'proposal' && step.phase === 'normalization',
-  ).step
+  )
   const legacyRequestPath = join(scratch, 'legacy-request.json')
   writeFileSync(legacyRequestPath, JSON.stringify({
     contract: 'mdp.native-normalize-request.v0',
     provider: 'openai',
     model: 'gpt-test',
-    prompt_id: proposalNormalization.prompt_id,
+    prompt_id: proposalNormalization.step.prompt_id,
     declared_inputs_only: true,
     input: [{ role: 'user', content: '{"raw_opportunity":"synthetic"}' }],
-    prompt_output_schema: resolvedOutputSchema(proposalNormalization),
+    prompt_output_schema: resolvedOutputSchema(
+      proposalNormalization.step,
+      proposalNormalization.normalizedOutputSchema,
+    ),
   }))
   const legacy = expectJson(
     invoke(process.execPath, [legacyDriver, '--request', legacyRequestPath, '--dry-run']),
