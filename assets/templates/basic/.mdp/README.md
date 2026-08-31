@@ -40,6 +40,8 @@ A modular message decision pack for agent-readable ICP, pains, triggers, proof, 
 - Inspect its resolved product foundation and diagnostics.
 - Load only the referenced cards, entries, contracts, sources, and gaps.
 - Use detached prospect input only when the selected job has no direct or transitive Decision Input Contract; governed jobs require the exact normalized envelope and lineage artifacts.
+- For governed GTM jobs, the host supplies researched observations matching the compiled collection specification. It does not pre-assign persona or segment and the pack never prescribes which provider or tool collected the evidence.
+- The v3 normalization model proposes only closed taxonomy classifications with `derived_from` attempt IDs and a bounded basis. The host validates and seals provenance; deterministic MDP policy alone decides fit, routing, and draft eligibility.
 - Treat raw prompt output as untrusted. Only a successful validation receipt bound to the exact pack, prompt, job when applicable, validator inputs, and output bytes may provide prompt-output decision-trace authority.
 - Stop on blocked authority; never fill a gap from this README.
 - Apply the job output and review boundaries before using the result.
@@ -87,7 +89,7 @@ A modular message decision pack for agent-readable ICP, pains, triggers, proof, 
 ## Gaps
 
 - Missing company-specific proof: If a prospect/account row lacks concrete source context, ask for source material or state the personalization gap before drafting.
-- Unclear fit: If role, segment, or trigger does not map to a fit rule, return insufficient-context instead of forcing a message.
+- Unclear fit: If observed role responsibilities, company-fit evidence, or separate why-now evidence cannot support a closed classification, return the configured gap or review state instead of forcing a message.
 - Hosted API not included: The MVP is local/offline. Do not imply a hosted API exists unless the user has deployed one separately.
 
 <!-- mdp:readme-inventory v1 begin -->

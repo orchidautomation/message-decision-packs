@@ -1,0 +1,37 @@
+{
+  "contract": "mdp.classification-scenarios.v3",
+  "decision_input_contract": "gtm.prospect-context@3.0.0",
+  "synthetic": true,
+  "scenarios": [
+    {
+      "id": "founding-gtm-engineer",
+      "observed": {"person_title": "Founding GTM Engineer", "person_responsibilities": "Builds GTM data workflows, agents, automation, and integrations."},
+      "expected": {"persona": {"status": "classified", "value": "GTM Engineering", "derived_from_count": 2}}
+    },
+    {
+      "id": "quota-carrying-seller",
+      "observed": {"person_title": "Account Executive", "person_responsibilities": "Owns a sales quota and closes new business."},
+      "expected": {"persona": {"status": "no-match", "value": null}}
+    },
+    {
+      "id": "ambiguous-revops",
+      "observed": {"person_title": "Revenue Operations Lead", "person_responsibilities": "Coordinates process and reporting; technical systems ownership is not established."},
+      "expected": {"persona": {"status": "ambiguous", "value": null}}
+    },
+    {
+      "id": "agent-assisted-account",
+      "observed": {"company_fit_observation": "The company is building programmatic GTM workflows operated by agents."},
+      "expected": {"segment": {"status": "classified", "value": "agent-assisted GTM", "derived_from_count": 1}}
+    },
+    {
+      "id": "separate-fit-and-why-now",
+      "observed": {"company_fit_observation": "The company operates agent-assisted GTM workflows.", "why_now_observation": "A current GTM engineering hiring initiative was observed."},
+      "expected": {"fit_and_why_now_use_distinct_attempts": true}
+    },
+    {
+      "id": "missing-why-now",
+      "observed": {"company_fit_observation": "The company operates agent-assisted GTM workflows."},
+      "expected": {"route": "blocked", "reason": "why-now-required"}
+    }
+  ]
+}
