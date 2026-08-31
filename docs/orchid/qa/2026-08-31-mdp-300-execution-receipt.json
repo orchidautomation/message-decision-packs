@@ -1,0 +1,48 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-300",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-31-mdp-300-fast-pr-mutation-gate.md",
+    "sha256": "714e0aaad07eb95a8514c157b893d5522e98e0468969fbeb09e27707449646c1",
+    "sourceRef": "brandon/mdp-300-design-the-fast-pr-mutation-gate-and-preserve-full-suite",
+    "sourceCommit": "fe7c79a35d89717b52c00619b445d4d7589374fe"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "MDP-300-implementation-fast-pr-mutation-gate",
+    "threadId": "01a058a5-eb09-7933-a4d1-03236e1bb032",
+    "initialDispatchHash": "f079c711db6457ced1e09262f703fe98b9d3d510bfa849270a579f73cf803510",
+    "repairDispatchHashes": [
+      "8772cb6ba4aa4a5e74d78dcf5dd0adcb13b72b1cbcc3c31204486a963ba06bcb",
+      "bbb979eedf827e13be94b9dc3744b15a2ead627362d9596207b2b2c9c48063d7",
+      "543a2365cb7f0cd6a756303f462b22840a6970df203fbed8003d349582c1aa4f"
+    ],
+    "implementationHead": "524d045cb1067132cadb9dfb7998de1aef51ca89"
+  },
+  "validation": {
+    "classifier": "Contract fixtures proved full, smoke, and skip routing, including irrelevant pull-request paths and conservative Cargo manifest/lockfile handling",
+    "smoke": "Pinned cargo-mutants 27.1.0 listed exactly four declared smoke candidates and executes their union in one invocation",
+    "complete": "The pinned contract proved the complete four-shard union is deterministic, disjoint, and equal to the unsharded focused selector",
+    "aggregate": "Contract fixtures proved only the valid smoke, skip, and full result tuples pass the stable authority-mutations aggregate",
+    "authoritativeNext": "Exact pull-request-head GitHub Actions is the authoritative hosted-runner and branch-protection proof"
+  },
+  "boundaries": {
+    "release": "Release publishing behavior is unchanged; release tags add a complete mutation assurance run in parallel",
+    "runner": "No runner-vendor, organization, billing, or GitHub App change was made",
+    "delivery": "No merge, release, deployment, installation, or branch-protection mutation was performed"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-300-fast-pr-mutation-gate",
+    "cumulativeBranch": "brandon/mdp-300-design-the-fast-pr-mutation-gate-and-preserve-full-suite",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "observedAt": "2026-08-31T16:49:30Z"
+}
