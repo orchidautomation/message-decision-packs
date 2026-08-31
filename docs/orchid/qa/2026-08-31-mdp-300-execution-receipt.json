@@ -22,15 +22,17 @@
     "repairDispatchHashes": [
       "8772cb6ba4aa4a5e74d78dcf5dd0adcb13b72b1cbcc3c31204486a963ba06bcb",
       "bbb979eedf827e13be94b9dc3744b15a2ead627362d9596207b2b2c9c48063d7",
-      "543a2365cb7f0cd6a756303f462b22840a6970df203fbed8003d349582c1aa4f"
+      "543a2365cb7f0cd6a756303f462b22840a6970df203fbed8003d349582c1aa4f",
+      "cb5c549cb83158004bc53150fd37c9e3c82f51197b8679ecfb118703b6ffc901"
     ],
-    "implementationHead": "524d045cb1067132cadb9dfb7998de1aef51ca89"
+    "implementationHead": "1591d60cede1852b001320bed56a003cdda0ea8b"
   },
   "validation": {
     "classifier": "Contract fixtures proved full, smoke, and skip routing, including irrelevant pull-request paths and conservative Cargo manifest/lockfile handling",
     "smoke": "Pinned cargo-mutants 27.1.0 listed exactly four declared smoke candidates and executes their union in one invocation",
     "complete": "The pinned contract proved the complete four-shard union is deterministic, disjoint, and equal to the unsharded focused selector",
     "aggregate": "Contract fixtures proved only the valid smoke, skip, and full result tuples pass the stable authority-mutations aggregate",
+    "workflowSyntax": "Checksum-verified Actionlint 1.7.12 passed the final authority workflow after repairing the smoke artifact mapping",
     "authoritativeNext": "Exact pull-request-head GitHub Actions is the authoritative hosted-runner and branch-protection proof"
   },
   "boundaries": {
