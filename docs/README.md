@@ -17,7 +17,8 @@ These are the current public docs:
 - [Native API Normalization Runner](native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
 - [Proof-Output Drafting](proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
 - [Agent Hook Guidance](agent-hook-guidance.md): safe activation and validation hooks.
-- [Distribution](distribution.md): Pluxx bundles, release assets, installers, and updates.
+- [Distribution](distribution.md): Pluxx portable-core and native bundles, compatibility evidence, release assets, installers, and updates.
+- [Pluxx Distribution Evaluation](pluxx-distribution-evaluation.md): the measured decision to further narrow claims and defaults while keeping Pluxx rather than switching.
 - [Skill Evals](skill-evals.md): skill trigger and output-eval fixtures.
 - [CLI Usage](../cli/USAGE.md): detailed commands; `mdp --json capabilities` is the machine-readable source of truth.
 - [Concepts](../CONCEPTS.md): canonical product, evidence, assurance, and public-safety vocabulary.

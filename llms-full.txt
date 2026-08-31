@@ -1,6 +1,6 @@
 # Message Decision Packs - Full Agent Context
 
-Last updated: 2026-08-13
+Last updated: 2026-08-31
 
 **MDP is versioned decision context for agents.** It is a local/offline file standard, Rust CLI, and agent plugin for making decision context explicit and testable. The compatible architectural shorthand is “decision/context layer.”
 
@@ -45,6 +45,14 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
 Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. The installer uses GitHub release assets and pairs agent instructions with the matching CLI. Rerun it to update or set `MDP_VERSION` to pin a release.
+
+MDP `0.1.101` publicly ships a separate Agent Plugins v1 package built with
+Pluxx `0.1.42`. The package contains exactly the five MDP skills and no portable
+MCP, hooks, scripts, assets, commands, or agents. Its installer requires an
+explicit absolute client-managed destination and fails closed on native-tree
+overlap or unknown ownership. Cursor has a documented local path but no real
+Cursor proof was available here. MDP does not guess an undocumented generic
+Codex import path.
 
 Verify:
 
@@ -179,7 +187,22 @@ Prompt contracts do not browse or execute. Source-strategy artifacts plan approv
 
 ## Plugin And Pluxx
 
-The full repository is the product/plugin source contract: CLI, docs, canonical templates/assets, authored skills under `plugin/skills`, install/release assets, and Pluxx config move together. Pluxx packages canonical source into release bundles for Claude Code, Cursor, Codex, and OpenCode. The MDP installer combines those bundles with the Rust CLI; Pluxx is not the MDP runtime or a hosted service.
+The full repository is the product/plugin source contract: CLI, docs, canonical
+templates/assets, authored skills under `plugin/skills`, install/release
+assets, and Pluxx config move together. Pluxx emits the released Agent Plugins
+portable skills floor and native release bundles for Claude Code, Cursor,
+Codex, and OpenCode. The generated portable `plugin.json` is an output, not the
+authored source. The MDP installer combines released bundles with the Rust CLI;
+Pluxx is not the MDP runtime or a hosted service.
+
+Portable and native proof are separate. The portable contract has exactly five
+skills and no MCP or hooks. Native bundles preserve proven hooks, scripts,
+assets, commands, host MCP wiring, registration, and verification. An isolated
+package copy proves contents and installer safety, not client discovery. Do not
+claim portable hooks or support for a conformant client without real installed
+behavior. The measured decision is **further narrow, do not switch**: keep
+Pluxx, keep the portable floor skills-only, retain Codex as native-only, and
+gate every other target or enhancement on repeatable real-host proof.
 
 MDP ships exactly five skills:
 
@@ -232,6 +255,7 @@ The example:
 - Native API Normalization Runner: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/native-api-normalization-runner.md>
 - Agent Hook Guidance: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md>
 - Distribution: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md>
+- Pluxx Distribution Evaluation: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/pluxx-distribution-evaluation.md>
 - CLI Usage: <https://github.com/orchidautomation/message-decision-packs/blob/main/cli/USAGE.md>
 
 Released agent context is available at <https://mdp.orchidlabs.dev/llms.txt> and <https://mdp.orchidlabs.dev/llms-full.txt>.

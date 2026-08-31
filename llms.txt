@@ -12,6 +12,12 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. Rerun the installer to update.
 
+MDP `0.1.101` publicly ships an Agent Plugins v1 artifact built with Pluxx
+`0.1.42`. It is exactly the five skills, with no portable MCP, hooks, scripts,
+assets, commands, or agents. Installation requires an explicit non-overlapping
+client-managed path. Cursor documents a local path but real Cursor discovery
+is not proven here; no undocumented generic Codex import path is guessed.
+
 ## Agent Workflow
 
 1. Load `.mdp/manifest.yaml` first.
@@ -69,7 +75,12 @@ Portfolio dimensions do not add primitives. A pack can declare product, capabili
 
 ## Plugin
 
-`plugin/` is the canonical source. Pluxx packages it for Claude Code, Cursor, Codex, and OpenCode; the public installer pairs those bundles with the matching Rust CLI.
+`plugin/` is the canonical source. Pluxx emits the released Agent Plugins
+portable skills floor and native Claude Code, Cursor, Codex, and OpenCode
+bundles; the public installer pairs released bundles with the matching Rust
+CLI. Portable package proof does not prove host discovery or native hooks. The
+current decision is to further narrow unsupported targets and enhancements,
+keep Pluxx, and keep Codex native-only rather than switch compilers.
 
 MDP ships exactly five skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, `mdp-gtm-brief`, and `mdp-proposal-review`. Use `mdp --json skills --dir <pack> --job <job-id>` to validate profile eligibility and the exact job route. Host discovery remains separate and host-managed.
 
@@ -90,6 +101,7 @@ MDP ships exactly five skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, `md
 - [Proof Output Drafting](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/proof-output-drafting.md)
 - [Agent Hook Guidance](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md)
 - [Distribution](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md)
+- [Pluxx Distribution Evaluation](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/pluxx-distribution-evaluation.md)
 - [CLI Usage](https://github.com/orchidautomation/message-decision-packs/blob/main/cli/USAGE.md)
 
 Use [llms-full.txt](https://github.com/orchidautomation/message-decision-packs/blob/main/llms-full.txt) for deeper operating context.

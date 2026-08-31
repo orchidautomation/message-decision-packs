@@ -38,6 +38,14 @@ curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
 
 The installer fetches the latest GitHub Release. `--cli` installs only the `mdp` binary for your platform. `--agents` installs the CLI once, then installs Pluxx-generated bundles for supported agent hosts. Single-host flags are also available: `--codex`, `--cursor`, `--claude-code`, and `--opencode`.
 
+MDP `0.1.101` also ships a separate Agent Plugins v1 skills package. Set
+`MDP_AGENT_PLUGINS_INSTALL_DIR` to an explicit absolute client-managed
+destination and pass `--agent-plugins`. The installer refuses native-tree
+overlaps and unknown nonempty destinations. There is no guessed generic Codex
+import path. Cursor's documented local path can be used only in portable-only
+mode, not together with `--agents` or `--cursor`. See
+[Distribution](distribution.md) for the exact boundary and evidence matrix.
+
 ## Verify
 
 ```bash
@@ -80,7 +88,12 @@ diagnostic messages are not copied into readiness output.
 
 If `mdp` is not found, make sure the install directory printed by the installer is on `PATH`, then restart your agent host.
 
-Supported agent bundles package activation and validation hooks where the host supports them: detect `.mdp/`, surface MDP guidance, then run focused validation after relevant pack edits. Do not make hooks silently generate full briefs, enrich leads, or write private scratch outside documented ignored paths. See [Agent Hook Guidance](agent-hook-guidance.md).
+Native agent bundles package activation and validation hooks where the host
+supports and proves them: detect `.mdp/`, surface MDP guidance, then run focused
+validation after relevant pack edits. The Agent Plugins portable package has no
+hooks or portable MCP declaration. Do not make hooks silently generate full
+briefs, enrich leads, or write private scratch outside documented ignored
+paths. See [Agent Hook Guidance](agent-hook-guidance.md).
 
 ## Run Outside The Authoring Conversation
 
@@ -517,3 +530,7 @@ npx skills add https://github.com/orchidautomation/message-decision-packs --skil
 ```
 
 This does not install the `mdp` CLI. Use the MDP installer for the full CLI plus agent bundle setup.
+
+This legacy skills-only path is not evidence that a client supports or
+discovers the released Agent Plugins package. Treat host discovery, portable
+package placement, and CLI installation as separate checks.

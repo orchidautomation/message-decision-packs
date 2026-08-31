@@ -32,6 +32,15 @@ The installer uses the latest
 [GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 so the CLI and agent instructions remain version-aligned.
 
+MDP `0.1.101` now ships a Pluxx-emitted Agent Plugins v1 portable skills
+package alongside the four native bundles. The portable package has exactly
+the five MDP skills and no portable MCP or hooks. It requires an explicit,
+non-overlapping client-managed destination; MDP does not guess an undocumented
+generic Codex import path. Publication and isolated installation are verified;
+real client discovery remains a separate host-specific proof. See
+[Distribution](docs/distribution.md) for the evidence matrix and install
+contract.
+
 ## Quick Start
 
 Create and inspect a synthetic GTM pack:
@@ -118,9 +127,12 @@ examples/ synthetic integrations and contract fixtures
 scripts/  validation, packaging, and compatibility tooling
 ```
 
-`plugin/skills/` is the authored skill source. Pluxx packages that source for
-supported agent hosts; it is the distribution layer, not the MDP runtime or a
-hosted MDP service.
+`plugin/skills/` is the authored skill source. Pluxx packages that source into
+the released Agent Plugins portable skills floor and the native Claude Code,
+Cursor, Codex, and OpenCode bundles. It is the distribution layer, not the MDP
+runtime or a hosted MDP service. Portable package proof and native enhancement
+proof remain separate. The measured distribution decision is to further narrow
+unsupported claims and defaults while keeping Pluxx rather than switching.
 
 ## Documentation
 
@@ -133,6 +145,7 @@ hosted MDP service.
 - [Native Model Runner](docs/native-api-normalization-runner.md)
 - [Extension Boundary](docs/extension-boundary.md)
 - [Distribution](docs/distribution.md)
+- [Pluxx Distribution Evaluation](docs/pluxx-distribution-evaluation.md)
 - [CLI Usage](cli/USAGE.md)
 
 Agents can use [llms.txt](llms.txt) for a short briefing or
