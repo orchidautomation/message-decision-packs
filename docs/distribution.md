@@ -5,15 +5,19 @@ contracts, templates, docs, and skills stay version-aligned. Pluxx remains the
 compiler and distribution layer: maintainers author one source in this repo,
 and Pluxx emits both a portable skills floor and host-native bundles.
 
-## Release-state warning
+## Shipped release evidence
 
-The Agent Plugins path described below is prepared in repository source for
-the intended MDP `0.1.96` release. It is **not a public installed capability
-yet**. Publication is gated on the verified public
-`@orchid-labs/pluxx@0.1.42` package, a clean MDP release, and installed consumer
-proof. The latest public installer can therefore remain older than this source
-documentation. Check the [latest GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
-before using a version-specific command.
+MDP `0.1.101` was released from source commit
+`9168539388555394e049a1202933032701104db2` by
+[release run 33412887825](https://github.com/orchidautomation/message-decision-packs/actions/runs/33412887825).
+The public release contains one Agent Plugins portable archive and the four
+native Claude Code, Cursor, Codex, and OpenCode archives. Its manifest SHA-256
+is `52319eb97b9a2503b5116bd4b0791d8353f81596b6d10217bb811697181dcfc8`;
+the portable archive SHA-256 is
+`ec96247e2aa680d599cc60f247595c22d30ebcc33246da6503c64c014a0e13bb`.
+Release checksums, the public installer/asset match, and an isolated install
+reporting `mdp 0.1.101` were verified. This proves publication, package shape,
+and safe isolated placement—not discovery by every conformant client.
 
 ## Public install
 
@@ -45,16 +49,16 @@ selector, and fails unless Codex reports the plugin installed and enabled.
 Restart Codex after installation so its skills, hooks, and MCP declaration are
 loaded in a fresh process.
 
-## Prepared portable install contract
+## Portable install contract
 
-After MDP `0.1.96` is publicly released, its installer is intended to expose
-the portable artifact with `--agent-plugins`. The destination is deliberately
-explicit because compatible clients do not share one proven install root:
+MDP `0.1.101` exposes the portable artifact with `--agent-plugins`. The
+destination is deliberately explicit because compatible clients do not share
+one proven install root:
 
 ```bash
 MDP_AGENT_PLUGINS_INSTALL_DIR=/absolute/client-managed/path/message-decision-packs \
   bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) \
-  --agent-plugins --version 0.1.96 -y
+  --agent-plugins --version 0.1.101 -y
 ```
 
 `--agents` keeps the four native installs. It adds the portable artifact only
@@ -75,10 +79,11 @@ Cursor documents local plugin import under
 `~/.cursor/plugins/local/<name>`. Use that native location only with
 portable-only `--agent-plugins` mode; never combine it with `--agents` or
 `--cursor`, which select the native Cursor bundle at the same location. This
-repository has package and isolated-fixture proof for the prepared artifact,
-but no real Cursor binary was available for installed discovery proof.
+repository has public package and isolated-fixture proof for the released
+artifact, but no real Cursor binary was available for installed discovery
+proof.
 
-MDP does not guess a Codex root-level Agent Plugins import path. The prepared
+MDP does not guess an undocumented generic Codex Agent Plugins import path. The
 installer accepts an explicit client-managed path, but that is artifact
 placement—not proof that Codex discovers it. Continue using the proven native
 Codex installer until current first-party Codex documentation and installed
@@ -86,7 +91,7 @@ behavior establish a portable import path.
 
 ## Portable core and native enhancements
 
-The prepared Agent Plugins v1.0.0 package is intentionally narrow:
+The released Agent Plugins v1.0.0 package is intentionally narrow:
 
 - exactly five immediate-child skills: `mdp`, `mdp-pack-builder`,
   `mdp-pack-review`, `mdp-gtm-brief`, and `mdp-proposal-review`;
@@ -108,7 +113,7 @@ load, or run it.
 
 | Consumer/path | Portable skills floor | Portable MCP | Native enhancements | Install/discovery evidence |
 | --- | --- | --- | --- | --- |
-| Agent Plugins v1 package | Prepared: exact five-skill artifact | None declared | None in portable artifact | Local schema, inventory, archive, manifest, and isolated destination proof only; unpublished |
+| Agent Plugins v1 package | Released: exact five-skill artifact | None declared | None in portable artifact | Public archive, checksums, manifest, and isolated destination/install proof |
 | Cursor portable import | Format candidate; documented client-local root | None declared | Not through the portable artifact | Cursor documents `~/.cursor/plugins/local/<name>`; real Cursor discovery was not available in this environment |
 | Codex portable import | Format candidate only | None declared | Not through the portable artifact | No documented root local-import path was established; MDP refuses to guess one |
 | VS Code / GitHub Copilot and other conformant clients | Spec-level candidates only | None declared | None claimed | No MDP installed-consumer proof; do not treat format conformance as support |
@@ -123,10 +128,9 @@ discovery. Native hook behavior is claimed only from the corresponding native
 bundle and its host-specific evidence; there is no Agent Plugins client-hook
 extension claim.
 
-## What ships after the gated release
+## What ships
 
-When the prepared release passes its public gates, one MDP release is intended
-to contain:
+The MDP `0.1.101` release contains:
 
 - platform-specific `mdp` CLI binaries;
 - Pluxx-generated native bundles and installers for Claude Code, Cursor, Codex,
@@ -147,8 +151,9 @@ actions. Pluxx does not replace the Rust CLI, and the plugin does not hide a
 separate hosted runtime.
 
 The tag, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests must use the
-same semantic version. The public Pluxx npm artifact and registry integrity
-must replace any local release-preparation binding before MDP publication.
+same semantic version. MDP `0.1.101` is bound to public
+`@orchid-labs/pluxx@0.1.42`, registry integrity
+`sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw==`.
 
 ## Agent-readable context
 

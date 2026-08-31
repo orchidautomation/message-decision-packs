@@ -32,14 +32,14 @@ The installer uses the latest
 [GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 so the CLI and agent instructions remain version-aligned.
 
-Repository source is also preparing a Pluxx-emitted Agent Plugins v1 portable
-skills package for the intended MDP `0.1.96` release. It is not public or
-installed proof yet: public `@orchid-labs/pluxx@0.1.42`, the MDP release, and
-real consumer discovery remain gates. The portable package has exactly the
-five MDP skills and no portable MCP or hooks. It requires an explicit,
-non-overlapping client-managed destination; MDP does not guess a Codex import
-path. See [Distribution](docs/distribution.md) for the evidence matrix and
-prepared install contract.
+MDP `0.1.101` now ships a Pluxx-emitted Agent Plugins v1 portable skills
+package alongside the four native bundles. The portable package has exactly
+the five MDP skills and no portable MCP or hooks. It requires an explicit,
+non-overlapping client-managed destination; MDP does not guess an undocumented
+generic Codex import path. Publication and isolated installation are verified;
+real client discovery remains a separate host-specific proof. See
+[Distribution](docs/distribution.md) for the evidence matrix and install
+contract.
 
 ## Quick Start
 
@@ -128,7 +128,7 @@ scripts/  validation, packaging, and compatibility tooling
 ```
 
 `plugin/skills/` is the authored skill source. Pluxx packages that source into
-the prepared Agent Plugins portable skills floor and the native Claude Code,
+the released Agent Plugins portable skills floor and the native Claude Code,
 Cursor, Codex, and OpenCode bundles. It is the distribution layer, not the MDP
 runtime or a hosted MDP service. Portable package proof and native enhancement
 proof remain separate.

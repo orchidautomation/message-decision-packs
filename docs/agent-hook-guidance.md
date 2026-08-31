@@ -17,7 +17,7 @@ The Pluxx source config packages this behavior as bundled command hooks for supp
 
 ## Portable package boundary
 
-The Agent Plugins v1 artifact prepared for MDP `0.1.96` is a portable skills
+The Agent Plugins v1 artifact released with MDP `0.1.101` is a portable skills
 floor, not a hook overlay. It contains exactly five skills and no hooks,
 scripts, assets, native commands, or portable MCP declaration. Hook behavior
 described below belongs only to the Pluxx-generated native bundles and must be
@@ -90,9 +90,9 @@ context across sessions without a reliable identity.
 ### Native host evidence table
 
 Installed behavioral proof or an explicit reliable-session-identity
-degradation must be present for each supported native host. The `0.1.42` rows
-below describe prepared source evidence and remain gated on public Pluxx and
-MDP releases:
+degradation must be present for each supported native host. Pluxx `0.1.42` and
+MDP `0.1.101` provide public package, archive, manifest, checksum, and isolated
+install evidence; real-host behavior remains a distinct proof tier:
 
 | Host          | Session identity source           | Compact path evidence                                            |
 | ------------- | --------------------------------- | ---------------------------------------------------------------- |

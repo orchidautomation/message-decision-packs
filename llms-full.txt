@@ -46,14 +46,13 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. The installer uses GitHub release assets and pairs agent instructions with the matching CLI. Rerun it to update or set `MDP_VERSION` to pin a release.
 
-The source tree prepares a separate Agent Plugins v1 package for intended MDP
-`0.1.96`, gated on the verified public Pluxx `0.1.42` package and a new MDP
-release. It is not current public/install evidence. The package contains
-exactly the five MDP skills and no portable MCP, hooks, scripts, assets,
-commands, or agents. Its installer requires an explicit absolute
-client-managed destination and fails closed on native-tree overlap or unknown
-ownership. Cursor has a documented local path but no real Cursor proof was
-available here. MDP does not guess a Codex root import path.
+MDP `0.1.101` publicly ships a separate Agent Plugins v1 package built with
+Pluxx `0.1.42`. The package contains exactly the five MDP skills and no portable
+MCP, hooks, scripts, assets, commands, or agents. Its installer requires an
+explicit absolute client-managed destination and fails closed on native-tree
+overlap or unknown ownership. Cursor has a documented local path but no real
+Cursor proof was available here. MDP does not guess an undocumented generic
+Codex import path.
 
 Verify:
 
@@ -190,7 +189,7 @@ Prompt contracts do not browse or execute. Source-strategy artifacts plan approv
 
 The full repository is the product/plugin source contract: CLI, docs, canonical
 templates/assets, authored skills under `plugin/skills`, install/release
-assets, and Pluxx config move together. Pluxx emits the prepared Agent Plugins
+assets, and Pluxx config move together. Pluxx emits the released Agent Plugins
 portable skills floor and native release bundles for Claude Code, Cursor,
 Codex, and OpenCode. The generated portable `plugin.json` is an output, not the
 authored source. The MDP installer combines released bundles with the Rust CLI;
