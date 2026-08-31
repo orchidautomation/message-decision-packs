@@ -53,6 +53,8 @@ const parseChecksums = (filepath) =>
 
 const pluxxBin = process.argv[2]
 assert(pluxxBin && existsSync(pluxxBin), 'Pass the exact Pluxx executable path as the first argument.')
+const pluxxCommand = pluxxBin.endsWith('.js') ? process.execPath : pluxxBin
+const pluxxPrefix = pluxxBin.endsWith('.js') ? [pluxxBin] : []
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourceVersion = JSON.parse(
@@ -65,12 +67,12 @@ assert(
   'Release workflow must publish once so generated manifest entries are not duplicated.',
 )
 assert(
-  releaseWorkflow.includes('npm pack @orchid-labs/pluxx@0.1.41') &&
+  releaseWorkflow.includes('npm pack @orchid-labs/pluxx@0.1.42') &&
     releaseWorkflow.includes('npm install -g "$pluxx_tarball_path"') &&
     releaseWorkflow.includes(
-      'sha512-m08Sr20N2SzohxySOSETpuQQlVVEFqyubreONy2KTWvzz4JHr4nPueXgOmYJeKC1Tmuij3Odqwk767hvhK+YcA==',
+      'sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw==',
     ),
-  'Release workflow must hash and install the same exact Pluxx 0.1.41 tarball.',
+  'Release workflow must hash and install the same exact Pluxx 0.1.42 tarball.',
 )
 assert(
   releaseWorkflow.includes('npm pack @openai/codex@0.148.0') &&
@@ -141,19 +143,28 @@ const assets = () => fs.existsSync(releaseRoot)
 if (args[0] === 'auth' && args[1] === 'status') process.exit(0)
 
 if (args[0] === 'release' && args[1] === 'view') {
-  if (args.includes('tagName,assets')) {
-    process.stdout.write(JSON.stringify({ tagName: args[2], assets: assets() }))
+  if (args.includes('assets') || args.includes('tagName,assets')) {
+    fs.writeSync(1, JSON.stringify({ tagName: args[2], assets: assets() }))
     process.exit(0)
   }
-  process.stderr.write('release not found')
+  process.stderr.write('unexpected release view')
   process.exit(1)
+}
+
+if (args[0] === 'release' && args[1] === 'upload') {
+  for (const filepath of args.slice(3)) {
+    if (filepath.startsWith('--') || !fs.existsSync(filepath)) continue
+    fs.copyFileSync(filepath, path.join(releaseRoot, path.basename(filepath)))
+  }
+  fs.writeSync(1, 'captured reconciled release assets')
+  process.exit(0)
 }
 
 if (args[0] === 'release' && args[1] === 'create') {
   const optionIndex = args.findIndex((value, index) => index > 2 && value.startsWith('--'))
   const files = args.slice(3, optionIndex === -1 ? args.length : optionIndex)
   for (const filepath of files) fs.copyFileSync(filepath, path.join(releaseRoot, path.basename(filepath)))
-  process.stdout.write('captured generated release assets')
+  fs.writeSync(1, 'captured generated release assets')
   process.exit(0)
 }
 
@@ -285,8 +296,8 @@ try {
     PLUXX_TEST_RELEASE_ROOT: remoteReleaseRoot,
   }
   const publish = run(
-    pluxxBin,
-    ['publish', '--github-release', '--allow-dirty', '--json'],
+    pluxxCommand,
+    [...pluxxPrefix, 'publish', '--github-release', '--allow-dirty', '--json'],
     { cwd: root, environment: publishEnvironment },
   )
   const publishResult = JSON.parse(publish.stdout)
@@ -302,7 +313,7 @@ try {
   const archivePlatforms = manifest.assets.archives.map((archive) => archive.platform)
   const builtPlatforms = [...new Set(archivePlatforms)].sort()
   assert(
-    JSON.stringify(builtPlatforms) === JSON.stringify(['claude-code', 'codex', 'cursor', 'opencode']),
+    JSON.stringify(builtPlatforms) === JSON.stringify(['agent-plugins', 'claude-code', 'codex', 'cursor', 'opencode']),
     `Release manifest must include every supported host bundle; got ${builtPlatforms.join(', ')}.`,
   )
   const packageManifest = JSON.parse(readFileSync(join(root, 'dist/opencode/package.json'), 'utf8'))
@@ -330,7 +341,7 @@ try {
   const finalizedPlatforms = finalizedManifest.assets.archives.map((archive) => archive.platform)
   assert(
     JSON.stringify(finalizedPlatforms) ===
-      JSON.stringify(['claude-code', 'cursor', 'codex', 'opencode']) &&
+      JSON.stringify(['claude-code', 'cursor', 'codex', 'opencode', 'agent-plugins']) &&
       new Set(finalizedPlatforms).size === finalizedPlatforms.length,
     `Finalized release manifest must list each host archive once; got ${finalizedPlatforms.join(', ')}.`,
   )
@@ -348,6 +359,19 @@ try {
         (tree) => Array.isArray(tree.files) && tree.files.length > 0 && /^[a-f0-9]{64}$/.test(tree.sha256),
       ),
     'Finalized release manifest must bind complete generated plugin trees.',
+  )
+  assert(
+    finalizedManifest.portable_packages?.['agent-plugins']?.contract ===
+      'mdp.agent-plugins-portable-package.v1' &&
+      finalizedManifest.portable_packages['agent-plugins'].specification === '1.0.0' &&
+      JSON.stringify(finalizedManifest.portable_packages['agent-plugins'].skills) ===
+        JSON.stringify(['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review']) &&
+      JSON.stringify(finalizedManifest.portable_packages['agent-plugins'].mcp_servers) === '[]' &&
+      finalizedManifest.portable_packages['agent-plugins'].files.every(
+        (entry) => !entry.path.startsWith('hooks/') && !entry.path.startsWith('scripts/') && !entry.path.startsWith('mcp.json'),
+      ) &&
+      /^[a-f0-9]{64}$/.test(finalizedManifest.portable_packages['agent-plugins'].sha256),
+    'Finalized release manifest must bind the strict five-skill Agent Plugins portable package separately from native trees.',
   )
   assert(
     Object.values(finalizedManifest.plugin_trees).every((tree) =>
@@ -379,6 +403,11 @@ try {
   assert(
     finalizedChecksums.get('install-codex.sh') === sha256(join(releaseRoot, 'install-codex.sh')),
     'Finalized checksums must bind the patched native Codex installer.',
+  )
+  assert(
+    finalizedChecksums.get('message-decision-packs-agent-plugins-latest.tar.gz') ===
+      sha256(join(releaseRoot, 'message-decision-packs-agent-plugins-latest.tar.gz')),
+    'Finalized checksums must bind the portable Agent Plugins archive.',
   )
   const omittedChecksumRoot = join(tempRoot, 'omitted-codex-installer-checksum')
   cpSync(releaseRoot, omittedChecksumRoot, { recursive: true })
@@ -744,7 +773,7 @@ try {
   ]) {
     delete hookEnvironment[name]
   }
-  // Pluxx 0.1.41's installed OpenCode wrapper receives input.sessionID but
+  // Pluxx 0.1.42's installed OpenCode wrapper receives input.sessionID but
   // does not project it into the hook environment or stdin. Exercise the
   // native chat.message path and prove MDP degrades safely instead of
   // suppressing activation across unrelated OpenCode sessions.

@@ -13,6 +13,7 @@ from pathlib import Path
 
 
 HOSTS = ("claude-code", "cursor", "codex", "opencode")
+PORTABLE_TARGET = "agent-plugins"
 CORPUS_ROOT = Path("plugin/skill-evals")
 GENERATED_INVENTORIES = {
     "codex": ".codex/skills.generated.json",
@@ -335,6 +336,45 @@ def validate_generated_inventory(
         )
 
 
+def validate_agent_plugins_bundle(
+    source: Path, dist: Path, expected: list[str], errors: list[str]
+) -> None:
+    root = dist / PORTABLE_TARGET
+    if not root.is_dir():
+        errors.append(f"missing generated portable package: {root}")
+        return
+
+    reject_symlinks(root, PORTABLE_TARGET, errors)
+    allowed = {"plugin.json", "skills"}
+    if (root / "mcp.json").exists():
+        allowed.add("mcp.json")
+    actual_top = {path.name for path in root.iterdir()}
+    for name in sorted(actual_top - allowed):
+        errors.append(f"{PORTABLE_TARGET} has native-only or unexpected top-level entry: {name}")
+    for name in sorted(allowed - actual_top):
+        errors.append(f"{PORTABLE_TARGET} missing required top-level entry: {name}")
+
+    manifest = load_json(root / "plugin.json", errors)
+    if manifest.get("$schema") != "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json":
+        errors.append(f"{PORTABLE_TARGET} plugin.json must bind the Agent Plugins 1.0.0 schema")
+    if manifest.get("name") != "message-decision-packs":
+        errors.append(f"{PORTABLE_TARGET} plugin.json name drift")
+
+    skills_root = root / "skills"
+    actual = skill_inventory(skills_root, errors)
+    if actual != expected:
+        errors.append(
+            f"{PORTABLE_TARGET} skill inventory drift: expected {expected}, found {actual}"
+        )
+    if skills_root.is_dir():
+        compare_bundle(source, skills_root, PORTABLE_TARGET, errors)
+
+    # MDP has no explicitly adopted portable MCP declaration. A generated MCP
+    # file would be a false product claim even though the generic spec permits it.
+    if (root / "mcp.json").exists():
+        errors.append(f"{PORTABLE_TARGET} must not claim mcp.json without an MDP declaration")
+
+
 def validate_current_agent_surfaces(errors: list[str]) -> None:
     for path in CURRENT_AGENT_SURFACES:
         if not path.is_file():
@@ -404,12 +444,13 @@ def main() -> int:
             validate_native_helpers(args.source, args.dist / host, host, errors)
         for host in GENERATED_INVENTORIES:
             validate_generated_inventory(args.dist, host, expected, errors)
+        validate_agent_plugins_bundle(args.source, args.dist, expected, errors)
 
     result = {
         "model": "mdp.skill-packaging-validation.v1",
         "source": str(args.source),
         "skills": expected,
-        "hosts": list(HOSTS) if args.require_bundles else [],
+        "hosts": (list(HOSTS) + [PORTABLE_TARGET]) if args.require_bundles else [],
         "valid": not errors,
         "errors": errors,
     }

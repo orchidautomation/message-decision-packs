@@ -94,6 +94,8 @@ claude_plugin_root="$claude_marketplace_root/plugins/message-decision-packs"
 codex_plugin_root="$codex_home/plugins/message-decision-packs"
 cursor_plugin_root="$install_home/.cursor/plugins/local/message-decision-packs"
 opencode_plugin_root="$install_home/.config/opencode/plugins/message-decision-packs"
+portable_cursor_fixture="$install_home/compatible-client-fixtures/cursor/message-decision-packs"
+portable_codex_fixture="$install_home/compatible-client-fixtures/codex/message-decision-packs"
 mkdir -p "$fake_bin"
 cat > "$fake_bin/claude" <<'EOF'
 #!/usr/bin/env bash
@@ -121,6 +123,7 @@ PLUXX_OPENCODE_ENTRY_PATH="$install_home/.config/opencode/plugins/message-decisi
 PLUXX_OPENCODE_SKILLS_ROOT="$install_home/.config/opencode/skills" \
 PLUXX_INSTALL_LOCK_ROOT="$install_home/.pluxx/install-locks" \
 PLUXX_RUNTIME_STORE_ROOT="$install_home/.pluxx/runtimes" \
+MDP_AGENT_PLUGINS_INSTALL_DIR="$portable_cursor_fixture" \
   bash "$installer" --version "$version" "${install_args[@]}"
 
 mdp_bin="$install_dir/mdp"
@@ -238,6 +241,93 @@ for host_root in \
     fi
   done
 done
+
+if [ ! -f "$portable_cursor_fixture/plugin.json" ]; then
+  echo "Installed release is missing the Agent Plugins portable package fixture." >&2
+  exit 1
+fi
+rm -rf "$portable_codex_fixture"
+mkdir -p "$(dirname "$portable_codex_fixture")"
+cp -R "$portable_cursor_fixture" "$portable_codex_fixture"
+node - "$portable_cursor_fixture" "$portable_codex_fixture" <<'NODE'
+const { createHash } = require('crypto')
+const { lstatSync, readFileSync, readdirSync } = require('fs')
+const { join, relative } = require('path')
+const roots = process.argv.slice(2)
+const expectedSkills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
+const inspect = (root) => {
+  const top = readdirSync(root).sort()
+  if (JSON.stringify(top) !== JSON.stringify(['plugin.json', 'skills'])) {
+    throw new Error(`Portable package has native-only or unexpected top-level entries: ${top.join(', ')}`)
+  }
+  const plugin = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8'))
+  if (
+    plugin.$schema !== 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' ||
+    plugin.name !== 'message-decision-packs'
+  ) throw new Error('Portable plugin.json does not match the Agent Plugins 1.0.0 MDP contract.')
+  const skillsRoot = join(root, 'skills')
+  const skills = readdirSync(skillsRoot).filter((name) => lstatSync(join(skillsRoot, name)).isDirectory()).sort()
+  if (JSON.stringify(skills) !== JSON.stringify(expectedSkills)) {
+    throw new Error(`Portable package skill inventory drift: ${skills.join(', ')}`)
+  }
+  const records = []
+  const walk = (directory) => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = join(directory, name)
+      const stats = lstatSync(path)
+      if (stats.isSymbolicLink()) throw new Error(`Portable package contains a symbolic link: ${path}`)
+      if (stats.isDirectory()) walk(path)
+      else if (stats.isFile()) records.push({
+        path: relative(root, path).split('\\').join('/'),
+        executable: (stats.mode & 0o111) !== 0,
+        sha256: sha256(readFileSync(path)),
+      })
+      else throw new Error(`Portable package contains a non-regular entry: ${path}`)
+    }
+  }
+  walk(root)
+  return { skills, sha256: sha256(Buffer.from(`${JSON.stringify(records)}\n`)) }
+}
+const cursor = inspect(roots[0])
+const codex = inspect(roots[1])
+if (JSON.stringify(cursor) !== JSON.stringify(codex)) {
+  throw new Error('Cursor- and Codex-labelled portable fixtures do not discover the same artifact.')
+}
+console.log(`Portable compatible-client fixture proof passed: sha256=${cursor.sha256}`)
+NODE
+
+if [ "${MDP_RELEASE_REQUIRE_STAGED_PARITY:-0}" = "1" ]; then
+  node - "$release_manifest" "$portable_cursor_fixture" <<'NODE'
+const { createHash } = require('crypto')
+const { lstatSync, readFileSync, readdirSync } = require('fs')
+const { join, relative } = require('path')
+const [manifestPath, root] = process.argv.slice(2)
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
+const records = []
+const walk = (directory) => {
+  for (const name of readdirSync(directory).sort()) {
+    const path = join(directory, name)
+    const stats = lstatSync(path)
+    if (stats.isDirectory()) walk(path)
+    else if (stats.isFile()) records.push({
+      path: relative(root, path).split('\\').join('/'),
+      executable: (stats.mode & 0o111) !== 0,
+      sha256: sha256(readFileSync(path)),
+    })
+  }
+}
+walk(root)
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+const portable = manifest?.portable_packages?.['agent-plugins']
+const treeSha = sha256(Buffer.from(`${JSON.stringify(records)}\n`))
+if (
+  portable?.contract !== 'mdp.agent-plugins-portable-package.v1' ||
+  portable?.sha256 !== treeSha ||
+  JSON.stringify(portable.files) !== JSON.stringify(records)
+) throw new Error('Installed portable fixture differs from the staged release manifest.')
+NODE
+fi
 
 for reference_root in "$claude_plugin_root" "$cursor_plugin_root" "$opencode_plugin_root"; do
   for common_tree in scripts skills assets skill-evals; do

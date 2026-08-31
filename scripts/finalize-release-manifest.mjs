@@ -28,7 +28,9 @@ for (const archive of archives) {
   byPlatform.set(platform, archive)
 }
 
-const expectedPlatforms = ['claude-code', 'cursor', 'codex', 'opencode']
+const nativePlatforms = ['claude-code', 'cursor', 'codex', 'opencode']
+const portablePlatform = 'agent-plugins'
+const expectedPlatforms = [...nativePlatforms, portablePlatform]
 const actualPlatforms = [...byPlatform.keys()].sort()
 if (JSON.stringify(actualPlatforms) !== JSON.stringify([...expectedPlatforms].sort())) {
   throw new Error(
@@ -76,15 +78,73 @@ const treeManifest = (root) => {
 }
 
 const hostTrees = {}
-for (const platform of expectedPlatforms) {
+for (const platform of nativePlatforms) {
   const root = join(process.cwd(), 'dist', platform)
   if (existsSync(root)) hostTrees[platform] = treeManifest(root)
 }
 if (Object.keys(hostTrees).length > 0) {
-  if (Object.keys(hostTrees).length !== expectedPlatforms.length) {
+  if (Object.keys(hostTrees).length !== nativePlatforms.length) {
     throw new Error('Generated plugin tree inventory is incomplete.')
   }
   manifest.plugin_trees = hostTrees
+}
+
+const portableRoot = join(process.cwd(), 'dist', portablePlatform)
+if (!existsSync(portableRoot)) {
+  throw new Error('Generated Agent Plugins portable package is missing.')
+}
+{
+  const expectedSkills = [
+    'mdp',
+    'mdp-gtm-brief',
+    'mdp-pack-builder',
+    'mdp-pack-review',
+    'mdp-proposal-review',
+  ]
+  const topLevel = readdirSync(portableRoot).sort()
+  const allowedTopLevel = ['plugin.json', 'skills']
+  if (existsSync(join(portableRoot, 'mcp.json'))) allowedTopLevel.push('mcp.json')
+  if (JSON.stringify(topLevel) !== JSON.stringify(allowedTopLevel.sort())) {
+    throw new Error(
+      `Agent Plugins package has native-only or unexpected top-level content: ${topLevel.join(', ')}.`,
+    )
+  }
+
+  const pluginManifest = JSON.parse(readFileSync(join(portableRoot, 'plugin.json'), 'utf8'))
+  if (
+    pluginManifest?.$schema !== 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' ||
+    pluginManifest?.name !== 'message-decision-packs' ||
+    pluginManifest?.version !== manifest?.plugin?.version
+  ) {
+    throw new Error('Agent Plugins plugin.json does not match the MDP release identity.')
+  }
+
+  const skillsRoot = join(portableRoot, 'skills')
+  const skills = readdirSync(skillsRoot)
+    .filter((name) => lstatSync(join(skillsRoot, name)).isDirectory())
+    .sort()
+  if (JSON.stringify(skills) !== JSON.stringify([...expectedSkills].sort())) {
+    throw new Error(`Agent Plugins package skill inventory is not the five supported MDP skills: ${skills.join(', ')}.`)
+  }
+  for (const skill of skills) {
+    if (!existsSync(join(skillsRoot, skill, 'SKILL.md'))) {
+      throw new Error(`Agent Plugins package is missing skills/${skill}/SKILL.md.`)
+    }
+  }
+
+  if (existsSync(join(portableRoot, 'mcp.json'))) {
+    throw new Error('MDP does not declare portable MCP; generated agent-plugins/mcp.json is unexpected.')
+  }
+
+  manifest.portable_packages = {
+    [portablePlatform]: {
+      contract: 'mdp.agent-plugins-portable-package.v1',
+      specification: '1.0.0',
+      skills,
+      mcp_servers: [],
+      ...treeManifest(portableRoot),
+    },
+  }
 }
 
 const releaseRoot = dirname(manifestPath)

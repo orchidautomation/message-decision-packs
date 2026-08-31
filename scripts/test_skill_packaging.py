@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import tempfile
 import unittest
@@ -149,6 +150,53 @@ class SkillPackagingMutationTests(unittest.TestCase):
                 ROOT / "plugin/skills", bundle, "test", errors
             )
         self.assertTrue(any("missing referenced helper" in error for error in errors))
+
+    def test_agent_plugins_bundle_accepts_only_five_canonical_skills(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-agent-plugins-") as temp:
+            dist = Path(temp) / "dist"
+            portable = dist / "agent-plugins"
+            shutil.copytree(ROOT / "plugin/skills", portable / "skills")
+            (portable / "plugin.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                        "name": "message-decision-packs",
+                        "version": "0.1.96",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            PACKAGING.validate_agent_plugins_bundle(
+                ROOT / "plugin/skills", dist, self.expected_skills(), errors
+            )
+        self.assertEqual(errors, [])
+
+    def test_agent_plugins_bundle_rejects_native_payload_and_false_mcp(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-agent-plugins-") as temp:
+            dist = Path(temp) / "dist"
+            portable = dist / "agent-plugins"
+            shutil.copytree(ROOT / "plugin/skills", portable / "skills")
+            (portable / "plugin.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                        "name": "message-decision-packs",
+                        "version": "0.1.96",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (portable / "hooks").mkdir()
+            (portable / "mcp.json").write_text("{}\n", encoding="utf-8")
+            errors: list[str] = []
+            PACKAGING.validate_agent_plugins_bundle(
+                ROOT / "plugin/skills", dist, self.expected_skills(), errors
+            )
+        self.assertTrue(any("native-only or unexpected" in error for error in errors))
+        self.assertTrue(any("must not claim mcp.json" in error for error in errors))
 
     def test_wrong_destination_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-packaging-") as temp:
