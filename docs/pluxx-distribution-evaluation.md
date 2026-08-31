@@ -4,10 +4,11 @@ This document is the evidence worksheet for deciding whether MDP should
 **keep**, **further narrow**, or **switch away from** its current Pluxx
 distribution model. It does not record a final verdict yet.
 
-## Current decision state
+## Current proof state
 
-Keep Pluxx through the current proof cycle. MDP remains authored once, while
-Pluxx emits:
+Continue the current prepared Pluxx proof cycle without selecting **keep**,
+**further narrow**, or **switch**. MDP remains authored once, while Pluxx
+prepares to emit:
 
 1. a narrow Agent Plugins v1.0.0 portable skills package for conformant
    clients; and
