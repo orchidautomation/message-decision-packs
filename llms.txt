@@ -78,7 +78,9 @@ Portfolio dimensions do not add primitives. A pack can declare product, capabili
 `plugin/` is the canonical source. Pluxx emits the released Agent Plugins
 portable skills floor and native Claude Code, Cursor, Codex, and OpenCode
 bundles; the public installer pairs released bundles with the matching Rust
-CLI. Portable package proof does not prove host discovery or native hooks.
+CLI. Portable package proof does not prove host discovery or native hooks. The
+current decision is to further narrow unsupported targets and enhancements,
+keep Pluxx, and keep Codex native-only rather than switch compilers.
 
 MDP ships exactly five skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, `mdp-gtm-brief`, and `mdp-proposal-review`. Use `mdp --json skills --dir <pack> --job <job-id>` to validate profile eligibility and the exact job route. Host discovery remains separate and host-managed.
 

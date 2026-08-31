@@ -213,9 +213,9 @@ A merged PR is not a shipped release. From clean current `main`:
 7. Distinguish repository source, GitHub release artifacts, and active
    installed version in closeout.
 
-The post-proof keep/further-narrow/switch evaluation lives in
-[Pluxx Distribution Evaluation](pluxx-distribution-evaluation.md). It is a
-decision gate, not a preselected verdict.
+The measured keep/further-narrow/switch evaluation lives in
+[Pluxx Distribution Evaluation](pluxx-distribution-evaluation.md). Its current
+decision is **further narrow: keep Pluxx; do not switch**.
 
 ## Boundaries
 

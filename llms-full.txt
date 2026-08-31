@@ -200,7 +200,9 @@ skills and no MCP or hooks. Native bundles preserve proven hooks, scripts,
 assets, commands, host MCP wiring, registration, and verification. An isolated
 package copy proves contents and installer safety, not client discovery. Do not
 claim portable hooks or support for a conformant client without real installed
-behavior.
+behavior. The measured decision is **further narrow, do not switch**: keep
+Pluxx, keep the portable floor skills-only, retain Codex as native-only, and
+gate every other target or enhancement on repeatable real-host proof.
 
 MDP ships exactly five skills:
 

@@ -131,7 +131,8 @@ scripts/  validation, packaging, and compatibility tooling
 the released Agent Plugins portable skills floor and the native Claude Code,
 Cursor, Codex, and OpenCode bundles. It is the distribution layer, not the MDP
 runtime or a hosted MDP service. Portable package proof and native enhancement
-proof remain separate.
+proof remain separate. The measured distribution decision is to further narrow
+unsupported claims and defaults while keeping Pluxx rather than switching.
 
 ## Documentation
 
