@@ -204,23 +204,21 @@ If the input is account-only and does not include a person name and title, do no
 
 ## Runtime Normalization Prompt
 
-New packs include `.mdp/prompts/normalize-prospect.yaml`. This prompt contract is meant for the upstream AI or workflow that sees messy source rows before the CLI runs. Its job is to return strict JSON with:
+New GTM and proposal packs include a v3 normalization prompt selected by their Decision Input Contract. The host first compiles job-scoped collection requirements and classification taxonomies, then supplies attempted-complete observed evidence. The model returns only closed classifications with bounded basis and evidence IDs, plus explicit gaps and rejected claims. It cannot emit observed facts, hashes, the neutral input, fit, pursuit, routes, readiness, or generation authority.
 
-- `normalized_prospect`: the exact MDP prospect shape accepted by `mdp --json schema prospect`.
-- `normalization_trace`: how persona, trigger, segment, signals, source, and missing fields were handled.
-- `gaps`: missing or weak data that should not be invented.
-- empty `card_patches`: runtime normalization does not edit pack cards.
-
-`source_summary.inputs_used` is an exact list of declared prompt inputs used, not a source-locator ledger. Put field paths, snippets, URLs, PDF/page references, and review notes in `signals[].source`, candidate `evidence`/`provenance`, or normalization trace. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias; opportunity-specific meaning stays in profile-owned signals, attributes, trace, requirements, proof, and gaps.
+The runtime validates every taxonomy value and `derived_from` reference, binds the compiled identities, and seals `normalized_input`. `normalized_prospect`, `normalized_opportunity`, `normalization_trace`, and `existing_pack_context` remain explicit legacy-reader surfaces only.
 
 That makes the boundary explicit:
 
 ```text
-AI handles ambiguity:
-  messy row -> normalized_prospect + trace
+Host collects evidence:
+  messy sources -> attempted-complete observed ledger
 
-MDP CLI handles consistency:
-  normalized_prospect -> fit -> route -> brief -> claim checks
+AI classifies bounded semantics:
+  observed ledger + compiled taxonomies -> classifications + basis + gaps
+
+MDP runtime handles authority:
+  validate + seal neutral input -> deterministic fit/pursuit -> route -> generation gate -> receipts
 ```
 
 For audit-grade proposal/document normalization, add a runner receipt boundary:

@@ -93,7 +93,7 @@ exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values.
 Then preserve the existing proof-output and run-receipt gates. A valid review artifact cannot certify compliance, invent
 proof, approve submission, or prove that a model invocation was isolated.
 
-For `normalize-opportunity`, keep `normalized_prospect` as the required compatibility object. If `normalized_opportunity` is present, treat it as a proposal-readable alias that must match exactly, not as a separate opportunity schema. `source_summary.inputs_used` names declared prompt inputs only; source locators and proof notes belong in `signals[].source`, provenance, gaps, and normalization trace.
+For the current `normalize-opportunity` contract, compile the selected job's requirements first and supply attempted-complete observed evidence. The model may emit only the declared proposal classifications, bounded basis, `derived_from` attempt IDs, gaps, and rejected claims. The host validates and seals `normalized_input`; deterministic policy owns pursuit, routing, readiness, and generation authority. Never ask a new producer for `normalized_prospect`, `normalized_opportunity`, `existing_pack_context`, or `pursuit_decision`. Those fields belong only to the explicitly labeled compatibility runner for existing v0 consumers.
 
 If PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, include it:
 

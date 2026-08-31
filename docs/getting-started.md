@@ -300,31 +300,29 @@ access, credentials, enrichment, CRM writes, drafting, sending, or scheduling.
 For a manual legacy-to-v2 conversion, follow
 [Decision Input Contracts](decision-input-contracts.md#manual-legacy-to-v2-adoption).
 
-For messy upstream rows, use the pack-owned runtime prompt contract:
+For researched evidence, begin with the selected job's compiled collection and classification contract:
 
 ```text
 .mdp/prompts/normalize-prospect.yaml
 ```
 
-That prompt asks an upstream agent to return strict JSON with `normalized_prospect`, `normalization_trace`, `gaps`, and empty `card_patches`. When invoking it, include the relevant pack context: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. Validate the full prompt output before saving `normalized_prospect` as the prospect JSON file that the CLI will ingest:
+Run `requirements` first. The compiled artifact tells the host what evidence to collect and supplies the exact closed taxonomies, definitions, indicators, exclusions, contributor requirements, and hashes the normalization model must use:
 
 ```bash
-mdp --json validate-prompt-output --dir ./mdp-demo --prompt-id normalize-prospect-row --file ./mdp-demo/scratch/normalize-output.json
+mdp --json requirements --dir ./mdp-demo --job prospect-fit-or-brief
 ```
 
-For proposal packs, use `.mdp/prompts/normalize-opportunity.yaml` the same way for messy opportunity, RFP, capture, requirement, compliance-matrix, proof, or bid/no-bid context. Include proposal personas, value contracts, attribute definitions, source policy, proposal cards, and review jobs in `existing_pack_context`. When PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, pass it to validation so cited raw fields and snippets must exist:
+The host may use local files, a CRM, a browser, a customer agent, or another approved tool to fulfill that provider-neutral collection specification. It returns attempted-complete evidence with stable attempt IDs and provenance. The normalization model returns only `classifications`, `gaps`, and `rejected_claims`; the runtime validates every enum and evidence reference, then host-wraps the neutral `mdp.normalized-decision-input.v3` envelope. The model never echoes hashes and never chooses fit, route, pursuit, approval, or draft authority.
+
+Proposal packs use `.mdp/prompts/normalize-opportunity.yaml` through the same v3 mechanism. Buyer, requirement, proof, timing, policy-conflict, and source-safety facts are observed. Proposal stage and category are classified from the compiled taxonomy. Pursue, review, or decline remains a deterministic policy result.
 
 ```bash
-mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
-mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
-mdp --json run-receipt --dir ./mdp-proposal-demo --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
+mdp --json requirements --dir ./mdp-proposal-demo --job bid-no-bid-review
 ```
 
-`run-receipt` is the audit-grade boundary check. It returns `decision: audit-grade` only when the runner reports a fresh/stateless model call, confirms declared-input-only payloads, and supplies hashable local artifacts. For production proposal pilots, include `--runner-audit` and `--require-runner-audit` so the CLI blocks when the native/headless runner boundary is missing. If normalization happened in the current conversation, use `--isolation ambient`; the receipt will be advisory instead of audit-grade. See [Local Proposal Runner Surface](proposal-runner.md) for the host-neutral local runner command, [Native API Normalization Runner](native-api-normalization-runner.md) for the optional BYOK OpenAI reference runner, and [Headless Normalization Runners](headless-normalization-runners.md) for host-specific recipes.
+Use the canonical `mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run` path for new local CLI/MCP integrations. Receipts and verification remain the assurance boundary. The older `validate-prompt-output`, `normalized_prospect`, `normalized_opportunity`, and `existing_pack_context` proposal workflow remains readable only through its explicitly labeled compatibility runner; new v3 producers must not emit those aliases.
 
-If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and structured `normalization_trace.missing_required` entries. Do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, approval status, or person context.
-
-For all prompt outputs, `source_summary.inputs_used` names declared prompt inputs only, such as `raw_row`, `raw_opportunity`, `existing_pack_context`, or `source_kind`. Put field paths, source snippets, PDF/page locators, URLs, and review notes in source/provenance fields such as `signals[].source`, candidate-entry `evidence`/`provenance`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. Proposal normalization must keep `normalized_prospect` for compatibility; it may also include `normalized_opportunity` as an exact alias so proposal readers do not have to interpret the compatibility name.
+Ambiguous, no-match, unsupported, missing, stale, conflicting, or ineligible evidence stays explicit and blocks deterministic downstream authority as defined by the pack. Do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, approval status, or person context.
 
 Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
 

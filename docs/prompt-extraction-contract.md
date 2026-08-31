@@ -1,5 +1,11 @@
 # MDP Prompt Contracts
 
+## Current semantic-normalization contract
+
+New GTM and proposal normalization producers use `mdp.normalized-decision-input.v3`. The host compiles job-scoped collection requirements and classification taxonomies, collects attempted-complete evidence, and invokes the model for semantic-only `classifications`, `gaps`, and `rejected_claims`. Every classification must use an allowed value, exact taxonomy identity, bounded basis, and `derived_from` IDs that resolve to eligible observed attempts. The host—not the model—adds hashes, observations, `normalized_input`, outcome, and other control fields. Deterministic policy then owns fit, pursuit, routing, readiness, and generation authority.
+
+The remainder of this document describes retained prompt-output and card-extraction compatibility contracts. References to `mdp.prompt-output.v0`, `normalized_prospect`, `normalized_opportunity`, and `existing_pack_context` are legacy-reader guidance, not the current producer architecture.
+
 MDP prompt files are local, reusable prompt contracts. This document covers two legacy-compatible `mdp.prompt.v0` jobs:
 
 - Normalize messy supplied rows into provider-neutral MDP prospect JSON before the CLI runs.
@@ -68,7 +74,7 @@ Runtime normalization prompts set `output_contract.output_kind: prospect-normali
 - `normalized_prospect`: the exact JSON shape accepted by `mdp --json schema prospect`.
 - `normalization_trace`: persona mapping, fit-readiness, missing fields, and raw-field preservation notes.
 
-For normalization prompts, `card_patches` should stay empty. The prompt prepares runtime input; it does not edit cards, mutate the pack, decide final fit, or produce final copy. Proposal packs use this same validated normalization artifact shape for `.mdp/prompts/normalize-opportunity.yaml`; opportunity, requirements, compliance gaps, proof, and win themes stay profile-owned vocabulary in signals, attributes, trace, and gaps, not new core MDP objects. Proposal prompt outputs may include optional `normalized_opportunity` as a readability alias, but it must exactly match `normalized_prospect`; existing consumers should continue to read `normalized_prospect`.
+For legacy normalization prompts, `card_patches` should stay empty. The prompt prepares compatibility runtime input; it does not edit cards, mutate the pack, decide final fit, or produce final copy. Legacy proposal outputs may include optional `normalized_opportunity` only as an exact alias of `normalized_prospect`. The shipped proposal starter's current `normalize-opportunity` prompt is v3 and does not emit either alias.
 
 Candidate entries carry normal MDP entry fields:
 
@@ -177,7 +183,7 @@ messy source -> normalize -> validate prompt output -> fit/readiness -> route/br
 
 `lead_input_requirements` is the manifest wire key for the user-facing input readiness policy. It says what fields, signals, bounded attributes, and value domains must be present before the fit/brief path should continue. It does not prove that a prospect or opportunity is commercially ready.
 
-For proposal packs, load `.mdp/prompts/normalize-opportunity.yaml`, pass messy proposal/RFP context as `raw_opportunity`, include proposal value contracts and attribute definitions in `existing_pack_context`, and pass `source_audit` when PDF/doc extraction produced one. Then run `mdp --json validate-prompt-output --dir <pack> --prompt-id normalize-opportunity --file <output.json> --source-audit <source-audit.json>` when an audit exists. If the host runner used a fresh/stateless model call with only declared inputs, run `mdp --json run-receipt --dir <pack> --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit` before calling the review audit-grade. The output must keep `normalized_prospect` for compatibility and may also include `normalized_opportunity` as an exact alias for proposal readers. If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, stop at gaps or reviewer questions instead of creating confident proposal review output.
+For the current proposal starter, run `mdp --json requirements --dir <pack> --job <proposal-job>`, fulfill its provider-neutral collection specification, and pass the attempted-complete results plus compiled taxonomy context through the canonical local run path. The model emits semantic classifications only; the runtime seals v3 and deterministic policy decides pursue, review, or decline. Use the old `existing_pack_context` plus `validate-prompt-output` sequence only when maintaining an explicitly identified legacy consumer.
 
 ## Card Extraction Loop
 
