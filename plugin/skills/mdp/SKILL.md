@@ -53,6 +53,11 @@ resuming use; do not reuse the earlier decision.
 
 ## Minimal Operator Journey
 
+For human orientation, run `mdp status --dir PACK_ROOT` first. It is
+observational, local/offline, and reports the exact next safe command. For
+agent routing, inspect `mdp --json capabilities` first; never infer authority
+from a human summary.
+
 1. Identify the exact pack root and pass `--dir`; never assume the CWD.
 2. Inspect `mdp --json capabilities`, `mdp --json skills`, and, when bound,
    `mdp --json skills --dir PACK_ROOT --job JOB_ID`.

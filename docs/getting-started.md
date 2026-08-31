@@ -6,6 +6,12 @@ tree. Stage a complete candidate and use `mdp author preview` followed by
 
 Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions and profile-specific review decisions as routing contracts, fit or review rules, approved claims, avoid-rules, output-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, submit proposals, own approvals, or act as an AI SDR.
 
+Start with `mdp` for a short author/use quickstart. `mdp status --dir PACK_ROOT`
+is a read-only local health check: it performs no network discovery, login, or
+authentication and reports a safe next command even when the pack is missing.
+For agents, use `mdp --json status --dir PACK_ROOT` and
+`mdp --json capabilities`; JSON is the authority, not a human summary.
+
 If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, output-rules, and bounded context for drafting.
 
 If one GTM pack needs shared company rules plus product-, capability-, solution-, or segment-specific pains, proof, hooks, and CTAs, read [Portfolio-Aware GTM Scope](portfolio-scope.md). Those dimensions filter the applicability of existing agnostic primitives; they do not create new primitives or require one pack per product.
@@ -38,7 +44,7 @@ curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
 
 The installer fetches the latest GitHub Release. `--cli` installs only the `mdp` binary for your platform. `--agents` installs the CLI once, then installs Pluxx-generated bundles for supported agent hosts. Single-host flags are also available: `--codex`, `--cursor`, `--claude-code`, and `--opencode`.
 
-MDP `0.1.101` also ships a separate Agent Plugins v1 skills package. Set
+MDP `0.1.104` also ships a separate Agent Plugins v1 skills package. Set
 `MDP_AGENT_PLUGINS_INSTALL_DIR` to an explicit absolute client-managed
 destination and pass `--agent-plugins`. The installer refuses native-tree
 overlaps and unknown nonempty destinations. There is no guessed generic Codex

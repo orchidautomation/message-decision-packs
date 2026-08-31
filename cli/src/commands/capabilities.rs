@@ -349,6 +349,7 @@ pub(crate) fn capabilities() -> Value {
             author_command("preview", "writes-new-change-set", &["--candidate", "--out"], &["--dir"]),
             author_command("apply", "transactional-pack-write", &["--candidate", "--change-set"], &["--dir"]),
             command("doctor", "mdp.doctor.v1", "read-only", false, false, false, &["--dir"]),
+            command("status", "mdp.status.v1", "read-only-observational", false, false, false, &["--dir"]),
             command("check", "mdp.readiness.v1", "read-only", false, false, false, &["--dir", "--job", "--input-validation"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--model-context"]),
@@ -1183,8 +1184,8 @@ mod tests {
         let result = capabilities();
         assert_eq!(result["cli"]["contract"], "mdp.cli-graph.v1");
         assert_eq!(result["cli"]["source"], "clap");
-        assert_eq!(result["cli"]["subcommand_required"], true);
-        assert_eq!(result["cli"]["classification"], "namespace");
+        assert_eq!(result["cli"]["subcommand_required"], false);
+        assert_eq!(result["cli"]["classification"], "agent-callable");
 
         let projected = result["cli"]["commands"]
             .as_array()
