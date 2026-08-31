@@ -1,0 +1,45 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-307",
+  "risk": "Routine",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-31-non-observed-status-sealing.md",
+    "sha256": "25698c4545aba3148158e94b005d6bb53262e00adc8485ad23e8d218c75ac9f6",
+    "sourceRef": "codex/status-sealer-plan",
+    "sourceCommit": "fa234b4b1524cca43b4518983ec56e6e2dd312c7"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "MDP-307-implementation-preserve-non-observed-statuses",
+    "threadId": "01a05986-073b-79c1-96f3-1e9384f33916",
+    "initialDispatchHash": "7d304eca8a84ca0d776cf885580f9df7788bc29e9e276f7935978574b748f8cf",
+    "repairDispatchHashes": [],
+    "implementationHead": "31792a0093d9ee486d2af036b7c1fa7335244194"
+  },
+  "validation": {
+    "focused": "The v3 host-wrap regression and non-contributor classification tests passed at the implementation head",
+    "complete": "The full Rust test suite passed: 918 tests across unit and integration binaries, with zero failures",
+    "format": "cargo fmt --manifest-path cli/Cargo.toml --check passed",
+    "diff": "git diff --check passed",
+    "authoritativeNext": "Exact pull-request-head GitHub Actions is the authoritative hosted-runner proof"
+  },
+  "boundaries": {
+    "authority": "The host sealer copies collected attribute status objects; requirements validation remains unchanged",
+    "projection": "Only observed attempts contribute normalized values, signals, and classification evidence",
+    "relay": "Orchid Work event emission remained unavailable because the adapter compared semantically identical plan objects using key-order-sensitive JSON serialization",
+    "delivery": "No merge, release, deployment, installation, or outreach action was performed"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-307-status-sealing",
+    "cumulativeBranch": "codex/mdp-307-status-sealing",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "observedAt": "2026-08-31T21:01:21Z"
+}
