@@ -161,7 +161,7 @@ class SkillPackagingMutationTests(unittest.TestCase):
                     {
                         "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
                         "name": "message-decision-packs",
-                        "version": "0.1.96",
+                        "version": "0.1.101",
                         "license": "Elastic-2.0",
                     }
                 )
@@ -184,7 +184,7 @@ class SkillPackagingMutationTests(unittest.TestCase):
                     {
                         "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
                         "name": "message-decision-packs",
-                        "version": "0.1.96",
+                        "version": "0.1.101",
                         "license": "Elastic-2.0",
                     }
                 )

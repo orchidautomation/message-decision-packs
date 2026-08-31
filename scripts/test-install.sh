@@ -50,7 +50,7 @@ cat > "$portable_source/plugin.json" <<'JSON'
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "message-decision-packs",
-  "version": "0.1.96",
+  "version": "0.1.101",
   "description": "Installer fixture.",
   "author": { "name": "Orchid Labs" },
   "license": "Elastic-2.0"
@@ -80,7 +80,7 @@ const walk = (directory) => {
 walk(root)
 const skills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
 writeFileSync(output, `${JSON.stringify({
-  plugin: { version: '0.1.96', license: 'Elastic-2.0' },
+  plugin: { version: '0.1.101', license: 'Elastic-2.0' },
   assets: { archives: [{ platform: 'agent-plugins', latestAsset: 'message-decision-packs-agent-plugins-latest.tar.gz' }] },
   portable_packages: { 'agent-plugins': {
     contract: 'mdp.agent-plugins-portable-package.v1',

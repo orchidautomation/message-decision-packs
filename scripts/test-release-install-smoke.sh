@@ -23,7 +23,7 @@ cat > "$portable_fixture_source/plugin.json" <<'JSON'
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "message-decision-packs",
-  "version": "0.1.96",
+  "version": "0.1.101",
   "description": "Release smoke fixture.",
   "author": { "name": "Orchid Labs" },
   "license": "Elastic-2.0"
@@ -162,7 +162,7 @@ const walkPortable = (directory) => {
 }
 walkPortable(portableRoot)
 writeFileSync(output, `${JSON.stringify({
-  plugin: { version: '0.1.96', license: 'Elastic-2.0' },
+  plugin: { version: '0.1.101', license: 'Elastic-2.0' },
   cli_artifacts: [{ name: stagedName, sha256: stagedSha }],
   plugin_trees: pluginTrees,
   portable_packages: { 'agent-plugins': {

@@ -148,8 +148,8 @@ jobs:
           node-version: 24
       - name: Install Pluxx
         run: |
-          # MDP-221 release-prep binding: replace this locally packed digest with
-          # the registry-reported public 0.1.42 integrity before PR/release.
+          # MDP-221 public binding: install the registry artifact only after its
+          # exact npm-published integrity matches the reviewed Pluxx 0.1.42 release.
           expected='sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw=='
           pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.42 --pack-destination "$RUNNER_TEMP" --silent)"
           pluxx_tarball_path="$RUNNER_TEMP/$pluxx_tarball"
