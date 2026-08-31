@@ -6,6 +6,21 @@ Canonical `route --entries` and `brief --context` results include the same `mini
 
 `mdp` creates and routes Message Decision Packs.
 
+On first contact, run `mdp` for a concise author/use quickstart. Run
+`mdp status --dir PACK_ROOT` for a read-only local/offline health projection;
+missing or unhealthy packs still exit zero and include the exact next command.
+Agents should use `mdp --json capabilities` and
+`mdp --json status --dir PACK_ROOT`; JSON is authoritative and human summaries
+are only projections. `--job` always requires the exact canonical `jobs[].id`,
+not a natural-language approximation.
+
+```bash
+mdp init --template gtm --name "Example Company Messaging" \
+  --target-name "Example Company" --target-kind company --dir /tmp/example-company-mdp
+mdp status --dir /tmp/example-company-mdp
+mdp validate --dir /tmp/example-company-mdp
+```
+
 For the distinction between packs and shipped registrations, see the
 [extension boundary](../docs/extension-boundary.md). The CLI exposes only the
 closed profile/template/skill registries described there.

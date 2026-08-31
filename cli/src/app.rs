@@ -20,13 +20,13 @@ use crate::commands::{
     render_readable_prospect_brief, requirements, requirements_model_context,
     route_budget_preflight_command, route_budget_preflight_query_command, route_scoped,
     run_preflight_file, run_receipt, run_request_file_with_transport, sample_leads, schema, skills,
-    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
+    status, validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
     validate_source_binding_file, verify_output_file, verify_output_readable_file,
     verify_run_files,
 };
 use crate::output::{
     PresentationOutcome, print_output, print_output_mode_conflict, print_output_with_status,
-    resolve_presentation,
+    print_quickstart, resolve_presentation,
 };
 use crate::pack_io::{planned_json_write, write_json_file};
 use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
@@ -48,13 +48,24 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
     // command work or any stdout write, and it routes JSON presentation
     // conflicts through exactly-once serialization with empty stderr.
     if json_mode
-        && let PresentationOutcome::Conflict { selector, value } =
-            resolve_presentation(&cli.command)
+        && let Some(command) = cli.command.as_ref()
+        && let PresentationOutcome::Conflict { selector, value } = resolve_presentation(command)
     {
         print_output_mode_conflict(true, selector, value)?;
         std::process::exit(1);
     }
-    match cli.command {
+    let Some(command) = cli.command else {
+        if json_mode {
+            return crate::output::print_status_and_exit(
+                json_mode,
+                summary_mode,
+                status(Path::new(".")),
+            );
+        }
+        print_quickstart();
+        return Ok(());
+    };
+    match command {
         Commands::Capabilities => {
             print_output(json_mode, summary_mode, "capabilities", capabilities())
         }
@@ -212,6 +223,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             ),
         },
         Commands::Doctor { dir } => print_doctor(json_mode, summary_mode, doctor(&dir)),
+        Commands::Status { dir } => {
+            crate::output::print_status_and_exit(json_mode, summary_mode, status(&dir))
+        }
         Commands::Check {
             dir,
             job,
@@ -1523,7 +1537,7 @@ mod tests {
         run(Cli {
             json: true,
             summary: true,
-            command: Commands::Brief {
+            command: Some(Commands::Brief {
                 dir: root.clone(),
                 prospect: Some(prospect),
                 normalized_input: None,
@@ -1538,7 +1552,7 @@ mod tests {
                 readable: false,
                 out: Some(out.clone()),
                 dry_run: false,
-            },
+            }),
         })
         .expect("brief command should run");
 
@@ -1577,7 +1591,7 @@ mod tests {
         run(Cli {
             json: true,
             summary: true,
-            command: Commands::Brief {
+            command: Some(Commands::Brief {
                 dir: root.clone(),
                 prospect: Some(prospect.clone()),
                 normalized_input: None,
@@ -1592,7 +1606,7 @@ mod tests {
                 readable: false,
                 out: None,
                 dry_run: false,
-            },
+            }),
         })
         .expect("routed context should export");
         let canonical_bytes = std::fs::read(&routed_context_out)
@@ -1606,7 +1620,7 @@ mod tests {
         let error = run(Cli {
             json: true,
             summary: true,
-            command: Commands::Brief {
+            command: Some(Commands::Brief {
                 dir: root.clone(),
                 prospect: Some(prospect),
                 normalized_input: None,
@@ -1621,7 +1635,7 @@ mod tests {
                 readable: false,
                 out: Some(aliased_out),
                 dry_run: false,
-            },
+            }),
         })
         .expect_err("aliased outputs should be rejected");
 
@@ -1661,7 +1675,7 @@ mod tests {
         let error = run(Cli {
             json: true,
             summary: true,
-            command: Commands::Brief {
+            command: Some(Commands::Brief {
                 dir: root.clone(),
                 prospect: Some(prospect),
                 normalized_input: None,
@@ -1676,7 +1690,7 @@ mod tests {
                 readable: false,
                 out: Some(out.clone()),
                 dry_run: false,
-            },
+            }),
         })
         .expect_err("dangling symlink aliases should be rejected");
 
@@ -1718,7 +1732,7 @@ mod tests {
         let error = run(Cli {
             json: true,
             summary: true,
-            command: Commands::EmitBrief {
+            command: Some(Commands::EmitBrief {
                 dir: root.clone(),
                 persona: "Growth Engineer".to_string(),
                 motion: None,
@@ -1727,7 +1741,7 @@ mod tests {
                 routed_context_out: Some(routed_context_out.clone()),
                 out: Some(out.clone()),
                 dry_run: false,
-            },
+            }),
         })
         .expect_err("hard-link aliases should be rejected");
 
@@ -1770,7 +1784,7 @@ mod tests {
         let error = run(Cli {
             json: true,
             summary: true,
-            command: Commands::EmitBrief {
+            command: Some(Commands::EmitBrief {
                 dir: root.clone(),
                 persona: "Growth Engineer".to_string(),
                 motion: None,
@@ -1779,7 +1793,7 @@ mod tests {
                 routed_context_out: Some(aliased_routed_context_out),
                 out: Some(out.clone()),
                 dry_run: true,
-            },
+            }),
         })
         .expect_err("aliased dry-run outputs should be rejected");
 
@@ -1812,7 +1826,7 @@ mod tests {
         run(Cli {
             json: false,
             summary: false,
-            command: Commands::Brief {
+            command: Some(Commands::Brief {
                 dir: root.clone(),
                 prospect: Some(prospect),
                 normalized_input: None,
@@ -1827,7 +1841,7 @@ mod tests {
                 readable: true,
                 out: Some(out.clone()),
                 dry_run: false,
-            },
+            }),
         })
         .expect("readable brief command should run");
 

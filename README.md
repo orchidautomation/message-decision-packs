@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-**Message Decision Packs (MDP) is versioned decision context for agents.**
+**Message Decision Packs (MDP) is versioned decision context for agents.** It is local/offline and requires no login or authentication.
 
 An MDP pack is a local `.mdp/` directory containing source references, decision
 rules, approved proof, routing contracts, output boundaries, gaps, and evals.
@@ -32,7 +32,7 @@ The installer uses the latest
 [GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 so the CLI and agent instructions remain version-aligned.
 
-MDP `0.1.101` now ships a Pluxx-emitted Agent Plugins v1 portable skills
+MDP `0.1.104` now ships a Pluxx-emitted Agent Plugins v1 portable skills
 package alongside the four native bundles. The portable package has exactly
 the five MDP skills and no portable MCP or hooks. It requires an explicit,
 non-overlapping client-managed destination; MDP does not guess an undocumented
@@ -42,6 +42,12 @@ real client discovery remains a separate host-specific proof. See
 contract.
 
 ## Quick Start
+
+For a first contact, run `mdp` for the two common journeys, or inspect the
+current local context with `mdp status --dir PACK_ROOT`. Status is read-only;
+missing or unhealthy packs report the next safe command and still exit zero.
+Agents should use `mdp --json status --dir PACK_ROOT` (or
+`mdp --json capabilities`) and treat the JSON envelope as authoritative.
 
 Create and inspect a synthetic GTM pack:
 

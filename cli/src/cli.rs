@@ -25,7 +25,10 @@ fn template_help() -> &'static str {
 
 #[derive(Parser)]
 #[command(name = "mdp")]
-#[command(about = "Author and route modular message decision packs for agent workflows")]
+#[command(
+    about = "Understand, validate, and route local message decision packs",
+    after_help = "Quickstart: mdp init --dir PACK_ROOT --name NAME; mdp status --dir PACK_ROOT; mdp validate --dir PACK_ROOT. Use: mdp check --dir PACK_ROOT --job JOB_ID. MDP is local/offline and requires no authentication."
+)]
 #[command(version)]
 pub(crate) struct Cli {
     #[arg(long, global = true, help = "Emit stable machine-readable JSON")]
@@ -37,11 +40,24 @@ pub(crate) struct Cli {
     )]
     pub(crate) summary: bool,
     #[command(subcommand)]
-    pub(crate) command: Commands,
+    pub(crate) command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 pub(crate) enum Commands {
+    #[command(
+        about = "Show local/offline pack and CLI health without changing files",
+        after_help = "Status is observational and never performs network or authentication."
+    )]
+    Status {
+        #[arg(
+            long,
+            default_value = ".",
+            help = "Pack root to inspect (the directory containing .mdp)",
+            value_name = "PACK_ROOT"
+        )]
+        dir: PathBuf,
+    },
     #[command(about = "Print agent-readable CLI capabilities and contracts")]
     Capabilities,
     #[command(about = "Compile and inspect cold-model conformance evidence")]
@@ -981,13 +997,13 @@ mod tests {
 
         assert!(matches!(
             parsed.command,
-            Commands::Conformance {
+            Some(Commands::Conformance {
                 command: ConformanceCommand::Compile {
                     candidate,
                     artifact_root,
                     ..
                 }
-            } if candidate == PathBuf::from("candidate.json")
+            }) if candidate == PathBuf::from("candidate.json")
                 && artifact_root == PathBuf::from("staged")
         ));
         assert!(Cli::try_parse_from(["mdp", "conformance", "compile"]).is_err());
@@ -1028,7 +1044,7 @@ mod tests {
         ])
         .expect("recorded behavioral evidence should parse");
         match parsed.command {
-            Commands::Conformance {
+            Some(Commands::Conformance {
                 command:
                     ConformanceCommand::Validate {
                         invocation,
@@ -1036,7 +1052,7 @@ mod tests {
                         deterministic,
                         ..
                     },
-            } => {
+            }) => {
                 assert_eq!(invocation.len(), 1);
                 assert_eq!(trial.len(), 1);
                 assert_eq!(deterministic, PathBuf::from("deterministic.json"));
@@ -1083,9 +1099,9 @@ mod tests {
         .expect("an unassessed assembly may contain zero trials");
         assert!(matches!(
             assembly.command,
-            Commands::Conformance {
+            Some(Commands::Conformance {
                 command: ConformanceCommand::Assemble { trial, .. }
-            } if trial.is_empty()
+            }) if trial.is_empty()
         ));
     }
 
@@ -1095,12 +1111,12 @@ mod tests {
             .expect("saved result should parse");
         assert!(matches!(
             file.command,
-            Commands::Trace {
+            Some(Commands::Trace {
                 file: Some(_),
                 bundle: None,
                 receipt: None,
                 ..
-            }
+            })
         ));
 
         let run = Cli::try_parse_from([
@@ -1118,13 +1134,13 @@ mod tests {
         .expect("run authority pair should parse");
         assert!(matches!(
             run.command,
-            Commands::Trace {
+            Some(Commands::Trace {
                 file: None,
                 bundle: Some(_),
                 receipt: Some(_),
                 format: TraceFormat::Mermaid,
                 ..
-            }
+            })
         ));
 
         assert!(Cli::try_parse_from(["mdp", "trace"]).is_err());
@@ -1178,20 +1194,20 @@ mod tests {
             Cli::try_parse_from(["mdp", "--json", "skills"]).expect("inventory form should parse");
         assert!(matches!(
             inventory.command,
-            Commands::Skills {
+            Some(Commands::Skills {
                 dir: None,
                 job: None
-            }
+            })
         ));
 
         let pack =
             Cli::try_parse_from(["mdp", "skills", "--dir", "."]).expect("pack form should parse");
         assert!(matches!(
             pack.command,
-            Commands::Skills {
+            Some(Commands::Skills {
                 dir: Some(_),
                 job: None
-            }
+            })
         ));
 
         let job = Cli::try_parse_from([
@@ -1205,10 +1221,10 @@ mod tests {
         .expect("single-job form should parse");
         assert!(matches!(
             job.command,
-            Commands::Skills {
+            Some(Commands::Skills {
                 dir: Some(_),
                 job: Some(_)
-            }
+            })
         ));
     }
 
@@ -1226,11 +1242,11 @@ mod tests {
         .expect("requirements form should parse");
         assert!(matches!(
             parsed.command,
-            Commands::Requirements {
+            Some(Commands::Requirements {
                 dir,
                 job,
                 model_context: false
-            }
+            })
                 if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
         ));
     }
@@ -1250,11 +1266,11 @@ mod tests {
         .expect("model context form should parse");
         assert!(matches!(
             parsed.command,
-            Commands::Requirements {
+            Some(Commands::Requirements {
                 dir,
                 job,
                 model_context: true
-            } if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
+            }) if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
         ));
     }
 
@@ -1264,9 +1280,9 @@ mod tests {
             .expect("requirements model-context schema should parse");
         assert!(matches!(
             parsed.command,
-            Commands::Schema {
+            Some(Commands::Schema {
                 target: SchemaTarget::RequirementsModelContextV1
-            }
+            })
         ));
     }
 
@@ -1276,11 +1292,11 @@ mod tests {
             .expect("generic readiness form should parse");
         assert!(matches!(
             generic.command,
-            Commands::Check {
+            Some(Commands::Check {
                 dir,
                 job: None,
                 input_validation: None
-            } if dir == PathBuf::from("pack")
+            }) if dir == PathBuf::from("pack")
         ));
 
         let selected = Cli::try_parse_from([
@@ -1297,11 +1313,11 @@ mod tests {
         .expect("selected readiness form should parse");
         assert!(matches!(
             selected.command,
-            Commands::Check {
+            Some(Commands::Check {
                 job: Some(job),
                 input_validation: Some(path),
                 ..
-            } if job == "outbound-copy-brief" && path == PathBuf::from("validation.json")
+            }) if job == "outbound-copy-brief" && path == PathBuf::from("validation.json")
         ));
     }
 
@@ -1321,9 +1337,9 @@ mod tests {
         .expect("author preview should parse");
         assert!(matches!(
             preview.command,
-            Commands::Author {
+            Some(Commands::Author {
                 command: AuthorCommand::Preview { dir, candidate, out }
-            } if dir == PathBuf::from("live")
+            }) if dir == PathBuf::from("live")
                 && candidate == PathBuf::from("candidate")
                 && out == PathBuf::from("change-set.json")
         ));
@@ -1342,13 +1358,13 @@ mod tests {
         .expect("author apply should parse");
         assert!(matches!(
             apply.command,
-            Commands::Author {
+            Some(Commands::Author {
                 command: AuthorCommand::Apply {
                     dir,
                     candidate,
                     change_set
                 }
-            } if dir == PathBuf::from("live")
+            }) if dir == PathBuf::from("live")
                 && candidate == PathBuf::from("candidate")
                 && change_set == PathBuf::from("change-set.json")
         ));
@@ -1387,7 +1403,7 @@ mod tests {
         ])
         .expect("prepare-run should parse");
         assert!(
-            matches!(parsed.command, Commands::PrepareRun { full: true, inputs, .. } if inputs == vec!["routed_context=route.json"])
+            matches!(parsed.command, Some(Commands::PrepareRun { full: true, inputs, .. }) if inputs == vec!["routed_context=route.json"])
         );
         assert!(
             Cli::try_parse_from([
@@ -1420,7 +1436,7 @@ mod tests {
         .expect("source binding form should parse");
         assert!(matches!(
             parsed.command,
-            Commands::ValidateSourceBinding { dir, job, file }
+            Some(Commands::ValidateSourceBinding { dir, job, file })
                 if dir == PathBuf::from("example-pack")
                     && job == "prospect-fit-or-brief"
                     && file == PathBuf::from("binding.json")
@@ -1443,7 +1459,7 @@ mod tests {
         .expect("synthetic chain form should parse");
         assert!(matches!(
             parsed.command,
-            Commands::RebindSyntheticChain {
+            Some(Commands::RebindSyntheticChain {
                 dir,
                 job,
                 out_dir,
@@ -1451,7 +1467,7 @@ mod tests {
                 apply: false,
                 force: false,
                 ..
-            } if dir == PathBuf::from("example-pack")
+            }) if dir == PathBuf::from("example-pack")
                 && job == "prospect-fit-or-brief"
                 && out_dir == PathBuf::from("/tmp/mdp-chain")
         ));
@@ -1489,9 +1505,9 @@ mod tests {
             .expect("source-binding schema target should parse");
         assert!(matches!(
             parsed.command,
-            Commands::Schema {
+            Some(Commands::Schema {
                 target: SchemaTarget::SourceBinding
-            }
+            })
         ));
     }
 
@@ -1511,7 +1527,7 @@ mod tests {
         .expect("route-budget selectors should parse");
         assert!(matches!(
             parsed.command,
-            Commands::RouteBudget { dir, strict, job, persona }
+            Some(Commands::RouteBudget { dir, strict, job, persona })
                 if dir == PathBuf::from("pack")
                     && !strict
                     && job.as_deref() == Some("outbound-copy-brief")
@@ -1554,13 +1570,13 @@ mod tests {
 
         assert!(matches!(
             parsed.command,
-            Commands::RunReceipt {
+            Some(Commands::RunReceipt {
                 workflow: RunReceiptWorkflow::ProposalReview,
                 isolation: RunIsolation::Isolated,
                 declared_inputs_only: true,
                 require_runner_audit: true,
                 ..
-            }
+            })
         ));
     }
 
@@ -1599,7 +1615,7 @@ mod tests {
             let parsed = Cli::try_parse_from(["mdp", "schema", name])
                 .unwrap_or_else(|error| panic!("{name} should parse: {error}"));
             assert!(
-                matches!(parsed.command, Commands::Schema { target } if std::mem::discriminant(&target) == std::mem::discriminant(&expected))
+                matches!(parsed.command, Some(Commands::Schema { target }) if std::mem::discriminant(&target) == std::mem::discriminant(&expected))
             );
         }
 
@@ -1651,7 +1667,7 @@ mod tests {
             let parsed = Cli::try_parse_from(["mdp", "schema", name])
                 .unwrap_or_else(|error| panic!("{name} should parse: {error}"));
             assert!(
-                matches!(parsed.command, Commands::Schema { target } if std::mem::discriminant(&target) == std::mem::discriminant(&expected))
+                matches!(parsed.command, Some(Commands::Schema { target }) if std::mem::discriminant(&target) == std::mem::discriminant(&expected))
             );
         }
     }

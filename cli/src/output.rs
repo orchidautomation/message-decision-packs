@@ -337,6 +337,58 @@ pub(crate) fn print_output(
     print_output_with_status(json_mode, summary_mode, command, data, true)
 }
 
+pub(crate) fn print_status_and_exit(
+    json_mode: bool,
+    summary_mode: bool,
+    data: Value,
+) -> Result<()> {
+    if json_mode {
+        if summary_mode {
+            let summary = json!({
+                "contract": data["contract"],
+                "mode": data["mode"],
+                "auth_required": data["auth_required"],
+                "requested_pack_root": data["requested_pack_root"],
+                "manifest_observed": data["manifest_observed"],
+                "pack": data["pack"],
+                "health": data["health"],
+                "next_command": data["next_command"]
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &json!({"ok": true, "command": "status", "summary": omit_null_object_fields(summary)})
+                )?
+            );
+        } else {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &json!({"ok": true, "command": "status", "data": data})
+                )?
+            );
+        }
+    } else if summary_mode {
+        print_human("status", &omit_null_object_fields(data))?;
+    } else {
+        print_human("status", &data)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn print_quickstart() {
+    println!("MDP — local/offline decision context");
+    println!("\nAuthor");
+    println!("  mdp init --dir PACK_ROOT --name NAME");
+    println!("  mdp status --dir PACK_ROOT");
+    println!("  mdp validate --dir PACK_ROOT");
+    println!("\nUse");
+    println!("  mdp status --dir PACK_ROOT");
+    println!("  mdp check --dir PACK_ROOT --job JOB_ID");
+    println!("  mdp requirements --dir PACK_ROOT --job JOB_ID");
+    println!("\nAgents: use mdp --json capabilities and the JSON envelope as authority.");
+}
+
 pub(crate) fn print_output_with_status(
     json_mode: bool,
     summary_mode: bool,
@@ -346,7 +398,7 @@ pub(crate) fn print_output_with_status(
 ) -> Result<()> {
     let actionable_diagnostics = diagnostics_for_result(command, &data);
     if summary_mode {
-        let summary = summarize(command, &data);
+        let summary = omit_null_object_fields(summarize(command, &data));
         if command == "route-budget" {
             crate::commands::schemas::validate_route_budget_summary_output(&summary)?;
         }
@@ -797,9 +849,25 @@ fn summarize(command: &str, data: &Value) -> Value {
 }
 
 fn print_summary(command: &str, summary: &Value) -> Result<()> {
-    println!("{command}: summary");
-    println!("{}", serde_json::to_string_pretty(summary)?);
-    Ok(())
+    print_human(command, summary)
+}
+
+fn omit_null_object_fields(value: Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .filter_map(|(key, value)| {
+                    let value = omit_null_object_fields(value);
+                    (!value.is_null()).then_some((key, value))
+                })
+                .collect(),
+        ),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(omit_null_object_fields).collect())
+        }
+        value => value,
+    }
 }
 
 fn signal_authority_summary(authority: &Value) -> Value {
@@ -998,6 +1066,55 @@ fn classify_error(message: &str, details: &[String]) -> &'static str {
 
 fn print_human(command: &str, data: &Value) -> Result<()> {
     match command {
+        "status" => {
+            println!(
+                "status: {}",
+                data["health"]["state"].as_str().unwrap_or("unknown")
+            );
+            println!("mode: {}", data["mode"].as_str().unwrap_or("unknown"));
+            println!(
+                "auth required: {}",
+                data["auth_required"].as_bool().unwrap_or(false)
+            );
+            println!(
+                "pack root: {}",
+                data["requested_pack_root"].as_str().unwrap_or(".")
+            );
+            println!(
+                "manifest: {}",
+                if data["manifest_observed"].as_bool() == Some(true) {
+                    "observed"
+                } else {
+                    "not observed"
+                }
+            );
+            if let Some(pack) = data["pack"].as_object() {
+                for key in ["id", "name", "profile_id"] {
+                    if let Some(value) = pack.get(key).and_then(Value::as_str) {
+                        println!("{}: {}", key.replace('_', " "), value);
+                    }
+                }
+                if let Some(target) = pack.get("target").and_then(Value::as_object) {
+                    println!(
+                        "target: {} {}",
+                        target["kind"].as_str().unwrap_or(""),
+                        target["name"].as_str().unwrap_or("")
+                    );
+                }
+            }
+            if let Some(blocker) = data["health"]["blocker"].as_object() {
+                println!(
+                    "blocker: {}",
+                    issue_message(&Value::Object(blocker.clone()))
+                );
+            }
+            println!(
+                "Next: {}",
+                data["next_command"]
+                    .as_str()
+                    .unwrap_or("mdp status --dir PACK_ROOT")
+            );
+        }
         "init" => {
             if data["dry_run"].as_bool() == Some(true) {
                 println!(
@@ -1100,6 +1217,25 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                     .unwrap_or("Review the readiness JSON.")
             );
         }
+        "recover-run" => {
+            println!(
+                "recover-run: {}",
+                data["status"].as_str().unwrap_or("unknown")
+            );
+            if let Some(contract) = data["contract"].as_str() {
+                println!("contract: {contract}");
+            }
+            if let Some(items) = data["would_remove"].as_array() {
+                for item in items.iter().take(8) {
+                    if let Some(kind) = item["kind"].as_str() {
+                        println!("would remove: {kind}");
+                    }
+                }
+            }
+            if let Some(next) = data["next_command"].as_str() {
+                println!("Next: {next}");
+            }
+        }
         "brief" | "emit-brief" | "pack" | "author-proof-output"
             if data["dry_run"].as_bool() == Some(true) =>
         {
@@ -1118,9 +1254,73 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
             print_requirement_list("missing", &data["context"]["missing_requirements"]);
             print_requirement_list("invalid", &data["context"]["invalid_requirements"]);
         }
-        _ => println!("{}", serde_json::to_string_pretty(data)?),
+        _ => print_concise(command, data),
     }
     Ok(())
+}
+
+fn print_concise(command: &str, data: &Value) {
+    let state = ["status", "decision", "valid", "available"]
+        .iter()
+        .find_map(|key| {
+            data.get(*key).and_then(|value| match value {
+                Value::String(value) => Some(value.clone()),
+                Value::Bool(value) => Some(if *value {
+                    "ok".into()
+                } else {
+                    "blocked".into()
+                }),
+                _ => None,
+            })
+        })
+        .or_else(|| {
+            data.get("artifact")
+                .and_then(|artifact| artifact["status"].as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "complete".into());
+    println!("{command}: {state}");
+    const FACTS: &[&str] = &[
+        "contract",
+        "job_id",
+        "pack_id",
+        "persona",
+        "channel",
+        "count",
+        "error_count",
+        "warning_count",
+        "issue_count",
+        "decision",
+    ];
+    for key in FACTS {
+        if let Some(value) = data
+            .get(*key)
+            .filter(|value| value.is_string() || value.is_number() || value.is_boolean())
+        {
+            println!(
+                "{}: {}",
+                key.replace('_', " "),
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| value.to_string())
+            );
+        }
+    }
+    if let Some(item) = data["issues"].as_array().and_then(|items| items.first()) {
+        println!("issue: {}", issue_message(item));
+    } else if let Some(item) = data["diagnostics"]
+        .as_array()
+        .and_then(|items| items.first())
+    {
+        println!("issue: {}", issue_message(item));
+    }
+    for key in ["next_command", "next_action"] {
+        if let Some(next) = data.get(key).and_then(Value::as_str) {
+            println!("Next: {next}");
+            break;
+        }
+    }
 }
 
 fn print_requirement_list(label: &str, value: &Value) {
@@ -1776,7 +1976,7 @@ mod tests {
         ])
         .expect("trace should parse");
         assert_eq!(
-            resolve_presentation(&cli.command),
+            resolve_presentation(cli.command.as_ref().unwrap()),
             PresentationOutcome::Conflict {
                 selector: "--format",
                 value: "mermaid"
@@ -1793,7 +1993,7 @@ mod tests {
         ])
         .expect("verify-output should parse");
         assert_eq!(
-            resolve_presentation(&cli.command),
+            resolve_presentation(cli.command.as_ref().unwrap()),
             PresentationOutcome::Conflict {
                 selector: "--readable",
                 value: "true"
@@ -1802,7 +2002,10 @@ mod tests {
 
         let cli = Cli::try_parse_from(["mdp", "--json", "verify-output", "--file", "x.json"])
             .expect("verify-output without --readable should parse");
-        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Ok
+        );
 
         let cli = Cli::try_parse_from([
             "mdp",
@@ -1817,7 +2020,7 @@ mod tests {
         ])
         .expect("render-brief markdown should parse");
         assert_eq!(
-            resolve_presentation(&cli.command),
+            resolve_presentation(cli.command.as_ref().unwrap()),
             PresentationOutcome::Conflict {
                 selector: "--format",
                 value: "markdown"
@@ -1837,7 +2040,7 @@ mod tests {
         ])
         .expect("sample-leads yaml should parse");
         assert_eq!(
-            resolve_presentation(&cli.command),
+            resolve_presentation(cli.command.as_ref().unwrap()),
             PresentationOutcome::Conflict {
                 selector: "--format",
                 value: "yaml"
@@ -1856,7 +2059,7 @@ mod tests {
         ])
         .expect("brief --readable should parse");
         assert_eq!(
-            resolve_presentation(&cli.command),
+            resolve_presentation(cli.command.as_ref().unwrap()),
             PresentationOutcome::Conflict {
                 selector: "--readable",
                 value: "true"
@@ -1869,7 +2072,10 @@ mod tests {
             "mdp", "--json", "trace", "--file", "x.json", "--format", "json",
         ])
         .expect("trace json should parse");
-        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Ok
+        );
 
         let cli = Cli::try_parse_from([
             "mdp",
@@ -1883,7 +2089,10 @@ mod tests {
             "json",
         ])
         .expect("render-brief json should parse");
-        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Ok
+        );
 
         let cli = Cli::try_parse_from([
             "mdp",
@@ -1897,7 +2106,10 @@ mod tests {
             "json",
         ])
         .expect("sample-leads json should parse");
-        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Ok
+        );
 
         let cli = Cli::try_parse_from([
             "mdp",
@@ -1909,11 +2121,17 @@ mod tests {
             "p.json",
         ])
         .expect("brief without --readable should parse");
-        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Ok
+        );
 
         let cli = Cli::try_parse_from(["mdp", "--json", "capabilities"])
             .expect("capabilities should parse");
-        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Ok
+        );
 
         // Human-only path is left untouched by the gate; the runtime never
         // calls the gate when `--json` is absent.
@@ -1923,7 +2141,7 @@ mod tests {
         let _ = HumanBriefFormat::Markdown;
         let _ = SampleLeadsFormat::Yaml;
         assert_eq!(
-            resolve_presentation(&cli.command),
+            resolve_presentation(cli.command.as_ref().unwrap()),
             PresentationOutcome::Conflict {
                 selector: "--format",
                 value: "mermaid"

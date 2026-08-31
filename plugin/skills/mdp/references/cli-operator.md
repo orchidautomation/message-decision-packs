@@ -4,12 +4,23 @@ Read this when selecting an MDP command.
 
 ## Discovery And Health
 
+Humans can begin with the read-only status projection:
+
+```bash
+mdp
+mdp status --dir PACK_ROOT
+```
+
+Status is local/offline, needs no auth, and exits zero for missing or unhealthy
+context. Agents must use the JSON envelope and should discover the graph first:
+
 ```bash
 mdp --version
 mdp --json capabilities
 mdp --json skills
 mdp --json skills --dir PACK_ROOT
 mdp --json doctor --dir PACK_ROOT
+mdp --json status --dir PACK_ROOT
 ```
 
 `skills` reports released inventory and pack eligibility. It does not observe host discovery.
