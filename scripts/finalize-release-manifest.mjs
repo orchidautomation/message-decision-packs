@@ -78,9 +78,21 @@ const treeManifest = (root) => {
 }
 
 const hostTrees = {}
+const nativeManifestPaths = {
+  'claude-code': '.claude-plugin/plugin.json',
+  cursor: '.cursor-plugin/plugin.json',
+  codex: '.codex-plugin/plugin.json',
+  opencode: 'package.json',
+}
 for (const platform of nativePlatforms) {
   const root = join(process.cwd(), 'dist', platform)
-  if (existsSync(root)) hostTrees[platform] = treeManifest(root)
+  if (existsSync(root)) {
+    const nativeManifest = JSON.parse(readFileSync(join(root, nativeManifestPaths[platform]), 'utf8'))
+    if (nativeManifest?.license !== 'Elastic-2.0') {
+      throw new Error(`Generated ${platform} manifest license must be Elastic-2.0.`)
+    }
+    hostTrees[platform] = treeManifest(root)
+  }
 }
 if (Object.keys(hostTrees).length > 0) {
   if (Object.keys(hostTrees).length !== nativePlatforms.length) {
@@ -114,9 +126,11 @@ if (!existsSync(portableRoot)) {
   if (
     pluginManifest?.$schema !== 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' ||
     pluginManifest?.name !== 'message-decision-packs' ||
-    pluginManifest?.version !== manifest?.plugin?.version
+    pluginManifest?.version !== manifest?.plugin?.version ||
+    pluginManifest?.license !== 'Elastic-2.0' ||
+    manifest?.plugin?.license !== 'Elastic-2.0'
   ) {
-    throw new Error('Agent Plugins plugin.json does not match the MDP release identity.')
+    throw new Error('Agent Plugins plugin.json does not match the MDP release identity and Elastic-2.0 license.')
   }
 
   const skillsRoot = join(portableRoot, 'skills')

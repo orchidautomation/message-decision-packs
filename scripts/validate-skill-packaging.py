@@ -359,6 +359,8 @@ def validate_agent_plugins_bundle(
         errors.append(f"{PORTABLE_TARGET} plugin.json must bind the Agent Plugins 1.0.0 schema")
     if manifest.get("name") != "message-decision-packs":
         errors.append(f"{PORTABLE_TARGET} plugin.json name drift")
+    if manifest.get("license") != "Elastic-2.0":
+        errors.append(f"{PORTABLE_TARGET} plugin.json license must be Elastic-2.0")
 
     skills_root = root / "skills"
     actual = skill_inventory(skills_root, errors)

@@ -53,7 +53,7 @@ cat > "$portable_source/plugin.json" <<'JSON'
   "version": "0.1.96",
   "description": "Installer fixture.",
   "author": { "name": "Orchid Labs" },
-  "license": "MIT"
+  "license": "Elastic-2.0"
 }
 JSON
 portable_archive="$FIXTURE_DIR/message-decision-packs-agent-plugins-latest.tar.gz"
@@ -80,7 +80,7 @@ const walk = (directory) => {
 walk(root)
 const skills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
 writeFileSync(output, `${JSON.stringify({
-  plugin: { version: '0.1.96' },
+  plugin: { version: '0.1.96', license: 'Elastic-2.0' },
   assets: { archives: [{ platform: 'agent-plugins', latestAsset: 'message-decision-packs-agent-plugins-latest.tar.gz' }] },
   portable_packages: { 'agent-plugins': {
     contract: 'mdp.agent-plugins-portable-package.v1',
@@ -120,6 +120,41 @@ EOF
 )"
 
 portable_install="$TMP_DIR/portable-install"
+
+# A combined native + portable run must reject exact and ancestor overlaps
+# before invoking any native installer or touching the existing native tree.
+native_cursor="$TMP_DIR/native-cursor/message-decision-packs"
+mkdir -p "$native_cursor/hooks"
+printf 'native-hook\n' > "$native_cursor/hooks/keep.txt"
+for colliding_portable in "$native_cursor" "$(dirname "$native_cursor")"; do
+  : > "$LOG_FILE"
+  if PATH="$TEST_PATH" \
+    PLUXX_CURSOR_INSTALL_DIR="$native_cursor" \
+    MDP_AGENT_PLUGINS_INSTALL_DIR="$colliding_portable" \
+      "$ROOT/scripts/install.sh" --agents -y --base-url "$BASE_URL" \
+      >"$TMP_DIR/collision.stdout" 2>"$TMP_DIR/collision.stderr"; then
+    echo "Portable installer unexpectedly accepted a native-tree collision: $colliding_portable" >&2
+    exit 1
+  fi
+  grep -F "overlaps the selected cursor native install tree" "$TMP_DIR/collision.stderr" >/dev/null
+  test ! -s "$LOG_FILE"
+  test "$(cat "$native_cursor/hooks/keep.txt")" = "native-hook"
+done
+
+# Portable-only mode must still refuse an existing native or unknown tree.
+: > "$LOG_FILE"
+if PATH="$TEST_PATH" \
+  MDP_AGENT_PLUGINS_INSTALL_DIR="$native_cursor" \
+    "$ROOT/scripts/install.sh" --agent-plugins -y --base-url "$BASE_URL" \
+    >"$TMP_DIR/native-ownership.stdout" 2>"$TMP_DIR/native-ownership.stderr"; then
+  echo "Portable-only installer unexpectedly replaced an existing native tree." >&2
+  exit 1
+fi
+grep -F "unknown or native nonempty destination" "$TMP_DIR/native-ownership.stderr" >/dev/null
+test ! -s "$LOG_FILE"
+test "$(cat "$native_cursor/hooks/keep.txt")" = "native-hook"
+test "$(find "$(dirname "$native_cursor")" -maxdepth 1 -name 'message-decision-packs.mdp-portable-backup.*' -print | wc -l | tr -d ' ')" = "0"
+
 : > "$LOG_FILE"
 PATH="$TEST_PATH" \
 MDP_AGENT_PLUGINS_INSTALL_DIR="$portable_install" \
@@ -137,6 +172,18 @@ test -f "$portable_install/plugin.json"
 test ! -e "$portable_install/hooks"
 test ! -e "$portable_install/scripts"
 test ! -e "$portable_install/mcp.json"
+
+# An existing strictly owned portable destination is safely replaceable.
+printf 'stale portable payload\n' > "$portable_install/skills/mdp/SKILL.md"
+: > "$LOG_FILE"
+PATH="$TEST_PATH" \
+MDP_AGENT_PLUGINS_INSTALL_DIR="$portable_install" \
+  "$ROOT/scripts/install.sh" --agent-plugins -y --base-url "$BASE_URL"
+if grep -F "stale portable payload" "$portable_install/skills/mdp/SKILL.md" >/dev/null; then
+  echo "Portable update did not replace the previously owned payload." >&2
+  exit 1
+fi
+test "$(find "$(dirname "$portable_install")" -maxdepth 1 -name 'portable-install.mdp-portable-backup.*' -print | wc -l | tr -d ' ')" = "0"
 
 if PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --agent-plugins -y --base-url "$BASE_URL" \
   >"$TMP_DIR/missing-portable-dir.stdout" 2>"$TMP_DIR/missing-portable-dir.stderr"; then

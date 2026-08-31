@@ -264,7 +264,8 @@ const inspect = (root) => {
   const plugin = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8'))
   if (
     plugin.$schema !== 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' ||
-    plugin.name !== 'message-decision-packs'
+    plugin.name !== 'message-decision-packs' ||
+    plugin.license !== 'Elastic-2.0'
   ) throw new Error('Portable plugin.json does not match the Agent Plugins 1.0.0 MDP contract.')
   const skillsRoot = join(root, 'skills')
   const skills = readdirSync(skillsRoot).filter((name) => lstatSync(join(skillsRoot, name)).isDirectory()).sort()

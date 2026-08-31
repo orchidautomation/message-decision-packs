@@ -31,7 +31,10 @@ Environment:
   MDP_AGENT_PLUGINS_INSTALL_DIR
                         Explicit client-managed import directory for the portable
                         core. Required for --agent-plugins. When set, --agents
-                        installs it in addition to the four native bundles.
+                        installs it in addition to the four native bundles, but
+                        it must not overlap any native install tree. Use a
+                        documented native path such as Cursor's local import only
+                        with portable-only --agent-plugins mode.
 EOF
 }
 
@@ -132,6 +135,130 @@ elif [ "${#targets[@]}" -eq 0 ]; then
   targets=(codex)
 fi
 
+validate_portable_destination() {
+  local install_dir="${MDP_AGENT_PLUGINS_INSTALL_DIR:-}"
+  local target native_root
+  local native_roots=()
+
+  if [ -z "$install_dir" ]; then
+    echo "MDP_AGENT_PLUGINS_INSTALL_DIR is required for --agent-plugins." >&2
+    echo "The portable archive is client-managed; MDP will not guess an undocumented Codex path." >&2
+    echo 'A documented native import path may be used only in portable-only --agent-plugins mode.' >&2
+    return 1
+  fi
+  case "$install_dir" in
+    /*) ;;
+    *) echo "MDP_AGENT_PLUGINS_INSTALL_DIR must be an absolute path: $install_dir" >&2; return 1 ;;
+  esac
+  if [ "$install_dir" = "/" ]; then
+    echo "Refusing to install the portable package at filesystem root." >&2
+    return 1
+  fi
+
+  for target in "${targets[@]}"; do
+    case "$target" in
+      claude-code)
+        native_root="${PLUXX_CLAUDE_MARKETPLACE_DIR:-$HOME/.claude/plugins/data/${PLUXX_CLAUDE_MARKETPLACE_NAME:-message-decision-packs-releases}}/plugins/message-decision-packs"
+        native_roots+=("claude-code=$native_root")
+        ;;
+      cursor)
+        native_roots+=("cursor=${PLUXX_CURSOR_INSTALL_DIR:-$HOME/.cursor/plugins/local/message-decision-packs}")
+        ;;
+      codex)
+        native_roots+=("codex=${PLUXX_CODEX_INSTALL_DIR:-$HOME/.codex/plugins/message-decision-packs}")
+        ;;
+      opencode)
+        native_roots+=("opencode=${PLUXX_OPENCODE_INSTALL_DIR:-${PLUXX_OPENCODE_PLUGIN_ROOT_DIR:-$HOME/.config/opencode/plugins}/message-decision-packs}")
+        ;;
+    esac
+  done
+
+  need_cmd node
+  node - "$install_dir" "${native_roots[@]}" <<'NODE'
+const { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } = require('fs')
+const { dirname, join, relative, resolve, sep } = require('path')
+const [portableInput, ...nativeInputs] = process.argv.slice(2)
+
+const canonical = (input) => {
+  let cursor = resolve(input)
+  const suffix = []
+  while (!existsSync(cursor)) {
+    const parent = dirname(cursor)
+    if (parent === cursor) break
+    suffix.unshift(cursor.slice(parent.length + (parent.endsWith(sep) ? 0 : 1)))
+    cursor = parent
+  }
+  const base = existsSync(cursor) ? realpathSync(cursor) : cursor
+  return suffix.reduce((path, part) => join(path, part), base)
+}
+const overlaps = (left, right) => {
+  if (left === right) return true
+  const leftToRight = relative(left, right)
+  const rightToLeft = relative(right, left)
+  return (leftToRight !== '' && !leftToRight.startsWith(`..${sep}`) && leftToRight !== '..') ||
+    (rightToLeft !== '' && !rightToLeft.startsWith(`..${sep}`) && rightToLeft !== '..')
+}
+
+const portable = canonical(portableInput)
+for (const value of nativeInputs) {
+  const separator = value.indexOf('=')
+  const host = value.slice(0, separator)
+  const native = canonical(value.slice(separator + 1))
+  if (overlaps(portable, native)) {
+    console.error(`Refusing portable install: ${portable} overlaps the selected ${host} native install tree ${native}.`)
+    console.error('Choose a distinct client-managed path, or run --agent-plugins by itself for a documented native import path.')
+    process.exit(1)
+  }
+}
+if (existsSync(portableInput)) {
+  const stats = lstatSync(portableInput)
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    console.error(`Refusing portable install over a non-directory or symbolic-link destination: ${portable}`)
+    process.exit(1)
+  }
+  const top = readdirSync(portableInput).sort()
+  if (top.length > 0) {
+    const ownedTop = JSON.stringify(top) === JSON.stringify(['plugin.json', 'skills'])
+    let manifest
+    try {
+      manifest = ownedTop ? JSON.parse(readFileSync(join(portableInput, 'plugin.json'), 'utf8')) : undefined
+    } catch {}
+    const expectedSkills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
+    const skillsPath = join(portableInput, 'skills')
+    const ownedSkills = existsSync(skillsPath) && !lstatSync(skillsPath).isSymbolicLink() &&
+      lstatSync(skillsPath).isDirectory() &&
+      JSON.stringify(readdirSync(skillsPath).sort()) === JSON.stringify(expectedSkills) &&
+      expectedSkills.every((skill) => {
+        const entry = join(skillsPath, skill)
+        const skillFile = join(entry, 'SKILL.md')
+        return existsSync(entry) && !lstatSync(entry).isSymbolicLink() && lstatSync(entry).isDirectory() &&
+          existsSync(skillFile) && !lstatSync(skillFile).isSymbolicLink() && lstatSync(skillFile).isFile()
+      })
+    const ownedPortable =
+      ownedTop &&
+      ownedSkills &&
+      manifest?.$schema === 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' &&
+      manifest?.name === 'message-decision-packs' &&
+      manifest?.license === 'Elastic-2.0'
+    if (!ownedPortable) {
+      console.error(`Refusing portable install over an unknown or native nonempty destination: ${portable}`)
+      console.error('Only an absent, empty, or previously owned MDP Agent Plugins portable directory may be replaced.')
+      process.exit(1)
+    }
+  }
+}
+NODE
+}
+
+for target in "${targets[@]}"; do
+  if [ "$target" = "agent-plugins" ]; then
+    # Run before any native installer so an ambiguous destination cannot mutate
+    # or replace a native tree before the portable install fails closed.
+    validate_portable_destination
+    break
+  fi
+done
+
 if [ "$yes" = "1" ]; then
   export PLUXX_CODEX_ENABLE_PLUGIN_HOOKS="${PLUXX_CODEX_ENABLE_PLUGIN_HOOKS:-1}"
 fi
@@ -183,21 +310,6 @@ install_agent_plugins() {
   local extracted="$tmp_dir/portable-extracted"
   local source_root="$extracted/agent-plugins"
   local expected actual
-
-  if [ -z "$install_dir" ]; then
-    echo "MDP_AGENT_PLUGINS_INSTALL_DIR is required for --agent-plugins." >&2
-    echo "The portable archive is client-managed; MDP will not guess an undocumented Codex path." >&2
-    echo 'For a documented Cursor local import, set it explicitly under $HOME/.cursor/plugins/local/.' >&2
-    return 1
-  fi
-  case "$install_dir" in
-    /*) ;;
-    *) echo "MDP_AGENT_PLUGINS_INSTALL_DIR must be an absolute path: $install_dir" >&2; return 1 ;;
-  esac
-  if [ "$install_dir" = "/" ]; then
-    echo "Refusing to install the portable package at filesystem root." >&2
-    return 1
-  fi
 
   need_cmd tar
   need_cmd node
@@ -251,7 +363,8 @@ if (JSON.stringify(top) !== JSON.stringify(['plugin.json', 'skills'])) {
 const plugin = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8'))
 if (
   plugin.$schema !== 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' ||
-  plugin.name !== 'message-decision-packs'
+  plugin.name !== 'message-decision-packs' ||
+  plugin.license !== 'Elastic-2.0'
 ) fail('Portable plugin.json does not match the MDP Agent Plugins contract.')
 const expectedSkills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
 const skillsRoot = join(root, 'skills')
@@ -284,6 +397,7 @@ const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 const archive = manifest?.assets?.archives?.find((entry) => entry.platform === 'agent-plugins')
 const portable = manifest?.portable_packages?.['agent-plugins']
 if (plugin.version !== manifest?.plugin?.version) fail('Portable plugin version differs from the release manifest.')
+if (manifest?.plugin?.license !== 'Elastic-2.0') fail('Release manifest does not retain the MDP Elastic-2.0 license.')
 if (archive?.latestAsset !== archiveName) fail('Release manifest does not bind the requested Agent Plugins archive.')
 if (
   portable?.contract !== 'mdp.agent-plugins-portable-package.v1' ||

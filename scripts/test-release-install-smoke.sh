@@ -26,7 +26,7 @@ cat > "$portable_fixture_source/plugin.json" <<'JSON'
   "version": "0.1.96",
   "description": "Release smoke fixture.",
   "author": { "name": "Orchid Labs" },
-  "license": "MIT"
+  "license": "Elastic-2.0"
 }
 JSON
 cat > "$fake_installer" <<SH
@@ -162,6 +162,7 @@ const walkPortable = (directory) => {
 }
 walkPortable(portableRoot)
 writeFileSync(output, `${JSON.stringify({
+  plugin: { version: '0.1.96', license: 'Elastic-2.0' },
   cli_artifacts: [{ name: stagedName, sha256: stagedSha }],
   plugin_trees: pluginTrees,
   portable_packages: { 'agent-plugins': {

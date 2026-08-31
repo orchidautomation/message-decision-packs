@@ -318,6 +318,20 @@ try {
   )
   const packageManifest = JSON.parse(readFileSync(join(root, 'dist/opencode/package.json'), 'utf8'))
   assert(manifest.plugin.version === packageManifest.version, 'Release and OpenCode package versions must match.')
+  assert(manifest.plugin.license === 'Elastic-2.0', 'Release manifest must retain the canonical Elastic-2.0 license.')
+  for (const [platform, manifestPath] of [
+    ['claude-code', '.claude-plugin/plugin.json'],
+    ['cursor', '.cursor-plugin/plugin.json'],
+    ['codex', '.codex-plugin/plugin.json'],
+    ['opencode', 'package.json'],
+    ['agent-plugins', 'plugin.json'],
+  ]) {
+    const generatedManifest = JSON.parse(readFileSync(join(root, 'dist', platform, manifestPath), 'utf8'))
+    assert(
+      generatedManifest.license === 'Elastic-2.0',
+      `Generated ${platform} manifest must retain the canonical Elastic-2.0 license.`,
+    )
+  }
 
   manifest.assets.archives.push({ ...manifest.assets.archives[0] })
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)

@@ -6,6 +6,7 @@
     "name": "Orchid Labs",
     "url": "https://orchidautomation.com"
   },
+  "license": "Elastic-2.0",
   "skills": "./skills/",
   "interface": {
     "displayName": "Message Decision Packs",
