@@ -3993,6 +3993,12 @@ fn host_wrap_v3_normalization_output(
         "v3-collected-attempt-results-missing",
     )?;
     let collected_data = data_object(&collected_value);
+    let collected_attributes = collected_data["attributes"].as_object().ok_or_else(|| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            "v3-collected-attempt-results-invalid",
+        )
+    })?;
     let attempt_results = collected_data["attempt_results"]
         .as_array()
         .ok_or_else(|| {
@@ -4106,12 +4112,12 @@ fn host_wrap_v3_normalization_output(
                 .and_then(|classification| classification.get("value"))
                 .cloned()
         } else {
+            if let Some(collected_attribute) = collected_attributes.get(attribute_id) {
+                attributes.insert(attribute_id.to_owned(), collected_attribute.clone());
+            }
             let attempt = observed_attempts
                 .iter()
                 .find(|attempt| attempt["attribute_id"] == attribute_id);
-            if let Some(attempt) = attempt {
-                attributes.insert(attribute_id.to_owned(), (*attempt).clone());
-            }
             attempt.and_then(|attempt| attempt.get("value")).cloned()
         };
         let Some(value) = projected_value else {
@@ -8292,6 +8298,7 @@ mod tests {
                     }]},
                     "decision_input_contracts": [{"id": "gtm.prospect-context", "attributes": [
                         {"id": "person_title", "processing": "observed", "output_path": "title"},
+                        {"id": "person_location", "processing": "observed", "output_path": "attributes.location"},
                         {"id": "persona", "processing": "model-classified", "output_path": "persona"}
                     ], "signal_projections": []}],
                     "normalized_output_schema": {"type": "object"},
@@ -8299,11 +8306,32 @@ mod tests {
                     "no_draft_policy": {"draft_allowed": false},
                     "boundaries": {"model_owned": ["classifications", "gaps", "rejected_claims"]}
                 }),
-                "collected-attempt-results" => serde_json::json!({"attempt_results": [{
-                    "attempt_id": "synthetic-attempt-001", "attribute_id": "person_title",
-                    "status": "observed", "value": "Founding GTM Engineer",
-                    "source_class": "synthetic_fixture", "source_locator": "fixture:title"
-                }]}),
+                "collected-attempt-results" => serde_json::json!({
+                    "attributes": {
+                        "person_title": {
+                            "status": "observed", "provenance": "synthetic_fixture",
+                            "confidence": 0.99, "freshness": "2026-08-31T00:00:00Z",
+                            "value": "Founding GTM Engineer"
+                        },
+                        "person_location": {
+                            "status": "not_found", "provenance": "synthetic_fixture",
+                            "confidence": 0.0, "freshness": null,
+                            "error": "synthetic fixture has no location"
+                        }
+                    },
+                    "attempt_results": [
+                        {
+                            "attempt_id": "synthetic-attempt-001", "attribute_id": "person_title",
+                            "status": "observed", "value": "Founding GTM Engineer",
+                            "source_class": "synthetic_fixture", "source_locator": "fixture:title"
+                        },
+                        {
+                            "attempt_id": "synthetic-attempt-002", "attribute_id": "person_location",
+                            "status": "not_found", "source_class": "synthetic_fixture",
+                            "source_locator": "fixture:location"
+                        }
+                    ]
+                }),
                 _ => serde_json::json!({}),
             };
             std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
@@ -8412,6 +8440,24 @@ mod tests {
         assert_eq!(
             parsed["invocation_receipt_sha256"],
             crate::artifact_hash::sha256_hex(&invocation_bytes)
+        );
+        assert_eq!(
+            parsed["attributes"]["person_location"]["status"],
+            "not_found"
+        );
+        assert_eq!(
+            parsed["attributes"]["person_location"]["error"],
+            "synthetic fixture has no location"
+        );
+        assert!(
+            parsed["attributes"]["person_location"]
+                .get("value")
+                .is_none()
+        );
+        assert!(
+            parsed["normalized_input"]["attributes"]
+                .get("location")
+                .is_none()
         );
         let _ = std::fs::remove_dir_all(temp);
     }
