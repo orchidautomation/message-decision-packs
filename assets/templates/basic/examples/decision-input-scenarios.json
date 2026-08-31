@@ -7,10 +7,10 @@
     "error"
   ],
   "contract": "mdp.decision-input-scenarios.v1",
-  "decision_input_contract": "gtm.prospect-context@1.0.0",
-  "normalized_schema_ref": "mdp.normalized-decision-input.v2",
+  "decision_input_contract": "gtm.prospect-context@3.0.0",
+  "normalized_schema_ref": "mdp.normalized-decision-input.v3",
   "note": "Provider-neutral expected outcomes only. Collection and provider execution remain host-owned.",
-  "runtime_contract_version": "v2",
+  "runtime_contract_version": "v3",
   "scenarios": [
     {
       "attempt_statuses": [

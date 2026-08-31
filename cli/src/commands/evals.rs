@@ -731,9 +731,15 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
             .map(str::to_string)
             .collect::<BTreeSet<_>>();
         let expected = expected_outcomes.iter().cloned().collect::<BTreeSet<_>>();
+        let normalized_schema = &output["normalized_output_schema"];
         let draft_allowed_const =
-            output["normalized_output_schema"]["properties"]["draft_allowed"]["const"].as_bool();
-        if actual != expected || draft_allowed_const != Some(false) {
+            normalized_schema["properties"]["draft_allowed"]["const"].as_bool();
+        let v3_has_no_draft_authority = output["runtime_contract_version"] == "v3"
+            && normalized_schema["properties"]
+                .get("draft_allowed")
+                .is_none();
+        if actual != expected || (draft_allowed_const != Some(false) && !v3_has_no_draft_authority)
+        {
             issues.push(issue(
                 "eval_requirements_no_draft_outcome_mismatch",
                 "error",
@@ -742,7 +748,12 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
                     "expected no-draft outcomes {:?} with draft_allowed false, got {:?} and {}",
                     expected,
                     actual,
-                    output["normalized_output_schema"]["properties"]["draft_allowed"]["const"]
+                    if v3_has_no_draft_authority {
+                        json!("absent-by-v3-contract")
+                    } else {
+                        output["normalized_output_schema"]["properties"]["draft_allowed"]["const"]
+                            .clone()
+                    }
                 ),
             ));
         }

@@ -47,8 +47,8 @@ mdp --json brief --dir PACK_ROOT --prospect PROSPECT_JSON --job JOB_ID \
 ```
 
 When the resolved list is non-empty, detached input is forbidden. With a
-validated v2 normalized artifact, use the same exact lineage inputs from step
-5:
+validated v2 or sealed v3 normalized artifact, use the same exact lineage
+inputs from step 5:
 
 ```bash
 mdp --json brief --dir PACK_ROOT --normalized-input OUTPUT_JSON \
@@ -111,9 +111,17 @@ skill-implied writing or review instructions.
      runtime to execute the resolved normalization step in one generative
      `mdp run`; consume only its validated, receipted result.
      Inspect `data.runtime_contract_version`,
-     `data.contract_version_matrix`, and every compiled signal projection. Do
-     not mix v1/v2 artifacts or infer roles from prose. For v2, require the
-     exact `SOURCE_BINDING_JSON` selected by requirements.
+     `data.contract_version_matrix`, the compiled collection specification,
+     every selected taxonomy, and every compiled signal projection. Do not
+     mix v1/v2/v3 artifacts or infer roles from prose. For v2 or v3, require
+     the exact `SOURCE_BINDING_JSON` selected by requirements.
+     For v3, the host collects attempted-complete evidence but does not
+     pre-assign persona or segment. Execute the resolved normalization model
+     step through one generative `mdp run`; the model may emit only
+     `classifications`, `gaps`, and `rejected_claims`, while the CLI validates
+     `derived_from` evidence, seals hashes and observations, and emits the
+     neutral v3 envelope. Never hand-seal or accept a provider-authored v3
+     envelope.
      - If all four artifacts—`SOURCE_BINDING_JSON`,
        `SOURCE_ATTEMPT_REQUEST_JSON`, `COLLECTED_ATTEMPT_RESULTS_JSON`, and
        `OUTPUT_JSON`—are already supplied,
@@ -143,7 +151,7 @@ skill-implied writing or review instructions.
        Resume only after the host returns all three exact artifacts: the
        preserved request file, the collected-results ledger used as `raw_row`,
        and the normalized output.
-     - For either the already-supplied or resumed path, validate:
+     - For either the already-supplied or resumed path, validate the v1/v2 compatibility envelope:
 
        The command below is the v2 form. For scalar v1, omit
        `--source-binding` and keep every artifact on the v1 matrix row.
@@ -156,10 +164,13 @@ skill-implied writing or review instructions.
        --file OUTPUT_JSON
      ```
 
-     Continue only when validation passes and the top-level `outcome` is exactly
-     `ready`. Every other outcome stops no-draft before extracting
-     `normalized_prospect`.
-     For v2, do not extract `normalized_prospect`. Run the lineage-aware path:
+     For v3, verify the generative run bundle and receipt, then pass its exact
+     sealed output plus the same lineage files to deterministic fit. Continue
+     only when the sealed classifications and deterministic result permit it;
+     the normalization model never chooses fit, routing, readiness, or draft
+     permission. For v1/v2, continue only when compatibility validation passes
+     and the top-level outcome is exactly `ready`.
+     For v2 or v3, do not extract `normalized_prospect`. Run the lineage-aware path:
 
      ```bash
      mdp --json fit --dir PACK_ROOT --job prospect-fit-or-brief \
@@ -195,7 +206,7 @@ skill-implied writing or review instructions.
      Continue only when validation passes and
      `normalization_trace.fit_readiness.ready_for_mdp_fit` is exactly `true`
      before extracting `normalized_prospect`.
-6. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
+6. Never invent a person, title, signal, date, persona, segment, or required attribute. Persona and segment may be model-classified only through a pack-selected v3 taxonomy with validated contributor evidence; they are never host-assigned facts. Account-only context stays insufficient/no-draft when the pack requires person readiness.
 7. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
 
 ## Common Rules
@@ -221,4 +232,3 @@ skill-implied writing or review instructions.
   them into one run. Verify each returned bundle and receipt.
 - MDP returns qualification and bounded context. Campaign drafting, table
   batching, retries, enrichment, outbound, and CRM actions remain host-owned.
-

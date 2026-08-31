@@ -902,6 +902,7 @@ pub(crate) const NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS: &[&str] = &[
     "source_binding_sha256",
     "source_attempt_request_sha256",
     "collected_attempt_results_sha256",
+    "invocation_receipt_sha256",
     "attributes",
     "signal_observations",
     "normalized_input",

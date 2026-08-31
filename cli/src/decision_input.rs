@@ -42,6 +42,44 @@ impl DecisionInput {
     pub(crate) fn attributes(&self) -> &BTreeMap<String, Value> {
         &self.attributes
     }
+
+    /// Project the neutral input through the explicitly selected GTM adapter.
+    /// This is a private compatibility projection for the existing
+    /// deterministic evaluator; it does not change the neutral v3 wire.
+    pub(crate) fn to_gtm_prospect(&self) -> Result<Prospect, AdapterError> {
+        let mut value = Map::new();
+        for (key, field) in &self.fields {
+            value.insert(key.clone(), field.clone());
+        }
+        value.insert("attributes".into(), json_object(&self.attributes));
+        let signals = self
+            .signals
+            .iter()
+            .filter_map(Value::as_object)
+            .map(|signal| {
+                serde_json::json!({
+                    "id": signal.get("id").and_then(Value::as_str).unwrap_or("observed-signal"),
+                    "title": signal.get("title").or_else(|| signal.get("value")).and_then(Value::as_str).unwrap_or("Observed signal"),
+                    "source": signal.get("source").or_else(|| signal.get("source_locator")),
+                    "confidence": signal.get("confidence").map(|value| value.as_str().map(str::to_owned).unwrap_or_else(|| value.to_string())),
+                    "freshness": signal.get("freshness").or_else(|| signal.get("observed_at")),
+                    "state_as": signal.get("state_as")
+                })
+            })
+            .collect::<Vec<_>>();
+        value.insert("signals".into(), Value::Array(signals));
+        serde_json::from_value(Value::Object(value))
+            .map_err(|_| AdapterError::Invalid("v3 GTM projection does not satisfy prospect"))
+    }
+}
+
+fn json_object(values: &BTreeMap<String, Value>) -> Value {
+    Value::Object(
+        values
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -545,6 +583,34 @@ mod tests {
             input.attributes().get("person_title"),
             Some(&json!("Engineering Lead"))
         );
+    }
+
+    #[test]
+    fn neutral_v3_input_projects_through_the_explicit_gtm_adapter() {
+        let envelope = Map::from_iter([(
+            "normalized_input".into(),
+            json!({
+                "fields": {
+                    "name": "Alex Example", "title": "Founding GTM Engineer",
+                    "company": "ExampleCo", "persona": "GTM Engineering",
+                    "segment": "agent-assisted GTM", "trigger": "Hiring now"
+                },
+                "signals": [{
+                    "id": "why-now-1", "value": "Hiring now",
+                    "source_locator": "https://example.invalid/jobs", "confidence": 95,
+                    "observed_at": "2026-08-30T00:00:00Z"
+                }],
+                "attributes": {"contact_policy": "clear"}
+            }),
+        )]);
+        let prospect = from_v3_normalized(&envelope)
+            .unwrap()
+            .to_gtm_prospect()
+            .unwrap();
+        assert_eq!(prospect.persona.as_deref(), Some("GTM Engineering"));
+        assert_eq!(prospect.segment.as_deref(), Some("agent-assisted GTM"));
+        assert_eq!(prospect.attributes["contact_policy"], "clear");
+        assert_eq!(prospect.signals[0].title, "Hiring now");
     }
 
     #[test]
