@@ -2914,10 +2914,16 @@ where
     write_bytes_create_new(&output_path, &output_bytes)?;
     let routed_context = optional_input(staged_inputs, "routed_context")
         .or_else(|| optional_input(staged_inputs, "routed-context"));
+    // The validator binds normalization output to the prompt declared by the
+    // compiled job. The private staged copy is the byte-frozen driver input,
+    // but it intentionally lives at a different filesystem path. Validate
+    // against the canonical prompt inside the staged pack after
+    // `validate_selected_prompt` has proven both copies are byte-identical.
+    let bound_prompt_path = canonical_selected_prompt_path(staged_pack, &prepared.step);
     let validation = validate_prompt_output_file_with_lineage_inputs(
         staged_pack,
         &output_path,
-        Some(&staged_prompt.staged_path),
+        Some(&bound_prompt_path),
         None,
         optional_input(staged_inputs, "source-audit").map(|item| item.staged_path.as_path()),
         optional_input(staged_inputs, "source-binding")
@@ -3115,7 +3121,7 @@ fn validate_selected_prompt(
     staged_prompt: &StagedInput,
     step: &CompiledModelStepV1,
 ) -> Result<()> {
-    let canonical_path = staged_pack.join(".mdp").join(&step.prompt_path);
+    let canonical_path = canonical_selected_prompt_path(staged_pack, step);
     let canonical_bytes = fs::read(canonical_path)
         .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "selected-prompt-missing"))?;
     let staged_bytes = fs::read(&staged_prompt.staged_path)?;
@@ -3126,6 +3132,10 @@ fn validate_selected_prompt(
         ));
     }
     Ok(())
+}
+
+fn canonical_selected_prompt_path(staged_pack: &Path, step: &CompiledModelStepV1) -> PathBuf {
+    staged_pack.join(".mdp").join(&step.prompt_path)
 }
 
 fn canonical_output_schema_for_step(
@@ -8301,6 +8311,56 @@ mod tests {
             input.source_path = path;
         }
         temp
+    }
+
+    #[test]
+    fn native_validation_binds_to_canonical_prompt_after_private_staging() {
+        let root = temp_path("canonical-prompt-binding");
+        let staged_pack = root.join("pack");
+        let canonical_prompt = staged_pack.join(".mdp/prompts/normalize-prospect.yaml");
+        let private_prompt = root.join("private/prompt.yaml");
+        fs::create_dir_all(canonical_prompt.parent().unwrap()).unwrap();
+        fs::create_dir_all(private_prompt.parent().unwrap()).unwrap();
+        fs::write(&canonical_prompt, "synthetic governed prompt\n").unwrap();
+        fs::write(&private_prompt, "synthetic governed prompt\n").unwrap();
+
+        let step = v3_envelope_test_step();
+        let staged_prompt = super::StagedInput {
+            logical_name: step.prompt_id.clone(),
+            authority: super::ArtifactAuthority {
+                logical_name: step.prompt_id.clone(),
+                schema_id: "mdp.prompt.v1".into(),
+                media_type: "application/yaml".into(),
+                byte_count: 26,
+                sha256: crate::artifact_hash::sha256_hex(b"synthetic governed prompt\n"),
+                provenance: EvidenceProvenance::MdpObserved,
+                provenance_refs: vec![],
+            },
+            source_path: canonical_prompt.clone(),
+            staged_path: private_prompt.clone(),
+            initial_sha256: crate::artifact_hash::sha256_hex(b"synthetic governed prompt\n"),
+        };
+
+        super::validate_selected_prompt(&staged_pack, &staged_prompt, &step)
+            .expect("an identical private prompt copy must pass byte binding");
+        assert_eq!(
+            super::canonical_selected_prompt_path(&staged_pack, &step),
+            canonical_prompt
+        );
+        assert_ne!(
+            super::canonical_selected_prompt_path(&staged_pack, &step),
+            private_prompt,
+            "semantic validation must bind to the compiled pack path, not the private copy path"
+        );
+
+        fs::write(&private_prompt, "different prompt\n").unwrap();
+        let error = super::validate_selected_prompt(&staged_pack, &staged_prompt, &step)
+            .expect_err("a different private prompt copy must fail closed");
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "selected-prompt-mismatch"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
