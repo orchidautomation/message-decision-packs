@@ -3,6 +3,7 @@ use crate::commands::prompt_output::{
     read_bounded_bytes, validate_prompt_output_file_with_lineage_inputs,
 };
 use crate::commands::requirements::{requirements, resolve_job_decision_inputs};
+use crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3;
 use crate::models::{CardKind, Manifest, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
 use crate::routing::{
@@ -20,7 +21,7 @@ use crate::utils::{
 use crate::value_contracts::prospect_contract_violations;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -251,15 +252,31 @@ pub(crate) fn fit_normalized(
             "normalized decision input failed lineage validation"
         ));
     }
-    let projection = validation["signal_projection"].clone();
-    if projection["status"] != "lineage-validated" && projection["status"] != "disqualified" {
-        return Err(anyhow!(
-            "normalized decision input is not qualification-eligible"
-        ));
-    }
-    let prospect: crate::models::Prospect =
-        serde_json::from_value(normalized["normalized_prospect"].clone())
-            .context("normalized_prospect does not satisfy the prospect contract")?;
+    let is_v3 = normalized["contract"] == NORMALIZED_DECISION_INPUT_CONTRACT_V3;
+    let (prospect, mut authority, projected_prospect_sha256) = if is_v3 {
+        let object = normalized
+            .as_object()
+            .ok_or_else(|| anyhow!("normalized decision input must be an object"))?;
+        let neutral = crate::decision_input::from_v3_normalized(object)
+            .map_err(|error| anyhow!("invalid v3 normalized decision input: {error}"))?;
+        let prospect = neutral
+            .to_gtm_prospect()
+            .map_err(|error| anyhow!("v3 GTM projection failed: {error}"))?;
+        (prospect, v3_signal_authority(&normalized), None)
+    } else {
+        let projection = validation["signal_projection"].clone();
+        if projection["status"] != "lineage-validated" && projection["status"] != "disqualified" {
+            return Err(anyhow!(
+                "normalized decision input is not qualification-eligible"
+            ));
+        }
+        let prospect: crate::models::Prospect =
+            serde_json::from_value(normalized["normalized_prospect"].clone())
+                .context("normalized_prospect does not satisfy the prospect contract")?;
+        let authority = signal_eligibility(&projection);
+        let projected_hash = Some(canonical_json_sha256(&normalized["normalized_prospect"])?);
+        (prospect, authority, projected_hash)
+    };
     let compiled = requirements(root, job_id)?;
     let requirements_sha256 = canonical_json_sha256(&compiled)?;
     let eligibility_policy = json!({
@@ -269,7 +286,6 @@ pub(crate) fn fit_normalized(
             .flat_map(|contract| contract["signal_projections"].as_array().into_iter().flatten())
             .collect::<Vec<_>>()
     });
-    let mut authority = signal_eligibility(&projection);
     authority["contract"] = json!("mdp.signal-qualification-authority.v1");
     authority["job_id"] = json!(job_id);
     authority["pack_id"] = compiled["pack"]["id"].clone();
@@ -278,8 +294,9 @@ pub(crate) fn fit_normalized(
     authority["validator_version"] = json!(env!("CARGO_PKG_VERSION"));
     authority["eligibility_policy_sha256"] = json!(canonical_json_sha256(&eligibility_policy)?);
     authority["normalized_output_sha256"] = json!(sha256_hex(&normalized_bytes));
-    authority["projected_prospect_sha256"] =
-        json!(canonical_json_sha256(&normalized["normalized_prospect"])?);
+    if let Some(projected_prospect_sha256) = projected_prospect_sha256 {
+        authority["projected_prospect_sha256"] = json!(projected_prospect_sha256);
+    }
     let result = fit_prospect_with_signal_authority(root, prospect, Some(authority), true)?;
     let decision_input_contracts = compiled["decision_input_contracts"]
         .as_array()
@@ -293,6 +310,105 @@ pub(crate) fn fit_normalized(
         job_id,
         Some(decision_input_contracts),
     ))
+}
+
+/// Translate validated v3 host-owned signal observations into the existing
+/// qualification-authority view consumed by the deterministic GTM evaluator.
+/// This is intentionally an ingress adapter: it groups observations by their
+/// compiled projection, preserves only lineage receipts, and never treats
+/// model prose as qualification authority.
+fn v3_signal_authority(normalized: &Value) -> Value {
+    let mut grouped: BTreeMap<String, (BTreeSet<String>, Vec<Value>)> = BTreeMap::new();
+    let mut rejected = Vec::new();
+    for observation in normalized["signal_observations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let signal_id = observation["qualified_projection_id"]
+            .as_str()
+            .or_else(|| observation["projection_id"].as_str())
+            .or_else(|| observation["id"].as_str())
+            .unwrap_or("unidentified-signal")
+            .to_string();
+        let roles = observation["roles"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .filter(|role| {
+                matches!(
+                    *role,
+                    "fit" | "why-now" | "person-resolution" | "disqualifier"
+                )
+            })
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        let receipt = json!({
+            "id": observation["id"],
+            "attempt_ids": observation["attempt_ids"],
+            "source_class": observation["source_class"],
+            "observed_at": observation["observed_at"],
+            "confidence": observation["confidence"],
+            "receipt": observation["receipt"]
+        });
+        if roles.is_empty() {
+            rejected.push(json!({
+                "signal_id": signal_id,
+                "qualified_projection_id": observation["qualified_projection_id"],
+                "observation_ids": observation["id"].as_str().into_iter().collect::<Vec<_>>(),
+                "authority_class": "unassessed",
+                "decision": "rejected",
+                "reason": "no-declared-qualification-role"
+            }));
+            continue;
+        }
+        let entry = grouped
+            .entry(signal_id)
+            .or_insert_with(|| (BTreeSet::new(), Vec::new()));
+        entry.0.extend(roles);
+        entry.1.push(receipt);
+    }
+
+    let mut accepted = Vec::new();
+    let mut aggregate_roles = BTreeSet::new();
+    for (signal_id, (roles, mut receipts)) in grouped {
+        receipts.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+        let observation_ids = receipts
+            .iter()
+            .filter_map(|receipt| receipt["id"].as_str())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        aggregate_roles.extend(roles.iter().cloned());
+        accepted.push(json!({
+            "signal_id": signal_id,
+            "qualified_projection_id": signal_id,
+            "roles": roles,
+            "observation_ids": observation_ids,
+            "observation_receipts": receipts,
+            "authority_class": "lineage-validated",
+            "decision": "accepted"
+        }));
+    }
+    json!({
+        "authority_class": "lineage-validated",
+        "aggregate_authority": "lineage-validated",
+        "projection_status": "lineage-validated",
+        "eligible_signal_count": accepted.len(),
+        "roles": {
+            "fit": aggregate_roles.contains("fit"),
+            "why-now": aggregate_roles.contains("why-now"),
+            "person-resolution": aggregate_roles.contains("person-resolution"),
+            "disqualifier": aggregate_roles.contains("disqualifier")
+        },
+        "accepted": accepted,
+        "rejected": rejected,
+        "source_binding_sha256": normalized["source_binding_sha256"],
+        "source_attempt_request_sha256": normalized["source_attempt_request_sha256"],
+        "collected_attempt_results_sha256": normalized["collected_attempt_results_sha256"],
+        "normalized_output_sha256": Value::Null,
+        "trust_boundary": "lineage identity only; does not attest host authenticity or source truth"
+    })
 }
 
 pub(crate) fn fit_prospect_for_job(
@@ -2972,6 +3088,60 @@ optional:
         assert!(result["matches"].as_array().expect("matches array").len() > 0);
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn v3_signal_authority_groups_observations_and_omits_signal_prose() {
+        let normalized = json!({
+            "source_binding_sha256": "a",
+            "source_attempt_request_sha256": "b",
+            "collected_attempt_results_sha256": "c",
+            "signal_observations": [
+                {
+                    "id": "obs-2",
+                    "qualified_projection_id": "contract#fit",
+                    "roles": ["fit"],
+                    "attempt_ids": ["attempt-2"],
+                    "source_class": "synthetic_fixture",
+                    "observed_at": "2026-08-31T00:00:00Z",
+                    "confidence": 100,
+                    "value": "private evidence prose",
+                    "receipt": {"source_binding_sha256": "a"}
+                },
+                {
+                    "id": "obs-1",
+                    "qualified_projection_id": "contract#fit",
+                    "roles": ["why-now"],
+                    "attempt_ids": ["attempt-1"],
+                    "source_class": "synthetic_fixture",
+                    "observed_at": "2026-08-31T00:00:00Z",
+                    "confidence": 100,
+                    "value": "another private evidence prose"
+                },
+                {
+                    "id": "obs-unassessed",
+                    "qualified_projection_id": "contract#unknown",
+                    "roles": [],
+                    "attempt_ids": ["attempt-3"]
+                }
+            ]
+        });
+
+        let authority = v3_signal_authority(&normalized);
+        assert_eq!(authority["authority_class"], "lineage-validated");
+        assert_eq!(authority["eligible_signal_count"], 1);
+        assert_eq!(authority["roles"]["fit"], true);
+        assert_eq!(authority["roles"]["why-now"], true);
+        assert_eq!(authority["accepted"][0]["signal_id"], "contract#fit");
+        assert_eq!(
+            authority["accepted"][0]["observation_ids"],
+            json!(["obs-1", "obs-2"])
+        );
+        assert_eq!(
+            authority["rejected"][0]["reason"],
+            "no-declared-qualification-role"
+        );
+        assert!(!authority.to_string().contains("private evidence prose"));
     }
 
     #[test]

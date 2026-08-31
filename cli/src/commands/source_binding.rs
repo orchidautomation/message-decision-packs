@@ -967,12 +967,12 @@ pub(crate) fn source_lineage_version_matrix() -> Value {
 pub(crate) fn semantic_v3_lineage_version_matrix() -> Value {
     json!({
         "semantic_v3": {
-            "requirements": REQUIREMENTS_CONTRACT,
-            "source_binding": SOURCE_BINDING_CONTRACT,
+            "requirements": REQUIREMENTS_CONTRACT_V2,
+            "source_binding": SOURCE_BINDING_CONTRACT_V2,
             "source_attempt_request": SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
             "collected_attempt_results": COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
             "normalized_output": crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3,
-            "meaning": "v1 attribute binding remains authoritative for observed collection; classified attributes are excluded from binding, request, and results and live only in the selected taxonomy specification"
+            "meaning": "v2 projection binding remains authoritative for observed collection; classified attributes are excluded from binding, request, and results and live only in the selected taxonomy specification"
         },
         "compatibility": {
             "legacy_v1_v2_unchanged": true,
