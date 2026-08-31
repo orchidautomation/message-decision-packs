@@ -1,0 +1,114 @@
+{
+  "fixture_kind": "deterministic-mock",
+  "domain_terms": ["support", "ticket", "helpdesk"],
+  "core_contracts": [
+    "mdp.normalized-decision-input.v3",
+    "mdp.normalization-semantic-provider.v3",
+    "mdp.classification-taxonomy.v3",
+    "mdp.normalization-host-envelope.v1"
+  ],
+  "primitive_ids": [
+    "actors", "decision-criteria", "source-signals", "needs-requirements",
+    "evidence-proof", "boundaries", "output-contracts", "routing-jobs",
+    "gaps", "evals"
+  ],
+  "taxonomy": {
+    "id": "request-urgency",
+    "version": "1",
+    "output_attribute": "urgency",
+    "contributor_attribute_ids": ["request_summary", "impact_observation"],
+    "source_classes": ["synthetic_fixture"],
+    "minimum_evidence": {"observed_contributors": 1},
+    "basis_max_chars": 240,
+    "ambiguity_policy": "human-review",
+    "no_match_policy": "gap",
+    "conflict_policy": "human-review",
+    "values": [
+      {
+        "value": "urgent",
+        "definition": "A bounded service request with explicit material impact requiring immediate handling.",
+        "positive_indicators": ["production unavailable", "material user impact"],
+        "exclusions": ["general question"]
+      },
+      {
+        "value": "standard",
+        "definition": "A bounded service request without explicit immediate material impact.",
+        "positive_indicators": ["general question", "routine request"],
+        "exclusions": ["production unavailable"]
+      }
+    ]
+  },
+  "observed_attribute_ids": ["urgency"],
+  "known_attempt_ids": [
+    "attempt-positive", "attempt-negative", "attempt-ambiguous-a",
+    "attempt-ambiguous-b", "attempt-stale", "attempt-missing",
+    "attempt-conflict-a", "attempt-conflict-b"
+  ],
+  "cases": [
+    {
+      "id": "positive",
+      "expected_readiness": "ready",
+      "payload": {"classifications":{"urgency":{"status":"classified","value":"urgent","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-positive"],"basis":"The observed impact explicitly states that production is unavailable."}},"gaps":[],"rejected_claims":[]}
+    },
+    {
+      "id": "negative-no-match",
+      "expected_readiness": "human-review",
+      "payload": {"classifications":{"urgency":{"status":"no-match","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-negative"],"basis":"The observation does not match either closed urgency definition."}},"gaps":[{"attribute":"urgency","reason":"No closed taxonomy value matched.","derived_from":["attempt-negative"],"taxonomy_id":"request-urgency"}],"rejected_claims":[]}
+    },
+    {
+      "id": "ambiguous",
+      "expected_readiness": "human-review",
+      "payload": {"classifications":{"urgency":{"status":"ambiguous","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-ambiguous-a","attempt-ambiguous-b"],"basis":"The supplied observations support different closed values."}},"gaps":[],"rejected_claims":[]}
+    },
+    {
+      "id": "stale",
+      "expected_readiness": "insufficient-context",
+      "payload": {"classifications":{"urgency":{"status":"unsupported","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-stale"],"basis":"The only contributor was collected outside the allowed freshness window."}},"gaps":[],"rejected_claims":[]}
+    },
+    {
+      "id": "missing",
+      "expected_readiness": "insufficient-context",
+      "payload": {"classifications":{"urgency":{"status":"unsupported","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-missing"],"basis":"The required contributor attempt completed without an observed value."}},"gaps":[],"rejected_claims":[]}
+    },
+    {
+      "id": "conflicting",
+      "expected_readiness": "human-review",
+      "payload": {"classifications":{"urgency":{"status":"ambiguous","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-conflict-a","attempt-conflict-b"],"basis":"Two current contributor observations conflict and neither may be discarded."}},"gaps":[],"rejected_claims":[]}
+    },
+    {
+      "id": "invalid-enum",
+      "expected_issue": "v3_classification_invalid_status",
+      "payload": {"classifications":{"urgency":{"status":"approved","value":"urgent","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-positive"],"basis":"A model cannot create a new status."}}}
+    },
+    {
+      "id": "unknown-taxonomy",
+      "expected_issue": "v3_classification_unknown_taxonomy",
+      "payload": {"classifications":{"urgency":{"status":"classified","value":"urgent","taxonomy_id":"invented-taxonomy","taxonomy_version":"1","derived_from":["attempt-positive"],"basis":"The taxonomy is not selected by the pack."}}}
+    },
+    {
+      "id": "taxonomy-version-tamper",
+      "expected_issue": "v3_classification_unknown_taxonomy",
+      "payload": {"classifications":{"urgency":{"status":"classified","value":"urgent","taxonomy_id":"request-urgency","taxonomy_version":"999","derived_from":["attempt-positive"],"basis":"The version does not match the compiled taxonomy."}}}
+    },
+    {
+      "id": "unknown-evidence",
+      "expected_issue": "v3_classification_unknown_evidence_ref",
+      "payload": {"classifications":{"urgency":{"status":"classified","value":"urgent","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-invented"],"basis":"The evidence reference was not collected."}}}
+    },
+    {
+      "id": "fabricated-confidence",
+      "expected_issue": "v3_semantic_payload_malformed",
+      "payload": {"classifications":{"urgency":{"status":"classified","value":"urgent","taxonomy_id":"request-urgency","taxonomy_version":"1","derived_from":["attempt-positive"],"basis":"The classification is evidence-bound, not confidence-bound.","confidence":0.99}}}
+    },
+    {
+      "id": "host-field-injection",
+      "expected_issue": "v3_host_owned_field_injection",
+      "payload": {"contract":"mdp.normalized-decision-input.v3","classifications":{}}
+    },
+    {
+      "id": "mixed-legacy",
+      "expected_issue": "v3_legacy_alias_paired_with_v3",
+      "payload": {"classifications":{},"normalized_prospect":{"legacy":true}}
+    }
+  ]
+}

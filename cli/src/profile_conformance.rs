@@ -5,9 +5,10 @@ use crate::commands::capabilities::capabilities;
 use crate::commands::decision_trace::DECISION_TRACE_V1;
 use crate::commands::evals::eval_pack;
 use crate::commands::health::{profile_activation_decision, validate_pack};
+use crate::commands::v3_normalization::validate_v3_semantic_payload;
 use crate::constants::RUN_RECEIPT_CONTRACT;
-use crate::models::Manifest;
-use crate::pack_io::read_manifest;
+use crate::models::{ClassificationTaxonomy, DecisionInputProcessing, Manifest};
+use crate::pack_io::{read_manifest, read_prompt};
 use crate::primitives::PrimitiveId;
 use crate::routing::route_budget_preflight;
 use crate::run_contracts::RUN_BUNDLE_V1;
@@ -83,6 +84,28 @@ struct ModelTask {
 struct Route {
     job_id: String,
     skill_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct SemanticV3Fixture {
+    fixture_kind: String,
+    domain_terms: Vec<String>,
+    core_contracts: Vec<String>,
+    primitive_ids: Vec<String>,
+    taxonomy: ClassificationTaxonomy,
+    observed_attribute_ids: Vec<String>,
+    known_attempt_ids: Vec<String>,
+    cases: Vec<SemanticV3Case>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct SemanticV3Case {
+    id: String,
+    payload: serde_json::Value,
+    #[serde(default)]
+    expected_readiness: Option<String>,
+    #[serde(default)]
+    expected_issue: Option<String>,
 }
 
 fn finding(subject: &str, check: &str) -> String {
@@ -360,6 +383,13 @@ fn neutral_subject() -> Subject {
     .expect("neutral fixture")
 }
 
+fn neutral_semantic_fixture() -> SemanticV3Fixture {
+    serde_json::from_str(include_str!(
+        "../tests/fixtures/profile-conformance/neutral-semantic-v3.json"
+    ))
+    .expect("neutral semantic v3 fixture")
+}
+
 #[test]
 fn both_shipped_profiles_pass_one_shared_contract() {
     let subjects = [real_subject("gtm"), real_subject("proposal")];
@@ -409,6 +439,128 @@ fn neutral_fixture_passes_core_but_is_not_registered_or_packaged() {
             .all(|job| !is_packaged_skill(&job.skill_id))
     );
     assert!(subject.text.iter().all(|value| !forbidden(value)));
+}
+
+#[test]
+fn third_domain_uses_the_same_v3_semantic_validator_without_core_vocabulary_leakage() {
+    let fixture = neutral_semantic_fixture();
+    assert_eq!(fixture.fixture_kind, "deterministic-mock");
+    assert_eq!(fixture.primitive_ids, PrimitiveId::names());
+    assert!(fixture.core_contracts.iter().all(|contract| {
+        fixture
+            .domain_terms
+            .iter()
+            .all(|term| !contract.to_ascii_lowercase().contains(term))
+    }));
+
+    for case in &fixture.cases {
+        let result = validate_v3_semantic_payload(
+            &case.payload,
+            std::slice::from_ref(&fixture.taxonomy),
+            &fixture.observed_attribute_ids,
+            &fixture.known_attempt_ids,
+        );
+        match (&case.expected_readiness, &case.expected_issue) {
+            (Some(expected), None) => {
+                assert!(result.is_ok(), "{} should be valid: {result:?}", case.id);
+                let statuses = case.payload["classifications"]
+                    .as_object()
+                    .expect("valid case classifications")
+                    .values()
+                    .filter_map(|classification| classification["status"].as_str())
+                    .collect::<Vec<_>>();
+                let readiness = if statuses.contains(&"unsupported") {
+                    "insufficient-context"
+                } else if statuses
+                    .iter()
+                    .any(|status| matches!(*status, "ambiguous" | "no-match"))
+                {
+                    "human-review"
+                } else {
+                    "ready"
+                };
+                assert_eq!(readiness, expected, "{} readiness", case.id);
+            }
+            (None, Some(expected)) => {
+                let issues = result.expect_err(&format!("{} should fail closed", case.id));
+                assert!(
+                    issues.iter().any(|issue| issue.code == expected),
+                    "{} expected {expected}, got {issues:?}",
+                    case.id
+                );
+            }
+            _ => panic!("{} must declare exactly one expectation", case.id),
+        }
+    }
+
+    let malformed = validate_v3_semantic_payload(
+        &serde_json::json!("not-json-object"),
+        std::slice::from_ref(&fixture.taxonomy),
+        &fixture.observed_attribute_ids,
+        &fixture.known_attempt_ids,
+    )
+    .expect_err("malformed provider payload must fail closed");
+    assert!(malformed.iter().any(|issue| {
+        matches!(
+            issue.code,
+            "v3_output_not_object" | "v3_semantic_payload_malformed"
+        )
+    }));
+}
+
+#[test]
+fn shipped_profiles_expose_v3_only_normalization_producers() {
+    let templates = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates");
+    for (profile, template) in [("gtm", "basic"), ("proposal", "proposal")] {
+        let pack = templates.join(template);
+        let manifest = read_manifest(&pack).expect("shipped manifest");
+        assert!(!manifest.decision_input_contracts.is_empty(), "{profile}");
+        assert!(!manifest.classification_taxonomies.is_empty(), "{profile}");
+        for contract in &manifest.decision_input_contracts {
+            assert!(
+                contract.normalization.prompt_version.ends_with(".v3"),
+                "{profile} current producer must be v3"
+            );
+            assert_eq!(
+                contract.normalization.normalized_schema_ref,
+                "mdp.normalized-decision-input.v3"
+            );
+            let prompt = read_prompt(&pack.join(".mdp").join(&contract.normalization.prompt))
+                .expect("normalization prompt");
+            let prompt_json = serde_json::to_string(&prompt).expect("prompt serializes");
+            for legacy in [
+                "normalized_prospect",
+                "normalized_opportunity",
+                "existing_pack_context",
+            ] {
+                assert!(
+                    !prompt_json.contains(legacy),
+                    "{profile} v3 producer retained legacy alias {legacy}"
+                );
+            }
+        }
+        for attribute in manifest
+            .decision_input_contracts
+            .iter()
+            .flat_map(|contract| &contract.attributes)
+            .filter(|attribute| {
+                attribute.effective_processing() == DecisionInputProcessing::ModelClassified
+            })
+        {
+            let taxonomy = attribute
+                .classification_taxonomy
+                .as_ref()
+                .expect("model-classified attribute must bind a taxonomy");
+            assert!(manifest.classification_taxonomies.iter().any(|candidate| {
+                candidate.id == taxonomy.id && candidate.version == taxonomy.version
+            }));
+        }
+    }
+    assert!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/legacy-proposal/normalize-opportunity.yaml")
+            .is_file()
+    );
 }
 
 #[test]
