@@ -162,12 +162,15 @@ inspect the stable step ID, phase, exact prompt ID/version/hash, declared input
 producers, and output contract. The customer host may execute that package or
 select exactly one step for a generative `mdp run`.
 
-For signal-aware v2 jobs, inspect `data.runtime_contract_version`,
+For signal-aware v2 and semantic v3 jobs, inspect `data.runtime_contract_version`,
 `data.contract_version_matrix`, and
 `data.decision_input_contracts[].signal_projections` before accepting any
 artifact. Their absence is expected for scalar v1 jobs. Scalar v1 and
-signal-aware v2 artifacts cannot be mixed. Structured
-repeated observations belong only in `mdp.normalized-decision-input.v2`.
+signal-aware v2 and semantic v3 artifacts cannot be mixed. In v3, also inspect
+`data.collection_specification`, `data.classification_specification`, and
+`data.taxonomy_set_sha256`: the host supplies observations, the model proposes
+only closed classifications with `derived_from` and bounded `basis`, and the
+CLI validates and seals the neutral envelope.
 Detached prospect input is compatible only when the selected job has no direct
 or transitive Decision Input Contract. For a governed job, require the exact
 normalized envelope and lineage artifacts; `governed_job_requires_normalized_input`
@@ -184,7 +187,7 @@ mdp --json validate-source-binding --dir <pack-root> \
   --job <job-id> --file <source-binding.json>
 ```
 
-Require `data.valid: true` before integration activation. Use the v1 or v2
+Require `data.valid: true` before integration activation. Use the v1, v2, or v3
 contract selected by requirements. The command validates
 portable pack/requirements pins, complete and unique qualified attribute
 coverage, requirement classes, allowed source classes, release receipts, and
@@ -193,7 +196,10 @@ normalization. A job with `available: false` cannot be source-bound.
 
 When `requirements` returns `data.available: true`, validate the bound
 normalization with the exact source-attempt request and exact host-collected
-attempt-results ledger. The command below is the v2 form; for scalar v1 omit
+attempt-results ledger. For v3, execute the compiled normalization model step
+through generative `mdp run`; only the CLI may validate semantic classifications
+and seal the host-owned envelope. The command below is the v2 compatibility
+form; for scalar v1 omit
 `--source-binding` and use only its matching v1 artifacts:
 
 ```bash
@@ -213,10 +219,14 @@ prompt-output trace authority, and only when `mdp trace` is given the same
 not validate the model output a second time.
 
 Do not extract or pass `normalized_prospect` to fit, routing, brief, or copy
-work unless validation passes and the envelope's top-level `outcome` is exactly
-`ready`. Every other normalized outcome remains no-draft.
+work. For v3, pass the verified sealed neutral envelope intact; for v1/v2,
+require compatibility validation and its governed ready outcome. Every blocked,
+ambiguous, no-match, unsupported, or invalid result remains no-draft.
+For v1/v2, top-level `outcome` is exactly `ready` before downstream use; v3
+readiness is determined only after the CLI-sealed classifications enter the
+deterministic evaluator.
 
-For a signal-aware v2 job, continue with the exact envelope rather than a
+For a signal-aware v2 or semantic v3 job, continue with the exact envelope rather than a
 detached prospect:
 
 ```bash

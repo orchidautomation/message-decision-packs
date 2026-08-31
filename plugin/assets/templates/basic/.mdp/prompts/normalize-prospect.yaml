@@ -1,281 +1,81 @@
-ambiguity_policy:
-- Unresolved disagreement is human-review and no-draft; never choose a positive winner.
-description: Normalizes a host-collected attempted-complete prospect ledger into the signal-aware v2 envelope required before canonical GTM fit, brief, or copy-review work.
-evidence_policy:
-- Lineage consistency does not prove host authenticity, authorization, or source truth.
-final_checklist:
-- All compiled attempts are present.
-- Repeated observations use v2 projections.
-- No undeclared prospect field is populated.
-- draft_allowed is false.
 format: mdp.prompt.v1
 id: normalize-prospect-row
-inputs:
-- default: N/A
-  description: The exact collected-attempt-results ledger for every compiled Decision Input attribute.
-  missing_behavior: Return malformed with draft_allowed false; do not collect or infer missing data.
-  name: raw_row
-  producer: source
-  required: true
-  schema_ref: mdp.collected-attempt-results.v2
-- default: N/A
-  description: The exact mdp.requirements.v2 data object compiled for the selected canonical job.
-  missing_behavior: Return malformed with draft_allowed false.
-  name: decision_input_requirements
-  producer: pack
-  required: true
-  schema_ref: mdp.requirements.v2
-- default: N/A
-  description: SHA-256 of the exact validated mdp.source-binding.v2 artifact supplied by the host.
-  media_type: text/plain
-  missing_behavior: Return malformed with draft_allowed false.
-  name: source_binding_sha256
-  producer: host
-  required: true
-  schema_ref: mdp.sha256.v1
-- default: N/A
-  description: SHA-256 of the exact attempted-complete source request supplied by the host.
-  media_type: text/plain
-  missing_behavior: Return malformed with draft_allowed false.
-  name: source_attempt_request_sha256
-  producer: host
-  required: true
-  schema_ref: mdp.sha256.v1
-- default: N/A
-  description: SHA-256 of raw_row supplied by the host.
-  media_type: text/plain
-  missing_behavior: Return malformed with draft_allowed false.
-  name: collected_attempt_results_sha256
-  producer: host
-  required: true
-  schema_ref: mdp.sha256.v1
-instructions:
-- Use only raw_row, decision_input_requirements, source_binding_sha256, source_attempt_request_sha256, and collected_attempt_results_sha256. Do not browse, scrape, enrich, send, sequence, mutate CRM records, or call external systems.
-- Treat decision_input_requirements.normalized_output_schema as binding and return exactly one mdp.normalized-decision-input.v2 object.
-- Copy the job, contract, normalization, binding, request, and collected-results receipts exactly; never invent or upgrade authority.
-- Preserve every compiled attribute exactly once with its observed, not_found, not_applicable, blocked, or error status. Never convert blocked or error to absence.
-- Emit repeated sourced observations only as mdp.signal-observation.v2 records for compiled signal projections, roles, contributors, and attempt receipts. Preserve agreement and conflicts; do not select a positive winner.
-- Populate normalized_prospect only from observed values through declared output_path mappings. Do not infer a person, domain, persona, segment, trigger, contact policy, or signal.
-- Set outcome to ready only when compiled readiness and hard-gate policy permit deterministic evaluation. Otherwise use insufficient-context, disqualified, human-review, malformed, or provider-error.
-- Always set draft_allowed to false. Normalization never drafts or authorizes collection, generation, sending, or external mutation.
-- Return strict JSON only without markdown, prose, comments, or code fences.
+version: gtm-prospect-context.v3
 kind: normalization
-negative_examples:
-- Do not infer a DIC from prompt prose, field names, or lead_input_requirements.
-- Do not turn not_found, blocked, or error into a safe value.
-objective: Normalize one attempted-complete prospect ledger into the exact governed v2 envelope without adding facts or execution authority.
-output_contract:
-  contract: mdp.normalized-decision-input.v2
-  entry_defaults:
-    applies_to: []
-    avoid: []
-    body: N/A
-    confidence: unknown
-    evidence: []
-    provenance: []
-  example:
-    attributes:
-      company_domain:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-002
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-002
-        status: observed
-        value: example.invalid
-      company_name:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-001
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-001
-        status: observed
-        value: Example Prospect Company
-      contact_policy:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-008
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-008
-        status: observed
-        value: clear
-      person_name:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-003
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-003
-        status: observed
-        value: Alex Example
-      person_title:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-004
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-004
-        status: observed
-        value: Revenue Operations Lead
-      persona:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-005
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-005
-        status: observed
-        value: GTM Engineering
-      segment:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-006
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-006
-        status: observed
-        value: agent-assisted GTM
-      trigger:
-        confidence: 100
-        freshness:
-          age_days: 0
-          observed_at: 2026-01-15T12:00:00Z
-        provenance:
-        - attempt_id: synthetic-attempt-007
-          observed_at: 2026-01-15T12:00:00Z
-          source_class: synthetic_fixture
-          source_locator: opaque:synthetic-attempt-007
-        status: observed
-        value: Synthetic account is reviewing its prospect qualification workflow.
-    collected_attempt_results_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-    contract: mdp.normalized-decision-input.v2
-    decision_input_contracts:
-    - gtm.prospect-context
-    draft_allowed: false
-    job_id: prospect-fit-or-brief
-    normalization:
-    - contract_id: gtm.prospect-context
-      prompt: prompts/normalize-prospect.yaml
-      prompt_version: gtm-prospect-context.v2
-    normalized_prospect:
-      attributes:
-        contact_policy: clear
-      company: Example Prospect Company
-      company_domain: example.invalid
-      name: Alex Example
-      persona: GTM Engineering
-      segment: agent-assisted GTM
-      source_kind: synthetic-example
-      synthetic: true
-      title: Revenue Operations Lead
-      trigger: Synthetic account is reviewing its prospect qualification workflow.
-    outcome: ready
-    signal_observations:
-    - attempt_ids:
-      - synthetic-attempt-007
-      confidence: 100
-      contract: mdp.signal-observation.v2
-      contract_id: gtm.prospect-context
-      contributor_attribute_ids:
-      - trigger
-      id: synthetic-trigger-001
-      kind: prospect_trigger
-      observed_at: 2026-01-15T12:00:00Z
-      projection_id: why-now
-      qualified_projection_id: gtm.prospect-context#why-now
-      receipt:
-        collected_results_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-        source_attempt_request_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-        source_binding_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      roles:
-      - fit
-      - why-now
-      source_class: synthetic_fixture
-      source_locator: opaque:synthetic-attempt-007
-      value: Synthetic account is reviewing its prospect qualification workflow.
-    - attempt_ids:
-      - synthetic-attempt-008
-      confidence: 100
-      contract: mdp.signal-observation.v2
-      contract_id: gtm.prospect-context
-      contributor_attribute_ids:
-      - contact_policy
-      id: synthetic-contact-policy-001
-      kind: contact_policy
-      observed_at: 2026-01-15T12:00:00Z
-      projection_id: contact-policy
-      qualified_projection_id: gtm.prospect-context#contact-policy
-      receipt:
-        collected_results_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-        source_attempt_request_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-        source_binding_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      roles:
-      - disqualifier
-      source_class: synthetic_fixture
-      source_locator: opaque:synthetic-attempt-008
-      value: clear
-    source_attempt_request_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-    source_binding_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  output_kind: decision-input-normalization
-  required_top_level:
-  - contract
-  - job_id
-  - decision_input_contracts
-  - normalization
-  - source_binding_sha256
-  - source_attempt_request_sha256
-  - collected_attempt_results_sha256
-  - attributes
-  - signal_observations
-  - normalized_prospect
-  - outcome
-  - draft_allowed
-  schema_ref: mdp.normalized-decision-input.v2
-  strict_json_only: true
+title: Classify researched GTM evidence into the neutral v3 input
+description: Uses pack-compiled taxonomies and attempted-complete evidence to propose semantics; the host preserves observations and seals control fields.
+role: Provider-neutral GTM evidence classification analyst
+objective: Classify only declared model-classified attributes from cited observations without choosing fit, routing, readiness, or draft permission.
+inputs:
+- {name: raw_row, description: Exact collected-attempt-results ledger for compiled observed attributes., required: true, default: N/A, missing_behavior: Return unsupported classifications and explicit gaps; never invent evidence., producer: source, schema_ref: mdp.collected-attempt-results.v2}
+- {name: decision_input_requirements, description: Exact job-scoped requirements containing collection_specification and classification_specification., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: pack, schema_ref: mdp.requirements.v2}
+- {name: source_binding_sha256, description: Host-supplied SHA-256 of the validated source binding., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: host, schema_ref: mdp.sha256.v1, media_type: text/plain}
+- {name: source_attempt_request_sha256, description: Host-supplied SHA-256 of the attempted-complete source request., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: host, schema_ref: mdp.sha256.v1, media_type: text/plain}
+- {name: collected_attempt_results_sha256, description: Host-supplied SHA-256 of raw_row., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: host, schema_ref: mdp.sha256.v1, media_type: text/plain}
+instructions:
+- Use only observed attempts in raw_row and selected taxonomies in decision_input_requirements.classification_specification.
+- Evaluate every classification attribute against its definition, indicators, exclusions, contributors, source classes, and closed values.
+- Return exactly one entry for every declared classification attribute.
+- For classified, copy the exact taxonomy value. For ambiguous, no-match, or unsupported, omit value and explain the bounded basis.
+- derived_from may contain only attempt_id values from observed contributor attributes.
+- Keep persona, account-fit, and why-now evidence separate; do not use why-now evidence to manufacture fit.
+- Never emit observations, normalized_input, source prose, host hashes, outcome, fit, route, readiness, or draft permission.
+- Return strict JSON only with classifications, gaps, and rejected_claims.
 procedure:
-- Verify exact contract and lineage receipts.
-- Preserve every attempted attribute and repeated signal observation.
-- Apply compiled status and conflict behavior.
-- Return one no-draft v2 envelope.
-provenance_policy:
-- Retain exact attempt, source, observation, confidence, freshness, request, results, and binding receipts.
-role: Provider-neutral Decision Input normalization analyst
+- Index observed attempts by attribute id and attempt_id.
+- Apply contributor, source-class, definition, indicator, and exclusion rules.
+- Emit closed statuses with exact lineage and bounded basis.
 selection_rules:
-- Use only compiled attributes and projections.
-- Accept only declared source classes, value contracts, and output paths.
-tags:
-- prompt
-- normalization
-- prospect
-- fit
-- routing
-target_card_kinds:
-- personas
-- fit-rules
-- signals
-title: Normalize attempted-complete prospect decision inputs
-version: gtm-prospect-context.v2
+- A title alone is insufficient when responsibilities are required.
+- Quota-carrying sales without technical systems ownership is not GTM Engineering.
+- Generic RevOps language without technical ownership is ambiguous or no-match.
+- Classify agent-assisted GTM only from company_fit_observation.
+ambiguity_policy:
+- If values remain plausible or evidence conflicts, emit ambiguous with no value and preserve the conflict.
+provenance_policy:
+- derived_from is explanation lineage, not proof of source truth; the host validates attempt identity and receipts.
+evidence_policy:
+- Model confidence is not authority. Status, source class, freshness, contributor coverage, and deterministic validation govern eligibility.
+negative_examples:
+- Do not classify GTM Engineering from a quota-carrying Account Executive title.
+- Do not classify an account from generic AI marketing language.
+- Do not copy source excerpts into basis; summarize the applied criterion.
+final_checklist:
+- Every classification attribute is present exactly once with a closed status.
+- Every value and taxonomy identity is exact.
+- Every derived_from id exists on an observed contributor attempt.
+- Every basis is non-empty and at most 500 characters.
+- No host-owned or final-decision field is present.
+output_contract:
+  contract: mdp.normalized-decision-input.v3
+  output_kind: decision-input-normalization
+  strict_json_only: true
+  required_top_level: [contract, job_id, decision_input_contracts, normalization, requirements_sha256, taxonomy_set_sha256, source_binding_sha256, source_attempt_request_sha256, collected_attempt_results_sha256, invocation_receipt_sha256, attributes, signal_observations, normalized_input, outcome, classifications, gaps, rejected_claims]
+  entry_defaults: {body: N/A, applies_to: [], evidence: [], avoid: [], confidence: unknown, provenance: []}
+  schema_ref: mdp.normalized-decision-input.v3
+  host_envelope:
+    contract: mdp.normalization-host-envelope.v1
+    owned_top_level: [contract, job_id, decision_input_contracts, normalization, requirements_sha256, taxonomy_set_sha256, source_binding_sha256, source_attempt_request_sha256, collected_attempt_results_sha256, invocation_receipt_sha256, attributes, signal_observations, normalized_input, outcome]
+    semantic_required_top_level: [classifications, gaps, rejected_claims]
+  example:
+    contract: mdp.normalized-decision-input.v3
+    job_id: prospect-fit-or-brief
+    decision_input_contracts: [gtm.prospect-context]
+    normalization: [{contract_id: gtm.prospect-context, prompt: prompts/normalize-prospect.yaml, prompt_version: gtm-prospect-context.v3}]
+    requirements_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    taxonomy_set_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    source_binding_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    source_attempt_request_sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    collected_attempt_results_sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+    invocation_receipt_sha256: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    attributes: {}
+    signal_observations: []
+    normalized_input: {fields: {}, signals: [], attributes: {}}
+    outcome: decision-input-normalization
+    classifications:
+      persona: {status: classified, value: GTM Engineering, taxonomy_id: gtm-persona, taxonomy_version: 1.0.0, derived_from: [synthetic-title, synthetic-responsibilities], basis: The title and responsibilities explicitly show technical GTM systems ownership.}
+      segment: {status: classified, value: agent-assisted GTM, taxonomy_id: gtm-account-segment, taxonomy_version: 1.0.0, derived_from: [synthetic-company-fit], basis: The company observation describes active agent-assisted GTM operations.}
+    gaps: []
+    rejected_claims: []
+tags: [prompt, normalization, classification, gtm]
+target_card_kinds: [personas, fit-rules, signals]

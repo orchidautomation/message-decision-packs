@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-const BASIC_DIGEST: &str = "7d7acb7abb1954f2782b3eb9aa09d5730d7700b9d49936cd957942ccebf55e7d";
+const BASIC_DIGEST: &str = "4abebfbf78dfce74312f7a727e6b31466ffd2eefffe56237e5c52f9b1b9b922f";
 const PROPOSAL_DIGEST: &str = "2bcdaeefe2334215cde0e68aba650abd1d69806825feadfadde3c1333b9bfad9";
 const FORBIDDEN: &[&str] = &[
     "prospect",

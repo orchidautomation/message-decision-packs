@@ -489,7 +489,7 @@ fn build_gtm_inventory(
     governed: bool,
 ) -> Result<Vec<GeneratedArtifact>> {
     let _ = (root, force);
-    if target.is_none() && !governed && !include_output_schemas && name == "Basic MDP Template" {
+    if target.is_none() && !include_output_schemas && name == "Basic MDP Template" {
         let inventory = template_registry::inventory(descriptor);
         return Ok(inventory);
     }
@@ -1450,13 +1450,15 @@ mod tests {
         .expect("normalization prompt should be readable");
         assert!(normalization_prompt.contains("format: mdp.prompt.v1"));
         assert!(normalization_prompt.contains("kind: normalization"));
-        assert!(normalization_prompt.contains("version: gtm-prospect-context.v2"));
+        assert!(normalization_prompt.contains("version: gtm-prospect-context.v3"));
         assert!(normalization_prompt.contains("producer: source"));
         assert!(normalization_prompt.contains("name: decision_input_requirements"));
         assert!(normalization_prompt.contains("name: source_binding_sha256"));
-        assert!(normalization_prompt.contains("mdp.normalized-decision-input.v2"));
-        assert!(normalization_prompt.contains("Repeated observations use v2 projections."));
-        assert!(normalization_prompt.contains("Do not browse, scrape, enrich, send, sequence, mutate CRM records, or call external systems."));
+        assert!(normalization_prompt.contains("mdp.normalized-decision-input.v3"));
+        assert!(normalization_prompt.contains(
+            "derived_from may contain only attempt_id values from observed contributor attributes."
+        ));
+        assert!(normalization_prompt.contains("Never emit observations, normalized_input, source prose, host hashes, outcome, fit, route, readiness, or draft permission."));
 
         let _ = std::fs::remove_dir_all(root);
     }
