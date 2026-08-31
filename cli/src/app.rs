@@ -17,11 +17,12 @@ use crate::commands::{
     project_prompt_output_validation_file, project_run_files, project_source_file,
     prospect_brief_with_context, readiness, rebind_synthetic_chain, recover_run_output,
     refresh_readme, render_human_brief_file, render_human_brief_markdown, render_mermaid,
-    render_readable_prospect_brief, requirements, route_budget_preflight_command,
-    route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
-    run_request_file_with_transport, sample_leads, schema, skills, validate_behavioral_files,
-    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
-    verify_output_file, verify_output_readable_file, verify_run_files,
+    render_readable_prospect_brief, requirements, requirements_model_context,
+    route_budget_preflight_command, route_budget_preflight_query_command, route_scoped,
+    run_preflight_file, run_receipt, run_request_file_with_transport, sample_leads, schema, skills,
+    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
+    validate_source_binding_file, verify_output_file, verify_output_readable_file,
+    verify_run_files,
 };
 use crate::output::{
     PresentationOutcome, print_output, print_output_mode_conflict, print_output_with_status,
@@ -227,12 +228,32 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             "skills",
             skills(dir.as_deref(), job.as_deref()),
         ),
-        Commands::Requirements { dir, job } => print_checked(
-            json_mode,
-            summary_mode,
-            "requirements",
-            requirements(&dir, &job)?,
-        ),
+        Commands::Requirements {
+            dir,
+            job,
+            model_context,
+        } => {
+            if model_context {
+                // The model-context projection is a transport-safe input
+                // contract, not a checked readiness report.  It deliberately
+                // omits the readiness gate used by the full requirements
+                // command, so emit it through the normal successful output
+                // path rather than turning a valid projection into exit 1.
+                print_output(
+                    json_mode,
+                    summary_mode,
+                    "requirements",
+                    requirements_model_context(&dir, &job)?,
+                )
+            } else {
+                print_checked(
+                    json_mode,
+                    summary_mode,
+                    "requirements",
+                    requirements(&dir, &job)?,
+                )
+            }
+        }
         Commands::PrepareRun {
             dir,
             job,

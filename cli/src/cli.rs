@@ -137,6 +137,11 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long, help = "Closed profile job id to compile")]
         job: String,
+        #[arg(
+            long,
+            help = "Emit the bounded model-facing projection for a v3 normalization step"
+        )]
+        model_context: bool,
     },
     #[command(about = "Compile an offline, sealed native run request without executing it")]
     PrepareRun {
@@ -871,6 +876,7 @@ pub(crate) enum SchemaTarget {
     ReadinessV1,
     RouteBudget,
     RouteBudgetSummaryV1,
+    RequirementsModelContextV1,
 }
 
 #[derive(Clone, ValueEnum, PartialEq, Eq)]
@@ -1220,8 +1226,47 @@ mod tests {
         .expect("requirements form should parse");
         assert!(matches!(
             parsed.command,
-            Commands::Requirements { dir, job }
+            Commands::Requirements {
+                dir,
+                job,
+                model_context: false
+            }
                 if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
+        ));
+    }
+
+    #[test]
+    fn requirements_model_context_is_an_explicit_projection_flag() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "requirements",
+            "--dir",
+            "example-pack",
+            "--job",
+            "prospect-fit-or-brief",
+            "--model-context",
+        ])
+        .expect("model context form should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::Requirements {
+                dir,
+                job,
+                model_context: true
+            } if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
+        ));
+    }
+
+    #[test]
+    fn requirements_model_context_schema_target_has_explicit_version() {
+        let parsed = Cli::try_parse_from(["mdp", "schema", "requirements-model-context-v1"])
+            .expect("requirements model-context schema should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::Schema {
+                target: SchemaTarget::RequirementsModelContextV1
+            }
         ));
     }
 

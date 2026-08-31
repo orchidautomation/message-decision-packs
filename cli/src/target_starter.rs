@@ -1,6 +1,7 @@
 use crate::models::{
-    Card, CardKind, Entry, EntryConstraints, Manifest, PersonaMapping, ProductFoundationBinding,
-    ProductFoundationFacet, ProductFoundationFacetKind, ProductFoundationRegistry, TargetIdentity,
+    Card, CardKind, ClassificationTaxonomyValue, Entry, EntryConstraints, Manifest, PersonaMapping,
+    ProductFoundationBinding, ProductFoundationFacet, ProductFoundationFacetKind,
+    ProductFoundationRegistry, TargetIdentity,
 };
 use crate::starter::{
     decision_input_contract_eval, foundation_binding, foundation_refs, generated_starter_manifest,
@@ -47,6 +48,61 @@ pub(crate) fn target_manifest(
                 .to_string(),
         );
     }
+    // The generated starter inherits the canonical GTM v3 contract.  A
+    // targeted pack deliberately replaces its taxonomy vocabulary with the
+    // neutral Buyer/Operator and target-segment values advertised by this
+    // manifest, so the model-facing prompt and deterministic validator cannot
+    // disagree about closed values.
+    for taxonomy in &mut manifest.classification_taxonomies {
+        match taxonomy.output_attribute.as_str() {
+            "persona" => {
+                taxonomy.values = vec![
+                    ClassificationTaxonomyValue {
+                        value: "Buyer".to_string(),
+                        definition: "Target-specific buyer persona placeholder; requires reviewed evidence before activation.".to_string(),
+                        positive_indicators: vec![
+                            "Reviewed source explicitly identifies the person as a buyer or decision maker.".to_string(),
+                        ],
+                        exclusions: vec![
+                            "A generic title or company label without person-level ownership evidence.".to_string(),
+                        ],
+                    },
+                    ClassificationTaxonomyValue {
+                        value: "Operator".to_string(),
+                        definition: "Target-specific operator persona placeholder; requires reviewed evidence before activation.".to_string(),
+                        positive_indicators: vec![
+                            "Reviewed source explicitly identifies operational ownership relevant to the target.".to_string(),
+                        ],
+                        exclusions: vec![
+                            "A generic title or company label without responsibility evidence.".to_string(),
+                        ],
+                    },
+                ];
+            }
+            "segment" => {
+                taxonomy.values = vec![ClassificationTaxonomyValue {
+                    value: "target-segment".to_string(),
+                    definition: "Neutral target segment placeholder; requires reviewed account evidence before activation.".to_string(),
+                    positive_indicators: vec![
+                        "Reviewed account evidence explicitly supports the target segment.".to_string(),
+                    ],
+                    exclusions: vec![
+                        "Generic industry, size, or tool mentions without target-specific fit evidence.".to_string(),
+                    ],
+                }];
+            }
+            _ => {}
+        }
+    }
+    for contract in &mut manifest.decision_input_contracts {
+        for attribute in &mut contract.attributes {
+            match attribute.id.as_str() {
+                "persona" => attribute.value.enum_values = strings(&["Buyer", "Operator"]),
+                "segment" => attribute.value.enum_values = strings(&["target-segment"]),
+                _ => {}
+            }
+        }
+    }
     manifest
         .lead_input_requirements
         .attribute_definitions
@@ -66,6 +122,66 @@ pub(crate) fn target_manifest(
                 ..crate::models::ValueContract::default()
             },
         );
+    manifest
+        .lead_input_requirements
+        .attribute_definitions
+        .insert(
+            "person_responsibilities".to_string(),
+            crate::models::ValueContract {
+                value_type: Some("string".to_string()),
+                description: Some(
+                    "Observed responsibilities used with the authoritative title for target persona classification."
+                        .to_string(),
+                ),
+                ..crate::models::ValueContract::default()
+            },
+        );
+    manifest.lead_input_requirements.required_fields = vec![
+        "name".to_string(),
+        "title".to_string(),
+        "company".to_string(),
+        "company_domain".to_string(),
+        "trigger".to_string(),
+        "background".to_string(),
+        "persona".to_string(),
+        "segment".to_string(),
+    ];
+    manifest.lead_input_requirements.required_attributes = vec![
+        "contact_policy".to_string(),
+        "person_responsibilities".to_string(),
+    ];
+    for contract in &mut manifest.decision_input_contracts {
+        contract.description = contract
+            .description
+            .as_ref()
+            .map(|value| value.replace("agent-assisted GTM", "target-specific operations"));
+        for attribute in &mut contract.attributes {
+            attribute.question = attribute
+                .question
+                .replace("agent-assisted GTM", "target-specific operations");
+            attribute.description = attribute
+                .description
+                .as_ref()
+                .map(|value| value.replace("agent-assisted GTM", "target-specific operations"));
+        }
+    }
+    for taxonomy in &mut manifest.classification_taxonomies {
+        for value in &mut taxonomy.values {
+            value.definition = value
+                .definition
+                .replace("agent-assisted GTM", "target-specific operations");
+            value.positive_indicators = value
+                .positive_indicators
+                .iter()
+                .map(|text| text.replace("agent-assisted GTM", "target-specific operations"))
+                .collect();
+            value.exclusions = value
+                .exclusions
+                .iter()
+                .map(|text| text.replace("agent-assisted GTM", "target-specific operations"))
+                .collect();
+        }
+    }
     if let Some(profile) = manifest.profile.as_mut() {
         profile.context_dimensions =
             BTreeMap::from([("segment".to_string(), vec!["target-segment".to_string()])]);
@@ -755,6 +871,25 @@ fn strings(values: &[&str]) -> Vec<String> {
 }
 
 fn neutralize_prompt_example(prompt: &mut Value, target: &TargetIdentity) {
+    if prompt["output_contract"]["contract"] == "mdp.normalized-decision-input.v3" {
+        let example = &mut prompt["output_contract"]["example"];
+        if let Some(classifications) = example
+            .get_mut("classifications")
+            .and_then(Value::as_object_mut)
+        {
+            classifications
+                .entry("persona")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .map(|value| value.insert("value".to_string(), json!("Operator")));
+            classifications
+                .entry("segment")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .map(|value| value.insert("value".to_string(), json!("target-segment")));
+        }
+        return;
+    }
     if prompt["output_contract"]["contract"] == "mdp.normalized-decision-input.v2" {
         let example = &mut prompt["output_contract"]["example"];
         example["attributes"]["company_name"]["value"] = json!("Example Prospect Company");

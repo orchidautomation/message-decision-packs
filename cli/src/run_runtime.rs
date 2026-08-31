@@ -17,8 +17,9 @@ use crate::commands::v3_normalization::{
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V3, ROUTED_CONTEXT_CONTRACT,
-    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2, V3_OUTCOME_KIND,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V3, REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1,
+    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
+    V3_OUTCOME_KIND,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::models::ClassificationTaxonomy;
@@ -3784,6 +3785,31 @@ fn host_wrap_v3_normalization_output(
             "normalization-host-envelope-metadata-missing",
         )
     })?;
+    let requirements_input = staged_inputs
+        .iter()
+        .find(|input| {
+            matches!(
+                input.logical_name.as_str(),
+                "decision-input-requirements" | "decision_input_requirements"
+            )
+        })
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-requirements-source-missing",
+            )
+        })?;
+    validate_input_type(
+        requirements_input,
+        REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1,
+        "application/json",
+    )
+    .map_err(|_| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            "v3-requirements-context-schema-mismatch",
+        )
+    })?;
     let has_routed_context = staged_inputs.iter().any(|input| {
         matches!(
             input.logical_name.as_str(),
@@ -3831,6 +3857,15 @@ fn host_wrap_v3_normalization_output(
         "v3-requirements-source-missing",
     )?;
     let requirements_data = data_object(&requirements_value);
+    if requirements_data["contract"] != REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1
+        || requirements_data["source_contract"] != "mdp.requirements.v2"
+        || requirements_data["runtime_contract_version"] != "v3"
+    {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "v3-requirements-context-invalid",
+        ));
+    }
     let requirements_sha256 = requirements_data["requirements_sha256"]
         .as_str()
         .filter(|value| is_canonical_sha256(value))
@@ -7966,7 +8001,7 @@ mod tests {
                 logical_name: "decision-input-requirements".into(),
                 authority: super::ArtifactAuthority {
                     logical_name: "decision-input-requirements".into(),
-                    schema_id: "mdp.normalized-decision-input.v3".into(),
+                    schema_id: "mdp.requirements-model-context.v1".into(),
                     media_type: "application/json".into(),
                     byte_count: 0,
                     sha256: requirements_sha.into(),
@@ -8051,8 +8086,14 @@ mod tests {
             let path = temp.join(format!("{}.json", input.logical_name));
             let value = match input.logical_name.as_str() {
                 "decision-input-requirements" => serde_json::json!({
+                    "contract": "mdp.requirements-model-context.v1",
+                    "source_contract": "mdp.requirements.v2",
+                    "runtime_contract_version": "v3",
                     "requirements_sha256": "a".repeat(64),
                     "taxonomy_set_sha256": "b".repeat(64),
+                    "pack": {"id": "runtime-test-pack", "version": "0.1.0", "sha256": "c".repeat(64)},
+                    "job": {"id": "prospect-fit-or-brief", "skill_id": "mdp-gtm-brief"},
+                    "collection_specification": {"contract": "mdp.source-attempt-request.v2", "attributes": []},
                     "classification_specification": {"taxonomies": [{
                         "id": "buyer-persona", "version": "1", "output_attribute": "persona",
                         "contributor_attribute_ids": ["person_title"],
@@ -8060,12 +8101,16 @@ mod tests {
                         "minimum_evidence": {"observed_contributors": 1},
                         "basis_max_chars": 500,
                         "ambiguity_policy": "human-review", "no_match_policy": "gap", "conflict_policy": "human-review",
-                        "values": [{"value": "GTM Systems Owner", "definition": "Owns GTM systems."}]
+                        "values": [{"value": "GTM Engineering", "definition": "Owns GTM systems."}]
                     }]},
                     "decision_input_contracts": [{"id": "gtm.prospect-context", "attributes": [
                         {"id": "person_title", "processing": "observed", "output_path": "title"},
                         {"id": "persona", "processing": "model-classified", "output_path": "persona"}
-                    ], "signal_projections": []}]
+                    ], "signal_projections": []}],
+                    "normalized_output_schema": {"type": "object"},
+                    "semantic_validation": {"contract": "mdp.normalization-semantic-provider.v3"},
+                    "no_draft_policy": {"draft_allowed": false},
+                    "boundaries": {"model_owned": ["classifications", "gaps", "rejected_claims"]}
                 }),
                 "collected-attempt-results" => serde_json::json!({"attempt_results": [{
                     "attempt_id": "synthetic-attempt-001", "attribute_id": "person_title",
@@ -8108,7 +8153,7 @@ mod tests {
             "classifications": {
                 "persona": {
                     "status": "classified",
-                    "value": "GTM Systems Owner",
+                    "value": "GTM Engineering",
                     "taxonomy_id": "buyer-persona",
                     "taxonomy_version": "1",
                     "derived_from": ["synthetic-attempt-001"],
@@ -8155,7 +8200,7 @@ mod tests {
         let (invocation, invocation_bytes) = v3_invocation(&step);
         let semantic = serde_json::json!({
             "classifications": {"persona": {
-                "status": "classified", "value": "GTM Systems Owner",
+                "status": "classified", "value": "GTM Engineering",
                 "taxonomy_id": "buyer-persona", "taxonomy_version": "1",
                 "derived_from": ["synthetic-attempt-001"], "basis": "title only"
             }}, "gaps": [], "rejected_claims": []

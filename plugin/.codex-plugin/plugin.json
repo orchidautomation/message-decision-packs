@@ -1,6 +1,6 @@
 {
   "name": "message-decision-packs",
-  "version": "0.1.97",
+  "version": "0.1.98",
   "description": "Author, validate, and use Message Decision Packs with the local mdp CLI.",
   "author": {
     "name": "Orchid Labs",

@@ -7,13 +7,36 @@ description: Uses pack-compiled taxonomies and attempted-complete evidence to pr
 role: Provider-neutral GTM evidence classification analyst
 objective: Classify only declared model-classified attributes from cited observations without choosing fit, routing, readiness, or draft permission.
 inputs:
-- {name: raw_row, description: Exact collected-attempt-results ledger for compiled observed attributes., required: true, default: N/A, missing_behavior: Return unsupported classifications and explicit gaps; never invent evidence., producer: source, schema_ref: mdp.collected-attempt-results.v2}
-- {name: decision_input_requirements, description: Exact job-scoped requirements containing collection_specification and classification_specification., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: pack, schema_ref: mdp.requirements.v2}
-- {name: source_binding_sha256, description: Host-supplied SHA-256 of the validated source binding., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: host, schema_ref: mdp.sha256.v1, media_type: text/plain}
-- {name: source_attempt_request_sha256, description: Host-supplied SHA-256 of the attempted-complete source request., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: host, schema_ref: mdp.sha256.v1, media_type: text/plain}
-- {name: collected_attempt_results_sha256, description: Host-supplied SHA-256 of raw_row., required: true, default: N/A, missing_behavior: Return no classifications; the host must block the run., producer: host, schema_ref: mdp.sha256.v1, media_type: text/plain}
+- name: collected-attempt-results
+  description: Exact mdp.collected-attempt-results.v2 ledger for every compiled observed attribute.
+  required: true
+  default: N/A
+  missing_behavior: Return unsupported classifications and explicit gaps; never invent evidence.
+  producer: source
+  schema_ref: mdp.collected-attempt-results.v2
+- name: decision-input-requirements
+  description: Bounded model context emitted from the exact v3 mdp.requirements.v2 compilation.
+  required: true
+  default: N/A
+  missing_behavior: Return no classifications; the host must block the run.
+  producer: pack
+  schema_ref: mdp.requirements-model-context.v1
+- name: source-binding
+  description: Exact validated mdp.source-binding.v2 artifact supplied by the host.
+  required: true
+  default: N/A
+  missing_behavior: Return no classifications; the host must block the run.
+  producer: host
+  schema_ref: mdp.source-binding.v2
+- name: source-attempt-request
+  description: Exact attempted-complete mdp.source-attempt-request.v2 artifact supplied by the host.
+  required: true
+  default: N/A
+  missing_behavior: Return no classifications; the host must block the run.
+  producer: host
+  schema_ref: mdp.source-attempt-request.v2
 instructions:
-- Use only observed attempts in raw_row and selected taxonomies in decision_input_requirements.classification_specification.
+- Use only observed attempts in collected-attempt-results and selected taxonomies in decision-input-requirements.classification_specification.
 - Evaluate every classification attribute against its definition, indicators, exclusions, contributors, source classes, and closed values.
 - Return exactly one entry for every declared classification attribute.
 - For classified, copy the exact taxonomy value. For ambiguous, no-match, or unsupported, omit value and explain the bounded basis.

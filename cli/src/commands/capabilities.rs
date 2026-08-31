@@ -18,9 +18,9 @@ use crate::constants::{
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
     PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
     PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2,
-    ROUTED_CONTEXT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT,
-    SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT,
-    SOURCE_INTAKE_CONTRACT,
+    REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1, ROUTED_CONTEXT_CONTRACT, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_BINDING_CONTRACT,
+    SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::model_steps::{COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1};
 use crate::models::DecisionInputAttemptStatus;
@@ -69,6 +69,11 @@ pub(crate) fn capabilities() -> Value {
             "provider_authorization": "required-at-execution",
             "execution_authority": "mdp.run",
             "forbidden_caller_fields": ["execution_id", "idempotency_key", "pack_release_id", "prompt_path", "driver_hash", "policy_hash", "model_parameter_hash"]
+        },
+        "requirements_model_context": {
+            "contract": REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1,
+            "source_contract": REQUIREMENTS_CONTRACT_V2,
+            "purpose": "bounded v3 normalization-model input projection"
         },
         "global_options": [
             {"name": "--json", "description": "Emit stable machine-readable JSON"},
@@ -346,7 +351,7 @@ pub(crate) fn capabilities() -> Value {
             command("doctor", "mdp.doctor.v1", "read-only", false, false, false, &["--dir"]),
             command("check", "mdp.readiness.v1", "read-only", false, false, false, &["--dir", "--job", "--input-validation"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
-            command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
+            command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--model-context"]),
             command("prepare-run", RUN_REQUEST_COMPILE_V1, "read-only-unless-out", false, true, false, &["--dir", "--job", "--operation", "--input", "--model", "--retention-policy", "--created-at", "--out", "--manifest-out", "--full"]),
             command("rebind-synthetic-chain", "mdp.synthetic-v2-chain.v1", "writes-external-chain", true, false, false, &["--dir", "--job", "--out-dir", "--input-dir", "--as-of", "--seed", "--dry-run", "--apply", "--force"]),
             command("validate-source-binding", SOURCE_BINDING_VALIDATION_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--file"]),

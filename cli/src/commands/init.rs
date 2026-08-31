@@ -1457,8 +1457,10 @@ mod tests {
         assert!(normalization_prompt.contains("kind: normalization"));
         assert!(normalization_prompt.contains("version: gtm-prospect-context.v3"));
         assert!(normalization_prompt.contains("producer: source"));
-        assert!(normalization_prompt.contains("name: decision_input_requirements"));
-        assert!(normalization_prompt.contains("name: source_binding_sha256"));
+        assert!(normalization_prompt.contains("name: decision-input-requirements"));
+        assert!(normalization_prompt.contains("name: source-binding"));
+        assert!(normalization_prompt.contains("name: source-attempt-request"));
+        assert!(normalization_prompt.contains("mdp.requirements-model-context.v1"));
         assert!(normalization_prompt.contains("mdp.normalized-decision-input.v3"));
         assert!(normalization_prompt.contains(
             "derived_from may contain only attempt_id values from observed contributor attributes."
