@@ -61,6 +61,7 @@ assert.equal(classify('push', ['README.md']), 'full')
 assert.equal(classify('schedule', []), 'full')
 assert.equal(classify('workflow_dispatch', []), 'full')
 assert.equal(classify('pull_request', ['cli/src/main.rs']), 'skip')
+assert.equal(classify('pull_request', ['docs/getting-started.md']), 'skip')
 assert.equal(classify('pull_request', ['cli/src/authority/mod.rs']), 'smoke')
 assert.equal(classify('pull_request', ['scripts/test-authority-mutations.sh']), 'smoke')
 assert.equal(classify('pull_request', ['cli/Cargo.toml']), 'smoke')
@@ -77,10 +78,15 @@ for (const tuple of [
   ['skip', 'success', 'success', 'skipped'],
   ['full', 'success', 'skipped', 'failure'],
   ['smoke', 'failure', 'success', 'skipped'],
+  ['skip', 'failure', 'skipped', 'skipped'],
+  ['skip', 'success', 'skipped', 'skipped', 'failure'],
   ['unknown', 'success', 'skipped', 'skipped'],
 ]) assert.equal(aggregate(...tuple), false)
 
 assert.match(workflow, /branches:\s*\[main\]/u)
+const pullRequestTrigger = workflow.match(/pull_request:\n([\s\S]*?)(?=\n\s{2}\w|$)/u)?.[1] ?? ''
+assert.match(pullRequestTrigger, /branches:\s*\[main\]/u)
+assert.doesNotMatch(pullRequestTrigger, /paths:/u, 'pull_request must reach the classifier for every path')
 assert.match(workflow, /tags:\s*\["v\*"\]/u)
 assert.match(workflow, /schedule:/u)
 assert.match(workflow, /workflow_dispatch:/u)

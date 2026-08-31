@@ -6,15 +6,6 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
-    paths:
-      - "cli/src/**"
-      - "cli/Cargo.toml"
-      - "cli/Cargo.lock"
-      - "plugin/assets/authority-conformance/corpus.json"
-      - "assets/authority-conformance/corpus.json"
-      - "scripts/test-authority-mutations.sh"
-      - "scripts/test-authority-mutations-contract.mjs"
-      - ".github/workflows/authority-mutations.yml"
   schedule:
     - cron: "17 3 * * 6"
   workflow_dispatch:
