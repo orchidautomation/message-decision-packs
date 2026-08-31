@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -117,13 +117,16 @@ assert.match(script, /TEST_TIMEOUT_SECONDS=240/u)
 assert.match(script, /SELECTOR='\(from_run\|permits_projection\)'/u)
 assert.match(script, /MUTATION_FILE='src\/authority\/mod\.rs'/u)
 for (const description of smokeDescriptions) assert.ok(script.includes(`'${description}'`), `missing smoke selector: ${description}`)
-assert.doesNotMatch(script, /SMOKE_SELECTOR=/u)
+assert.match(script, /SMOKE_SELECTOR='\(replace SourceAuthority::from_run/u)
 assert.match(script, /expected exactly one/u)
 assert.match(script, /--smoke/u)
 assert.match(script, /does not support sharding/u)
 assert.match(script, /awk 'NF \{ seen\[\$0\]\+\+ \}/u)
 assert.match(script, /outside the complete candidate set/u)
 assert.match(script, /--in-place/u)
+const smokeExecution = script.slice(script.lastIndexOf('if [ "$smoke" = "1" ]; then'))
+const smokeElse = smokeExecution.indexOf('\nelse\n')
+assert.equal((smokeExecution.slice(0, smokeElse).match(/cargo mutants/g) || []).length, 1, 'smoke mode must execute cargo-mutants once for the union selector')
 assert.match(script, /0\/4\|1\/4\|2\/4\|3\/4/u)
 assert.match(workflow, /bash scripts\/test-authority-mutations\.sh "\$\{\{ matrix\.shard \}\}"/u)
 assert.doesNotMatch(script, /0\/2|1\/2/u)
@@ -143,8 +146,10 @@ if (existsSync(join(root, '.github/workflows/release.yml'))) {
 // When the pinned tool is available, prove that the complete four-shard
 // topology is disjoint and exhaustive. The check is optional locally because
 // CI installs the pinned binary in the workflow tool job.
-try {
-  execFileSync('cargo', ['mutants', '--version'], { stdio: 'ignore' })
+const toolProbe = spawnSync('cargo-mutants', ['--help'], { stdio: 'ignore' })
+if (toolProbe.error?.code === 'ENOENT') {
+  console.log('cargo-mutants not installed locally; skipped list topology execution.')
+} else {
   const list = (args) => execFileSync('bash', [join(root, 'scripts/test-authority-mutations.sh'), '--list', ...args], {
     cwd: root, env: { ...process.env, MDP_AUTHORITY_MUTATIONS_LIST_ONLY: '1' }, encoding: 'utf8',
   }).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
@@ -155,10 +160,8 @@ try {
   assert.equal(new Set(shardLists.flat()).size, completeList.length, 'complete shards must be disjoint')
   const smokeList = list(['--smoke'])
   assert.equal(smokeList.length, 4, 'smoke list must contain exactly four candidates')
-  assert.deepEqual(smokeDescriptions.map((description) => smokeList.filter((candidate) => candidate.includes(description.replaceAll('\\\\', '\\'))).length), [1, 1, 1, 1], 'smoke list must contain one candidate for each declared description')
-} catch (error) {
-  if (error?.code !== 'ENOENT') throw error
-  console.log('cargo-mutants not installed locally; skipped list topology execution.')
+  const displayDescription = (description) => description.replaceAll('\\(', '(').replaceAll('\\)', ')')
+  assert.deepEqual(smokeDescriptions.map((description) => smokeList.filter((candidate) => candidate.includes(displayDescription(description))).length), [1, 1, 1, 1], 'smoke list must contain one candidate for each declared description')
 }
 
 console.log('Authority mutation workflow and script contracts passed.')

@@ -17,6 +17,7 @@ SMOKE_SELECTORS=(
   'replace SourceAuthority::permits_projection -> bool with false'
   'replace > with == in SourceAuthority::permits_projection'
 )
+SMOKE_SELECTOR='(replace SourceAuthority::from_run -> Self with Default::default\(\)|replace match guard decision_blocked with false in SourceAuthority::from_run|replace SourceAuthority::permits_projection -> bool with false|replace > with == in SourceAuthority::permits_projection)'
 MUTATION_FILE='src/authority/mod.rs'
 
 usage() {
@@ -168,14 +169,12 @@ printf 'authority mutation candidates=%s version=%s shard=%s\n' \
 # CI runs each shard in its own disposable checkout, making in-place mode safe
 # while preserving parallel coverage across the isolated jobs.
 if [ "$smoke" = "1" ]; then
-  for smoke_selector in "${SMOKE_SELECTORS[@]}"; do
-    cargo mutants \
-      --file "$MUTATION_FILE" \
-      --re "$smoke_selector" \
-      --build-timeout "$BUILD_TIMEOUT_SECONDS" \
-      --timeout "$TEST_TIMEOUT_SECONDS" \
-      --in-place
-  done
+  cargo mutants \
+    --file "$MUTATION_FILE" \
+    --re "$SMOKE_SELECTOR" \
+    --build-timeout "$BUILD_TIMEOUT_SECONDS" \
+    --timeout "$TEST_TIMEOUT_SECONDS" \
+    --in-place
 else
   cargo mutants \
     --file "$MUTATION_FILE" \
