@@ -34,7 +34,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-PLUXX_VERSION="${PLUXX_VERSION:-0.1.41}"
+PLUXX_VERSION="${PLUXX_VERSION:-0.1.42}"
 if command -v pluxx >/dev/null 2>&1 && [ "$(pluxx --version)" = "$PLUXX_VERSION" ]; then
   PLUXX_CMD=(pluxx)
 elif command -v npx >/dev/null 2>&1; then

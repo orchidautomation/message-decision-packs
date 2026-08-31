@@ -83,7 +83,7 @@ degradation must be present for each supported native host. As of MDP-281:
 | Claude Code   | `CLAUDE_*_SESSION_ID` or hook payload | Same compact activation contract applies on the Claude bundle. |
 | Cursor        | `CURSOR_SESSION_ID` or hook payload    | Same compact activation contract applies on the Cursor bundle. |
 | Codex         | `CODEX_SESSION_ID` or hook payload     | `scripts/test-pluxx-hooks.sh` exercises Codex installed bundle plus installed idempotence proof in `release-install-smoke.sh`. |
-| OpenCode      | **Degraded on Pluxx 0.1.41**: the native wrapper receives `input.sessionID` but does not project it into the hook environment or stdin | `scripts/test-opencode-wrapper.mjs` exercises the installed `chat.message` path and proves full activation repeats without writing suppression state. Direct installed-script coverage remains in `release-install-smoke.sh`; native compact suppression requires a future Pluxx wrapper release that propagates reliable session identity. |
+| OpenCode      | **Degraded on Pluxx 0.1.42**: the native wrapper receives `input.sessionID` but does not project it into the hook environment or stdin | `scripts/test-opencode-wrapper.mjs` exercises the installed `chat.message` path and proves full activation repeats without writing suppression state. Direct installed-script coverage remains in `release-install-smoke.sh`; native compact suppression requires a future Pluxx wrapper release that propagates reliable session identity. |
 
 If a host cannot supply a reliable session identity, that host is marked
 **degraded** in the host evidence table above. Hosts marked degraded

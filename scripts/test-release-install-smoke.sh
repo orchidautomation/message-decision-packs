@@ -16,6 +16,19 @@ if [ ! -x "$mdp_bin" ]; then
 fi
 
 fake_installer="$TMP_DIR/install.sh"
+portable_fixture_source="$TMP_DIR/portable-source"
+mkdir -p "$portable_fixture_source"
+cp -R "$ROOT/plugin/skills" "$portable_fixture_source/skills"
+cat > "$portable_fixture_source/plugin.json" <<'JSON'
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "message-decision-packs",
+  "version": "0.1.101",
+  "description": "Release smoke fixture.",
+  "author": { "name": "Orchid Labs" },
+  "license": "Elastic-2.0"
+}
+JSON
 cat > "$fake_installer" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
@@ -52,6 +65,10 @@ if [ "\$PLUXX_RUNTIME_STORE_ROOT" != "\$expected_home/.pluxx/runtimes" ]; then
   echo "release smoke did not isolate PLUXX_RUNTIME_STORE_ROOT: \$PLUXX_RUNTIME_STORE_ROOT" >&2
   exit 1
 fi
+if [ "\$MDP_AGENT_PLUGINS_INSTALL_DIR" != "\$expected_home/compatible-client-fixtures/cursor/message-decision-packs" ]; then
+  echo "release smoke did not isolate the portable compatible-client fixture root" >&2
+  exit 1
+fi
 plugin_root="\$PLUXX_CODEX_INSTALL_DIR"
 mkdir -p "\$MDP_INSTALL_DIR" "\$(dirname "\$PLUXX_CODEX_CONFIG_PATH")" "\$(dirname "\$plugin_root")"
 cp "$ROOT/cli/target/debug/mdp" "\$MDP_INSTALL_DIR/mdp"
@@ -71,6 +88,10 @@ for plugin_root in \
   rm -rf "\$plugin_root/assets"
   cp -R "$ROOT/plugin/assets" "\$plugin_root/assets"
 done
+portable_root="\${MDP_AGENT_PLUGINS_INSTALL_DIR:?}"
+rm -rf "\$portable_root"
+mkdir -p "\$(dirname "\$portable_root")"
+cp -R "$portable_fixture_source" "\$portable_root"
 SH
 chmod +x "$fake_installer"
 fake_codex="$TMP_DIR/codex"
@@ -96,11 +117,11 @@ esac
 staged_name="mdp-$staged_target"
 cp "$mdp_bin" "$TMP_DIR/$staged_name"
 staged_sha="$(shasum -a 256 "$TMP_DIR/$staged_name" | awk '{print $1}')"
-node - "$ROOT" "$TMP_DIR/release-manifest.json" "$staged_name" "$staged_sha" <<'NODE'
+node - "$ROOT" "$portable_fixture_source" "$TMP_DIR/release-manifest.json" "$staged_name" "$staged_sha" <<'NODE'
 const { createHash } = require('node:crypto')
 const { lstatSync, readFileSync, readdirSync, writeFileSync } = require('node:fs')
 const { join, relative } = require('node:path')
-const [root, output, stagedName, stagedSha] = process.argv.slice(2)
+const [root, portableRoot, output, stagedName, stagedSha] = process.argv.slice(2)
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const records = []
 const trees = [
@@ -126,9 +147,32 @@ records.sort((left, right) => left.path.localeCompare(right.path))
 const pluginTrees = Object.fromEntries(
   ['claude-code', 'codex', 'cursor', 'opencode'].map((platform) => [platform, { files: records }]),
 )
+const portableRecords = []
+const walkPortable = (directory) => {
+  for (const name of readdirSync(directory).sort()) {
+    const path = join(directory, name)
+    const stats = lstatSync(path)
+    if (stats.isDirectory()) walkPortable(path)
+    else if (stats.isFile()) portableRecords.push({
+      path: relative(portableRoot, path).split('\\').join('/'),
+      executable: (stats.mode & 0o111) !== 0,
+      sha256: sha256(readFileSync(path)),
+    })
+  }
+}
+walkPortable(portableRoot)
 writeFileSync(output, `${JSON.stringify({
+  plugin: { version: '0.1.101', license: 'Elastic-2.0' },
   cli_artifacts: [{ name: stagedName, sha256: stagedSha }],
   plugin_trees: pluginTrees,
+  portable_packages: { 'agent-plugins': {
+    contract: 'mdp.agent-plugins-portable-package.v1',
+    specification: '1.0.0',
+    skills: ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'],
+    mcp_servers: [],
+    files: portableRecords,
+    sha256: sha256(Buffer.from(`${JSON.stringify(portableRecords)}\n`)),
+  } },
 })}\n`)
 NODE
 

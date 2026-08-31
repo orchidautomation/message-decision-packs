@@ -78,8 +78,10 @@ jobs:
           node-version: 24
       - name: Install Pluxx
         run: |
-          expected='sha512-m08Sr20N2SzohxySOSETpuQQlVVEFqyubreONy2KTWvzz4JHr4nPueXgOmYJeKC1Tmuij3Odqwk767hvhK+YcA=='
-          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.41 --pack-destination "$RUNNER_TEMP" --silent)"
+          # MDP-221 public binding: install the registry artifact only after its
+          # exact npm-published integrity matches the reviewed Pluxx 0.1.42 release.
+          expected='sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw=='
+          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.42 --pack-destination "$RUNNER_TEMP" --silent)"
           pluxx_tarball_path="$RUNNER_TEMP/$pluxx_tarball"
           actual="$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' "$pluxx_tarball_path")"
           test "$actual" = "$expected"
