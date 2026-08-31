@@ -7499,7 +7499,7 @@ mod tests {
                 provenance_refs: vec![],
             }
         };
-        let request = RunRequestV1 {
+        let mut request = RunRequestV1 {
             contract: "mdp.run-request.v1".into(),
             execution_id: "proposal-v3-review".into(),
             created_at: "2026-08-31T00:00:00Z".into(),
@@ -7562,6 +7562,24 @@ mod tests {
             serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
         assert_eq!(receipt["decision"]["decision"], "pursue");
         assert!(run.join("artifacts/output.json").is_file());
+
+        for (field, value) in [
+            ("taxonomy_set_sha256", serde_json::json!("a".repeat(64))),
+            ("requirements_sha256", serde_json::json!("b".repeat(64))),
+        ] {
+            let mut tampered = envelope.clone();
+            tampered[field] = value;
+            fs::write(&normalized, serde_json::to_vec_pretty(&tampered).unwrap()).unwrap();
+            request.execution_id = format!("proposal-v3-tampered-{field}");
+            let tampered_run = root.join(format!("tampered-{field}"));
+            let error = execute_run_inner(&request, &tampered_run, || Ok(()))
+                .expect_err("compiled v3 identity tampering must fail closed");
+            assert_eq!(
+                error.downcast_ref::<RunFailure>().map(RunFailure::code),
+                Some("v3-compiled-identity-mismatch")
+            );
+            assert!(!tampered_run.exists());
+        }
         let _ = fs::remove_dir_all(root);
     }
 

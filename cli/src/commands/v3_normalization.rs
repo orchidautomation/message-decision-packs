@@ -64,6 +64,7 @@ pub(crate) const V3_CLASSIFICATION_STATUSES: &[&str] = &[
 // =============================================================================
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SemanticClassificationV3 {
     pub(crate) status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,6 +76,7 @@ pub(crate) struct SemanticClassificationV3 {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SemanticGapV3 {
     pub(crate) attribute: String,
     pub(crate) reason: String,
@@ -85,12 +87,14 @@ pub(crate) struct SemanticGapV3 {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SemanticRejectedClaimV3 {
     pub(crate) claim: String,
     pub(crate) reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SemanticProviderPayloadV3 {
     pub(crate) classifications: BTreeMap<String, SemanticClassificationV3>,
     #[serde(default)]
