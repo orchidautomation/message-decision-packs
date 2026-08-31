@@ -2939,6 +2939,8 @@ where
         return failed_generative_outcome(driver_request, "validation-timeout");
     }
     let valid = validation["valid"].as_bool() == Some(true);
+    let validation_diagnostic =
+        (!valid).then(|| sanitized_prompt_validation_diagnostic(&validation));
     Ok(GenerativeOutcome {
         terminal_state: if valid {
             TerminalState::Success
@@ -2961,7 +2963,7 @@ where
         provider_request_schema_id: result.provider_request_schema_id,
         provider_response_body_sha256: result.provider_response_body_sha256,
         provider_observation: result.provider_observation,
-        diagnostic_code: None,
+        diagnostic_code: validation_diagnostic,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
     })
@@ -3024,6 +3026,12 @@ fn sanitized_host_envelope_diagnostic(error: &anyhow::Error) -> &'static str {
         .downcast_ref::<RunFailure>()
         .map(RunFailure::code)
         .unwrap_or("host-envelope-failed");
+    // v3 normalization failures are already bounded, static policy codes.
+    // Preserve them so receipt-only runs remain diagnosable without retaining
+    // provider output, evidence prose, or schema-validation error strings.
+    if code.starts_with("v3-") {
+        return code;
+    }
     match code {
         "host-envelope-metadata-missing"
         | "host-envelope-metadata-invalid"
@@ -3035,6 +3043,31 @@ fn sanitized_host_envelope_diagnostic(error: &anyhow::Error) -> &'static str {
         | "semantic-output-missing" => code,
         _ => "host-envelope-failed",
     }
+}
+
+fn sanitized_prompt_validation_diagnostic(validation: &Value) -> String {
+    let code = validation["issues"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|issue| issue["code"].as_str())
+        .find(|code| {
+            code.len() <= 96
+                && code.chars().all(|character| {
+                    character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
+                })
+                && [
+                    "decision_input_",
+                    "v3_",
+                    "prompt_output_",
+                    "source_",
+                    "collected_",
+                ]
+                .iter()
+                .any(|prefix| code.starts_with(prefix))
+        });
+    code.map(|code| code.replace('_', "-"))
+        .unwrap_or_else(|| "prompt-output-validation-failed".into())
 }
 
 fn generative_success_artifacts(
@@ -5424,7 +5457,8 @@ mod tests {
         host_wrap_governed_output, host_wrap_v3_normalization_output,
         project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
         provider_schema_source_for_contract, routed_context_shape_diagnostic,
-        routed_context_validation_diagnostic, seal_driver_request, seal_driver_result,
+        routed_context_validation_diagnostic, sanitized_host_envelope_diagnostic,
+        sanitized_prompt_validation_diagnostic, seal_driver_request, seal_driver_result,
         validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
@@ -6135,6 +6169,63 @@ mod tests {
                 .as_deref(),
             Some("gpt-5-mini")
         );
+    }
+
+    #[test]
+    fn v3_host_wrapper_diagnostics_preserve_only_static_reason_codes() {
+        for code in [
+            "v3-semantic-output-invalid",
+            "v3-classification-coverage-mismatch",
+            "v3-classification-taxonomy-mismatch",
+            "v3-classification-evidence-invalid",
+            "v3-classification-evidence-ineligible",
+            "v3-classification-minimum-evidence",
+            "v3-sealed-envelope-schema-mismatch",
+        ] {
+            let failure = super::run_failure(RunFailureKind::PolicyBlocked, code);
+            assert_eq!(sanitized_host_envelope_diagnostic(&failure), code);
+        }
+
+        let internal = super::run_failure(
+            RunFailureKind::PolicyBlocked,
+            "private-provider-output-detail",
+        );
+        assert_eq!(
+            sanitized_host_envelope_diagnostic(&internal),
+            "host-envelope-failed"
+        );
+        assert_eq!(
+            sanitized_host_envelope_diagnostic(&anyhow::anyhow!("raw model output")),
+            "host-envelope-failed"
+        );
+    }
+
+    #[test]
+    fn prompt_validation_diagnostics_preserve_only_safe_local_issue_codes() {
+        let validation = serde_json::json!({
+            "valid": false,
+            "issues": [{"code": "decision_input_schema_mismatch", "message": "private detail"}]
+        });
+        assert_eq!(
+            sanitized_prompt_validation_diagnostic(&validation),
+            "decision-input-schema-mismatch"
+        );
+
+        for unsafe_code in [
+            "raw provider output",
+            "decision_input_bad/path",
+            "ATTACK",
+            "decision_input_................................................................................",
+        ] {
+            let validation = serde_json::json!({
+                "valid": false,
+                "issues": [{"code": unsafe_code}]
+            });
+            assert_eq!(
+                sanitized_prompt_validation_diagnostic(&validation),
+                "prompt-output-validation-failed"
+            );
+        }
     }
 
     fn execute_host_model_case(model_output: &str) -> super::GenerativeOutcome {
