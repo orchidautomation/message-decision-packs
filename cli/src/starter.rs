@@ -4,12 +4,7 @@ use crate::constants::{
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
-    Card, CardKind, CardRef, CountConstraint, DecisionInputAttemptStatus, DecisionInputAttribute,
-    DecisionInputConfidencePolicy, DecisionInputContract, DecisionInputDecisionEffect,
-    DecisionInputDisposition, DecisionInputFreshnessPolicy, DecisionInputNormalization,
-    DecisionInputProvenanceField, DecisionInputProvenancePolicy, DecisionInputRequirement,
-    DecisionInputSensitivity, DecisionInputSignalCardinality, DecisionInputSignalConflictPolicy,
-    DecisionInputSignalProjection, DecisionInputSignalRole, DecisionInputSourceClass, Entry,
+    Card, CardKind, CardRef, ClassificationTaxonomy, CountConstraint, DecisionInputContract, Entry,
     EntryConstraints, InputContract, LeadInputRequirements, Manifest, PersonaMapping, Policy,
     PrimitiveMapping, ProductFoundationBinding, ProductFoundationEntryRef, ProductFoundationFacet,
     ProductFoundationFacetKind, ProductFoundationRegistry, Profile, ProfileActivation, ProfileEval,
@@ -68,6 +63,17 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
                 enum_values: strings(&["clear", "do-not-contact", "needs-review"]),
                 description: Some(
                     "Reviewed host-owned permission state; MDP does not collect or change it."
+                        .to_string(),
+                ),
+                ..ValueContract::default()
+            },
+        ),
+        (
+            "person_responsibilities".to_string(),
+            ValueContract {
+                value_type: Some("string".to_string()),
+                description: Some(
+                    "Observed responsibilities used with the authoritative title for persona classification."
                         .to_string(),
                 ),
                 ..ValueContract::default()
@@ -136,9 +142,9 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
             persona_mapping("PM", &["product manager", "head of product", "vp product", "chief product officer"]),
         ],
         lead_input_requirements: LeadInputRequirements {
-            required_fields: vec!["name".to_string(), "title".to_string(), "company".to_string(), "company_domain".to_string(), "trigger".to_string(), "persona".to_string(), "segment".to_string(), "signals".to_string()],
+            required_fields: vec!["name".to_string(), "title".to_string(), "company".to_string(), "company_domain".to_string(), "trigger".to_string(), "background".to_string(), "persona".to_string(), "segment".to_string(), "signals".to_string()],
             required_signal_fields: vec!["source".to_string()],
-            required_attributes: vec!["contact_policy".to_string()],
+            required_attributes: vec!["contact_policy".to_string(), "person_responsibilities".to_string()],
             value_contracts,
             attribute_definitions,
             allow_undeclared_attributes: true,
@@ -147,7 +153,7 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
         required_primitives: gtm_required_primitives(),
         primitive_map: gtm_primitive_map(),
         decision_input_contracts: vec![starter_prospect_decision_input_contract()],
-        classification_taxonomies: Vec::new(),
+        classification_taxonomies: starter_classification_taxonomies(),
         input_contracts: vec![InputContract {
             id: "prospect".to_string(),
             description: Some(
@@ -206,6 +212,20 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
 pub(crate) fn starter_manifest(name: &str, slug: &str, template: &str) -> Manifest {
     let mut manifest = generated_starter_manifest(name, slug, template);
     manifest.decision_input_contracts.clear();
+    manifest.classification_taxonomies.clear();
+    // `init_pack` is the compatibility/ungoverned starter path.  Keep its
+    // historical fit-ready surface so existing v0-v2 fixtures that omit the
+    // optional research narrative and persona-classification responsibility
+    // note remain readable.  Governed/targeted init uses the v3 manifest above
+    // and therefore retains those fields in its compiled collection contract.
+    manifest
+        .lead_input_requirements
+        .required_fields
+        .retain(|field| field != "background");
+    manifest
+        .lead_input_requirements
+        .required_attributes
+        .retain(|field| field != "person_responsibilities");
     for input_contract in &mut manifest.input_contracts {
         input_contract.decision_input_contracts.clear();
     }
@@ -503,263 +523,23 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
 }
 
 fn starter_prospect_decision_input_contract() -> DecisionInputContract {
-    let common_sources = vec![
-        DecisionInputSourceClass::UserProvided,
-        DecisionInputSourceClass::CustomerSystem,
-        DecisionInputSourceClass::ReviewedInternal,
-        DecisionInputSourceClass::PublicWeb,
-        DecisionInputSourceClass::SyntheticFixture,
-    ];
-    let private_sources = vec![
-        DecisionInputSourceClass::UserProvided,
-        DecisionInputSourceClass::CustomerSystem,
-        DecisionInputSourceClass::ReviewedInternal,
-        DecisionInputSourceClass::SyntheticFixture,
-    ];
-    let required_effects = vec![
-        DecisionInputDecisionEffect::Readiness,
-        DecisionInputDecisionEffect::Fit,
-        DecisionInputDecisionEffect::Routing,
-        DecisionInputDecisionEffect::Brief,
-        DecisionInputDecisionEffect::Gaps,
-        DecisionInputDecisionEffect::NoDraft,
-    ];
-    let mut attributes = vec![
-        starter_decision_input_attribute(
-            "company_name",
-            "What is the reviewed company or account name?",
-            "company",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::Required,
-            common_sources.clone(),
-            DecisionInputSensitivity::CustomerPrivate,
-            required_effects.clone(),
-        ),
-        starter_decision_input_attribute(
-            "company_domain",
-            "What is the reviewed canonical company domain?",
-            "company_domain",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::Required,
-            common_sources.clone(),
-            DecisionInputSensitivity::CustomerPrivate,
-            required_effects.clone(),
-        ),
-        starter_decision_input_attribute(
-            "person_name",
-            "What is the reviewed name of the intended person?",
-            "name",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::Required,
-            common_sources.clone(),
-            DecisionInputSensitivity::PersonalData,
-            required_effects.clone(),
-        ),
-        starter_decision_input_attribute(
-            "person_title",
-            "What is the person's current reviewed job title?",
-            "title",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::Required,
-            common_sources.clone(),
-            DecisionInputSensitivity::PersonalData,
-            required_effects.clone(),
-        ),
-        starter_decision_input_attribute(
-            "persona",
-            "Which pack-owned persona is supported by the reviewed person context?",
-            "persona",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::Required,
-            common_sources.clone(),
-            DecisionInputSensitivity::PersonalData,
-            required_effects.clone(),
-        ),
-        starter_decision_input_attribute(
-            "segment",
-            "Which pack-owned segment is supported by the reviewed account context?",
-            "segment",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::Required,
-            common_sources.clone(),
-            DecisionInputSensitivity::CustomerPrivate,
-            required_effects.clone(),
-        ),
-        starter_decision_input_attribute(
-            "trigger",
-            "What source-backed event or condition makes this prospect relevant now?",
-            "trigger",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::Required,
-            common_sources,
-            DecisionInputSensitivity::CustomerPrivate,
-            required_effects.clone(),
-        ),
-        starter_decision_input_attribute(
-            "contact_policy",
-            "Does reviewed policy permit this prospect to enter deterministic fit and brief evaluation?",
-            "attributes.contact_policy",
-            ValueContract {
-                value_type: Some("string".to_string()),
-                enum_values: strings(&["clear", "do-not-contact", "needs-review"]),
-                ..ValueContract::default()
-            },
-            DecisionInputRequirement::HardGate,
-            private_sources,
-            DecisionInputSensitivity::Restricted,
-            vec![
-                DecisionInputDecisionEffect::Readiness,
-                DecisionInputDecisionEffect::Fit,
-                DecisionInputDecisionEffect::Disqualification,
-                DecisionInputDecisionEffect::Routing,
-                DecisionInputDecisionEffect::Gaps,
-                DecisionInputDecisionEffect::HumanReview,
-                DecisionInputDecisionEffect::NoDraft,
-            ],
-        ),
-    ];
-    attributes
-        .last_mut()
-        .expect("contact policy attribute exists")
-        .status_behavior = BTreeMap::from([
-        (
-            DecisionInputAttemptStatus::Observed,
-            DecisionInputDisposition::Evaluate,
-        ),
-        (
-            DecisionInputAttemptStatus::NotFound,
-            DecisionInputDisposition::Block,
-        ),
-        (
-            DecisionInputAttemptStatus::NotApplicable,
-            DecisionInputDisposition::Block,
-        ),
-        (
-            DecisionInputAttemptStatus::Blocked,
-            DecisionInputDisposition::HumanReview,
-        ),
-        (
-            DecisionInputAttemptStatus::Error,
-            DecisionInputDisposition::HumanReview,
-        ),
-    ]);
-
-    DecisionInputContract {
-        id: "gtm.prospect-context".to_string(),
-        version: "1.0.0".to_string(),
-        description: Some(
-            "Minimum attempted-complete prospect context required before canonical GTM fit, brief, or copy-review work.".to_string(),
-        ),
-        normalization: DecisionInputNormalization {
-            prompt: "prompts/normalize-prospect.yaml".to_string(),
-            prompt_version: "gtm-prospect-context.v2".to_string(),
-            normalized_schema_ref: "mdp.normalized-decision-input.v2".to_string(),
-        },
-        source_classes: vec![
-            DecisionInputSourceClass::UserProvided,
-            DecisionInputSourceClass::CustomerSystem,
-            DecisionInputSourceClass::ReviewedInternal,
-            DecisionInputSourceClass::PublicWeb,
-            DecisionInputSourceClass::SyntheticFixture,
-        ],
-        attributes,
-        signal_projections: vec![
-            DecisionInputSignalProjection {
-                id: "why-now".to_string(),
-                kind: "prospect_trigger".to_string(),
-                roles: vec![DecisionInputSignalRole::WhyNow, DecisionInputSignalRole::Fit],
-                contributor_attribute_ids: vec!["trigger".to_string()],
-                value: ValueContract { value_type: Some("string".to_string()), ..ValueContract::default() },
-                cardinality: DecisionInputSignalCardinality { min: 1, max: 8 },
-                conflict_policy: DecisionInputSignalConflictPolicy::RequireAgreement,
-                decision_effects: required_effects,
-            },
-            DecisionInputSignalProjection {
-                id: "contact-policy".to_string(),
-                kind: "contact_policy".to_string(),
-                roles: vec![DecisionInputSignalRole::Disqualifier],
-                contributor_attribute_ids: vec!["contact_policy".to_string()],
-                value: ValueContract {
-                    value_type: Some("string".to_string()),
-                    enum_values: strings(&["clear", "do-not-contact", "needs-review"]),
-                    ..ValueContract::default()
-                },
-                cardinality: DecisionInputSignalCardinality { min: 1, max: 4 },
-                conflict_policy: DecisionInputSignalConflictPolicy::AnyDisqualifies,
-                decision_effects: vec![
-                    DecisionInputDecisionEffect::Disqualification,
-                    DecisionInputDecisionEffect::HumanReview,
-                    DecisionInputDecisionEffect::NoDraft,
-                ],
-            },
-        ],
-    }
+    let manifest: Manifest = serde_yaml::from_str(include_str!(
+        "../../plugin/assets/templates/basic/.mdp/manifest.yaml"
+    ))
+    .expect("checked-in basic manifest should deserialize");
+    manifest
+        .decision_input_contracts
+        .into_iter()
+        .next()
+        .expect("basic starter should declare a decision-input contract")
 }
 
-fn starter_decision_input_attribute(
-    id: &str,
-    question: &str,
-    output_path: &str,
-    value: ValueContract,
-    requirement: DecisionInputRequirement,
-    source_classes: Vec<DecisionInputSourceClass>,
-    sensitivity: DecisionInputSensitivity,
-    decision_effects: Vec<DecisionInputDecisionEffect>,
-) -> DecisionInputAttribute {
-    DecisionInputAttribute {
-        id: id.to_string(),
-        question: question.to_string(),
-        description: None,
-        output_path: output_path.to_string(),
-        processing: None,
-        classification_taxonomy: None,
-        value,
-        requirement,
-        applies_when: Vec::new(),
-        decision_effects,
-        source_classes,
-        provenance: DecisionInputProvenancePolicy {
-            required: true,
-            required_fields: vec![
-                DecisionInputProvenanceField::AttemptId,
-                DecisionInputProvenanceField::SourceClass,
-                DecisionInputProvenanceField::SourceLocator,
-                DecisionInputProvenanceField::ObservedAt,
-            ],
-        },
-        confidence: DecisionInputConfidencePolicy {
-            required: true,
-            minimum: Some(80),
-        },
-        freshness: DecisionInputFreshnessPolicy {
-            required: true,
-            max_age_days: Some(365),
-            allow_unknown: false,
-        },
-        sensitivity,
-        status_behavior: BTreeMap::new(),
-    }
+fn starter_classification_taxonomies() -> Vec<ClassificationTaxonomy> {
+    let manifest: Manifest = serde_yaml::from_str(include_str!(
+        "../../plugin/assets/templates/basic/.mdp/manifest.yaml"
+    ))
+    .expect("checked-in basic manifest should deserialize");
+    manifest.classification_taxonomies
 }
 
 fn primitive_mapping(
@@ -2822,392 +2602,18 @@ fn legacy_prospect_normalization_prompt_contract(include_output_schemas: bool) -
 }
 
 fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value {
-    let mut prompt = json!({
-        "format": PROMPT_FORMAT_V1,
-        "id": "normalize-prospect-row",
-        "version": "1",
-        "kind": "normalization",
-        "title": "Normalize prospect row",
-        "description": "Turns a supplied messy person, company, account, CRM, CSV, Clay, Deepline, spreadsheet, or research row into provider-neutral MDP prospect JSON before mdp fit or brief runs.",
-        "target_card_kinds": ["personas", "fit-rules", "signals"],
-        "tags": ["prompt", "normalization", "prospect", "fit", "routing"],
-        "inputs": [
-            {
-                "name": "raw_row",
-                "description": "The full messy source row, note, webhook payload, CSV row, CRM export row, Clay/Deepline row, spreadsheet row, or pasted research record.",
-                "required": true,
-                "default": "N/A",
-                "missing_behavior": "Return gaps and do not create normalized_prospect fields from absent source material.",
-                "producer": "source"
-            },
-            {
-                "name": "company_domain",
-                "description": "Company domain when available.",
-                "required": false,
-                "default": "N/A",
-                "missing_behavior": "Use N/A and do not infer company identity from absent data.",
-                "producer": "host"
-            },
-            {
-                "name": "existing_pack_context",
-                "description": "Relevant manifest personas, persona_mappings, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, fit rules, signal definitions, avoid-rules, output rules, and source policy from this MDP.",
-                "required": false,
-                "default": "N/A",
-                "missing_behavior": "Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A.",
-                "producer": "pack"
-            },
-            {
-                "name": "runtime_context",
-                "description": "Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.",
-                "required": false,
-                "default": "N/A",
-                "missing_behavior": "Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context.",
-                "producer": "runtime"
-            },
-            {
-                "name": "source_kind",
-                "description": "Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example.",
-                "required": false,
-                "default": "user-provided-row",
-                "missing_behavior": "Use user-provided-row unless the caller supplies a more specific source kind.",
-                "producer": "host"
-            }
-        ],
-        "instructions": [
-            "Use only raw_row, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.",
-            "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
-            "Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.",
-            "When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.",
-            "Use runtime_context.now_utc and runtime_context.date_utc only to state when this normalization ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.",
-            "When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. If the source value is outside the contract, omit the optional field or add a gap instead of inventing a synonym.",
-            "Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.",
-            "Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.",
-            "Attributes are metadata, not proof. Do not use attributes to substantiate customer adoption, production use, design partners, paid pilots, ARR conversion, market validation, compliance, integrations, or product capability claims.",
-            "When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.",
-            "Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.",
-            "Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.",
-            "Set source_summary.inputs_used to declared prompt input names only, such as raw_row, company_domain, existing_pack_context, runtime_context, or source_kind. Put field paths, source snippets, URLs, and row fragments in signals[].source, normalization_trace.preserved_raw_fields, normalization_trace.missing_required[].source_evidence, or gaps instead.",
-            "For non-synthetic rows, use a meaningful source_kind, keep material signals source-backed, and set confidence/freshness from supplied evidence. If source_kind, signal source, confidence, or freshness is vague or inconsistent, mark the row not ready for a draft and emit gaps.",
-            "If the input is account-only and lacks person name or title, do not invent a contact. Keep compatibility fields as N/A where the prospect schema requires them, add structured normalization_trace.missing_required entries with field, reason, and source_evidence, add a human-readable gap, and set normalization_trace.fit_readiness.ready_for_mdp_fit and ready_for_brief to false.",
-            "Missing-field example: if the row has company but no person title, do not fabricate a title; add {\"field\":\"title\",\"reason\":\"not_available_in_source\",\"source_evidence\":\"Raw row contained no person title.\"} to normalization_trace.missing_required and set ready_for_mdp_fit false.",
-            "Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.",
-            "Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards."
-        ],
-        "role": "Provider-neutral prospect normalization analyst",
-        "objective": "Convert supplied messy prospect context into the exact bounded prospect JSON accepted by this pack without inventing facts.",
-        "procedure": ["Inventory only declared inputs and preserve their source boundaries.", "Normalize values against pack-owned vocabularies and readiness rules.", "Return strict JSON with explicit gaps and normalization trace."],
-        "selection_rules": ["Use only pack-owned persona, segment, signal, source-kind, and attribute values.", "Omit or gap any value that cannot be mapped exactly."],
-        "ambiguity_policy": ["Preserve weak inferences as hypotheses, low confidence, needs-review, or gaps."],
-        "provenance_policy": ["Keep supplied field paths and source notes in signal sources and normalization trace."],
-        "evidence_policy": ["Attributes are metadata, not proof; never convert them into adoption, outcome, compliance, or capability claims."],
-        "negative_examples": ["Do not invent a person, title, company domain, persona, segment, trigger, or signal.", "Do not browse, scrape, enrich, send, sequence, or update external systems."],
-        "final_checklist": ["Output is strict JSON.", "All normalized values satisfy pack vocabulary.", "Missing required context is explicit.", "Fit readiness is false whenever required evidence is absent."],
-        "output_contract": {
-            "contract": PROMPT_OUTPUT_CONTRACT,
-            "output_kind": "prospect-normalization",
-            "strict_json_only": true,
-            "required_top_level": [
-                "contract",
-                "prompt_id",
-                "source_summary",
-                "normalized_prospect",
-                "normalization_trace",
-                "card_patches",
-                "gaps",
-                "rejected_claims"
-            ],
-            "entry_defaults": {
-                "body": "N/A",
-                "applies_to": [],
-                "evidence": [],
-                "avoid": [],
-                "confidence": "unknown",
-                "provenance": []
-            },
-            "schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-            "example": {
-                "contract": PROMPT_OUTPUT_CONTRACT,
-                "prompt_id": "normalize-prospect-row",
-                "source_summary": {
-                    "company_domain": "example.com",
-                    "company_name": "ExampleCo",
-                    "person_name": "Alex Rivera",
-                    "person_title": "Revenue Operations Lead",
-                    "account_name": "ExampleCo",
-                    "inputs_used": ["raw_row", "existing_pack_context"],
-                    "confidence": "medium"
-                },
-                "normalized_prospect": {
-                    "name": "Alex Rivera",
-                    "title": "Revenue Operations Lead",
-                    "company": "ExampleCo",
-                    "company_domain": "example.com",
-                    "source_kind": "user-provided-row",
-                    "synthetic": false,
-                    "company_url": "https://example.com",
-                    "background": "Source row says the team is standardizing campaign qualification data across CRM exports, spreadsheets, and research notes.",
-                    "trigger": "Standardizing prospect qualification data before routing new campaigns.",
-                    "persona": "GTM Engineering",
-                    "segment": "agent-assisted GTM",
-                    "attributes": {
-                        "fiscal_year": "FY2027"
-                    },
-                    "signals": [
-                        {
-                            "id": "qualification-data-standardization",
-                            "title": "Standardizing prospect qualification data",
-                            "source": "raw_row.operations_note",
-                            "confidence": "medium",
-                            "freshness": "N/A",
-                            "state_as": "supplied"
-                        }
-                    ]
-                },
-                "normalization_trace": {
-                    "persona": {
-                        "source": "existing_pack_context.persona_mappings",
-                        "matched_keywords": ["revenue operations"],
-                        "confidence": "medium",
-                        "needs_review": false
-                    },
-                    "fit_readiness": {
-                        "has_trigger": true,
-                        "has_company_domain": true,
-                        "has_persona": true,
-                        "has_segment": true,
-                        "has_signals": true,
-                        "has_signal_source": true,
-                        "ready_for_mdp_fit": true
-                    },
-                    "preserved_raw_fields": ["raw_row.name", "raw_row.title", "raw_row.company", "company_domain", "raw_row.operations_note", "raw_row.fiscal_year"],
-                    "missing_required": []
-                },
-                "card_patches": [],
-                "gaps": [],
-                "rejected_claims": []
-            }
-        }
-    });
-    let _ = include_output_schemas;
-    prompt["version"] = json!("gtm-prospect-context.v2");
-    prompt["title"] = json!("Normalize attempted-complete prospect decision inputs");
-    prompt["description"] = json!(
-        "Normalizes a host-collected attempted-complete prospect ledger into the signal-aware v2 envelope required before canonical GTM fit, brief, or copy-review work."
-    );
-    prompt["inputs"] = json!([
-        {
-            "name": "raw_row",
-            "description": "The exact collected-attempt-results ledger for every compiled Decision Input attribute.",
-            "required": true,
-            "default": "N/A",
-            "missing_behavior": "Return malformed with draft_allowed false; do not collect or infer missing data.",
-            "producer": "source",
-            "schema_ref": "mdp.collected-attempt-results.v2"
-        },
-        {
-            "name": "decision_input_requirements",
-            "description": "The exact mdp.requirements.v2 data object compiled for the selected canonical job.",
-            "required": true,
-            "default": "N/A",
-            "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "pack",
-            "schema_ref": "mdp.requirements.v2"
-        },
-        {
-            "name": "source_binding_sha256",
-            "description": "SHA-256 of the exact validated mdp.source-binding.v2 artifact supplied by the host.",
-            "required": true,
-            "default": "N/A",
-            "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "host",
-            "schema_ref": "mdp.sha256.v1",
-            "media_type": "text/plain"
-        },
-        {
-            "name": "source_attempt_request_sha256",
-            "description": "SHA-256 of the exact attempted-complete source request supplied by the host.",
-            "required": true,
-            "default": "N/A",
-            "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "host",
-            "schema_ref": "mdp.sha256.v1",
-            "media_type": "text/plain"
-        },
-        {
-            "name": "collected_attempt_results_sha256",
-            "description": "SHA-256 of raw_row supplied by the host.",
-            "required": true,
-            "default": "N/A",
-            "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "host",
-            "schema_ref": "mdp.sha256.v1",
-            "media_type": "text/plain"
-        }
-    ]);
-    prompt["instructions"] = json!([
-        "Use only raw_row, decision_input_requirements, source_binding_sha256, source_attempt_request_sha256, and collected_attempt_results_sha256. Do not browse, scrape, enrich, send, sequence, mutate CRM records, or call external systems.",
-        "Treat decision_input_requirements.normalized_output_schema as binding and return exactly one mdp.normalized-decision-input.v2 object.",
-        "Copy the job, contract, normalization, binding, request, and collected-results receipts exactly; never invent or upgrade authority.",
-        "Preserve every compiled attribute exactly once with its observed, not_found, not_applicable, blocked, or error status. Never convert blocked or error to absence.",
-        "Emit repeated sourced observations only as mdp.signal-observation.v2 records for compiled signal projections, roles, contributors, and attempt receipts. Preserve agreement and conflicts; do not select a positive winner.",
-        "Populate normalized_prospect only from observed values through declared output_path mappings. Do not infer a person, domain, persona, segment, trigger, contact policy, or signal.",
-        "Set outcome to ready only when compiled readiness and hard-gate policy permit deterministic evaluation. Otherwise use insufficient-context, disqualified, human-review, malformed, or provider-error.",
-        "Always set draft_allowed to false. Normalization never drafts or authorizes collection, generation, sending, or external mutation.",
-        "Return strict JSON only without markdown, prose, comments, or code fences."
-    ]);
-    prompt["role"] = json!("Provider-neutral Decision Input normalization analyst");
-    prompt["objective"] = json!(
-        "Normalize one attempted-complete prospect ledger into the exact governed v2 envelope without adding facts or execution authority."
-    );
-    prompt["procedure"] = json!([
-        "Verify exact contract and lineage receipts.",
-        "Preserve every attempted attribute and repeated signal observation.",
-        "Apply compiled status and conflict behavior.",
-        "Return one no-draft v2 envelope."
-    ]);
-    prompt["selection_rules"] = json!([
-        "Use only compiled attributes and projections.",
-        "Accept only declared source classes, value contracts, and output paths."
-    ]);
-    prompt["ambiguity_policy"] = json!([
-        "Unresolved disagreement is human-review and no-draft; never choose a positive winner."
-    ]);
-    prompt["provenance_policy"] = json!([
-        "Retain exact attempt, source, observation, confidence, freshness, request, results, and binding receipts."
-    ]);
-    prompt["evidence_policy"] = json!([
-        "Lineage consistency does not prove host authenticity, authorization, or source truth."
-    ]);
-    prompt["negative_examples"] = json!([
-        "Do not infer a DIC from prompt prose, field names, or lead_input_requirements.",
-        "Do not turn not_found, blocked, or error into a safe value."
-    ]);
-    prompt["final_checklist"] = json!([
-        "All compiled attempts are present.",
-        "Repeated observations use v2 projections.",
-        "No undeclared prospect field is populated.",
-        "draft_allowed is false."
-    ]);
-    prompt["output_contract"] = json!({
-        "contract": "mdp.normalized-decision-input.v2",
-        "output_kind": "decision-input-normalization",
-        "strict_json_only": true,
-        "required_top_level": [
-            "contract", "job_id", "decision_input_contracts", "normalization",
-            "source_binding_sha256", "source_attempt_request_sha256",
-            "collected_attempt_results_sha256", "attributes", "signal_observations",
-            "normalized_prospect", "outcome", "draft_allowed"
-        ],
-        "entry_defaults": {
-            "body": "N/A",
-            "applies_to": [],
-            "evidence": [],
-            "avoid": [],
-            "confidence": "unknown",
-            "provenance": []
-        },
-        "schema_ref": "mdp.normalized-decision-input.v2",
-        "example": starter_decision_input_normalization_example()
-    });
+    // Keep generated/targeted starters byte-for-byte aligned with the checked-in
+    // canonical v3 GTM prompt.  The template is compiled into the CLI, so
+    // custom local starter packs do not silently fall back to the retired v2
+    // input aliases.
+    let mut prompt: Value = serde_yaml::from_str(include_str!(
+        "../../plugin/assets/templates/basic/.mdp/prompts/normalize-prospect.yaml"
+    ))
+    .expect("checked-in basic normalization prompt should deserialize");
+    if include_output_schemas {
+        prompt["output_contract"]["schema"] = prospect_normalization_output_schema();
+    }
     prompt
-}
-
-fn starter_decision_input_normalization_example() -> Value {
-    let observed = |attempt_id: &str, value: Value| {
-        json!({
-            "status": "observed",
-            "value": value,
-            "provenance": [{
-                "attempt_id": attempt_id,
-                "source_class": "synthetic_fixture",
-                "source_locator": format!("opaque:{attempt_id}"),
-                "observed_at": "2026-01-15T12:00:00Z"
-            }],
-            "confidence": 100,
-            "freshness": {"observed_at": "2026-01-15T12:00:00Z", "age_days": 0}
-        })
-    };
-    json!({
-        "contract": "mdp.normalized-decision-input.v2",
-        "job_id": "prospect-fit-or-brief",
-        "decision_input_contracts": ["gtm.prospect-context"],
-        "normalization": [{
-            "contract_id": "gtm.prospect-context",
-            "prompt": "prompts/normalize-prospect.yaml",
-            "prompt_version": "gtm-prospect-context.v2"
-        }],
-        "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "collected_attempt_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "attributes": {
-            "company_name": observed("synthetic-attempt-001", json!("Example Prospect Company")),
-            "company_domain": observed("synthetic-attempt-002", json!("example.invalid")),
-            "person_name": observed("synthetic-attempt-003", json!("Alex Example")),
-            "person_title": observed("synthetic-attempt-004", json!("Revenue Operations Lead")),
-            "persona": observed("synthetic-attempt-005", json!("GTM Engineering")),
-            "segment": observed("synthetic-attempt-006", json!("agent-assisted GTM")),
-            "trigger": observed("synthetic-attempt-007", json!("Synthetic account is reviewing its prospect qualification workflow.")),
-            "contact_policy": observed("synthetic-attempt-008", json!("clear"))
-        },
-        "signal_observations": [
-            {
-                "contract": "mdp.signal-observation.v2",
-                "id": "synthetic-trigger-001",
-                "contract_id": "gtm.prospect-context",
-                "projection_id": "why-now",
-                "qualified_projection_id": "gtm.prospect-context#why-now",
-                "kind": "prospect_trigger",
-                "roles": ["fit", "why-now"],
-                "value": "Synthetic account is reviewing its prospect qualification workflow.",
-                "contributor_attribute_ids": ["trigger"],
-                "attempt_ids": ["synthetic-attempt-007"],
-                "source_class": "synthetic_fixture",
-                "source_locator": "opaque:synthetic-attempt-007",
-                "observed_at": "2026-01-15T12:00:00Z",
-                "confidence": 100,
-                "receipt": {
-                    "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                    "collected_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-                }
-            },
-            {
-                "contract": "mdp.signal-observation.v2",
-                "id": "synthetic-contact-policy-001",
-                "contract_id": "gtm.prospect-context",
-                "projection_id": "contact-policy",
-                "qualified_projection_id": "gtm.prospect-context#contact-policy",
-                "kind": "contact_policy",
-                "roles": ["disqualifier"],
-                "value": "clear",
-                "contributor_attribute_ids": ["contact_policy"],
-                "attempt_ids": ["synthetic-attempt-008"],
-                "source_class": "synthetic_fixture",
-                "source_locator": "opaque:synthetic-attempt-008",
-                "observed_at": "2026-01-15T12:00:00Z",
-                "confidence": 100,
-                "receipt": {
-                    "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                    "collected_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-                }
-            }
-        ],
-        "normalized_prospect": {
-            "name": "Alex Example",
-            "title": "Revenue Operations Lead",
-            "company": "Example Prospect Company",
-            "company_domain": "example.invalid",
-            "persona": "GTM Engineering",
-            "segment": "agent-assisted GTM",
-            "trigger": "Synthetic account is reviewing its prospect qualification workflow.",
-            "source_kind": "synthetic-example",
-            "synthetic": true,
-            "attributes": {"contact_policy": "clear"}
-        },
-        "outcome": "ready",
-        "draft_allowed": false
-    })
 }
 
 fn prompt_contract(

@@ -15,8 +15,8 @@ use crate::constants::{
     PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
     PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
-    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::model_steps::{
     COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1, compiled_model_step_schema,
@@ -171,6 +171,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RouteBudget => route_budget_schema(),
         SchemaTarget::RouteBudgetSummaryV1 => route_budget_summary_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
+        SchemaTarget::RequirementsModelContextV1 => requirements_model_context_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
         SchemaTarget::SyntheticV2Chain => {
             crate::commands::synthetic_chain::synthetic_v2_chain_schema()
@@ -4483,6 +4484,39 @@ fn lead_input_requirements_schema() -> Value {
                 "default": true,
                 "description": "When false, prospect attributes must be declared in attribute_definitions."
             }
+        }
+    })
+}
+
+fn requirements_model_context_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Requirements Model Context v1",
+        "description": "Bounded model-facing projection of an available v3 mdp.requirements.v2 compilation.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "contract", "source_contract", "runtime_contract_version",
+            "requirements_sha256", "taxonomy_set_sha256", "pack", "job",
+            "collection_specification", "classification_specification",
+            "decision_input_contracts", "normalized_output_schema",
+            "semantic_validation", "no_draft_policy", "boundaries"
+        ],
+        "properties": {
+            "contract": {"const": REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1},
+            "source_contract": {"const": "mdp.requirements.v2"},
+            "runtime_contract_version": {"const": "v3"},
+            "requirements_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "taxonomy_set_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "pack": {"type": "object"},
+            "job": {"type": "object"},
+            "collection_specification": {"type": "object"},
+            "classification_specification": {"type": "object"},
+            "decision_input_contracts": {"type": "array"},
+            "normalized_output_schema": {"type": "object"},
+            "semantic_validation": {"type": "object"},
+            "no_draft_policy": {"type": "object"},
+            "boundaries": {"type": "object"}
         }
     })
 }

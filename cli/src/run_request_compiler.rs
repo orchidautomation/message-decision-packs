@@ -8,8 +8,13 @@ use crate::artifact_hash::{
 };
 use crate::cli::SchemaTarget;
 use crate::commands::schemas::schema;
-use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
-use crate::model_steps::{CompiledModelStepV1, resolve_model_steps, resolve_selected_model_step};
+use crate::constants::{
+    DEFAULT_DIR, REQUIREMENTS_CONTRACT_V2, REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1,
+    ROUTED_CONTEXT_CONTRACT,
+};
+use crate::model_steps::{
+    CompiledModelStepV1, ModelStepPhase, resolve_model_steps, resolve_selected_model_step,
+};
 use crate::models::{Manifest, ProfileJob};
 use crate::pack_io::read_manifest;
 use crate::run_contracts::{
@@ -338,7 +343,19 @@ fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<Compi
             "mdp requirements --dir <pack> --job <job>",
         )
     })?;
-    validate_governed_lineage(&root, &options.job, &prompt_path, &authorities)?;
+    // A normalization invocation has only upstream lineage: the normalized
+    // envelope is the output of this step and therefore cannot be supplied to
+    // prepare-run. Fit/brief/review invocations still require the complete
+    // four-artifact chain when they consume a pre-normalized input.
+    validate_governed_lineage(
+        &root,
+        &options.job,
+        &prompt_path,
+        &authorities,
+        step.phase != ModelStepPhase::Normalization,
+        step.phase == ModelStepPhase::Normalization
+            && step.output_contract.output_kind.as_deref() == Some("decision-input-normalization"),
+    )?;
     let (driver, model, observations, model_facts) =
         compiler_observe_native_identity(&request, &prepared).map_err(|_| {
             diagnostic(
@@ -405,6 +422,8 @@ fn validate_governed_lineage(
     job: &str,
     prompt: &Path,
     authorities: &BTreeMap<String, (ArtifactAuthority, PathBuf)>,
+    require_normalized_output: bool,
+    require_model_context: bool,
 ) -> Result<()> {
     let aliases: [(&str, &[&str]); 4] = [
         ("source-binding", &["source-binding", "source_binding"]),
@@ -452,6 +471,76 @@ fn validate_governed_lineage(
     }
     let read_named =
         |name: &str| -> Option<(Value, String, String)> { resolved.get(name).cloned() };
+    let requirements_context = authorities
+        .iter()
+        .filter(|(name, _)| {
+            matches!(
+                name.as_str(),
+                "decision-input-requirements" | "decision_input_requirements"
+            )
+        })
+        .map(|(_, (_, path))| {
+            let bytes = read_regular(path, MAX_INPUT_BYTES, "requirements model context")?;
+            let sha = sha256_hex(&bytes);
+            let value = serde_json::from_slice(&bytes).map_err(|_| {
+                diagnostic(
+                    "governed-lineage-invalid",
+                    "mdp requirements --dir <pack> --job <job>",
+                )
+            })?;
+            Ok::<_, anyhow::Error>((value, path.to_string_lossy().into_owned(), sha))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if requirements_context.len() > 1 {
+        return Err(diagnostic(
+            "governed-lineage-duplicate-alias",
+            "mdp requirements --dir <pack> --job <job>",
+        ));
+    }
+    if require_model_context && requirements_context.is_empty() {
+        return Err(diagnostic(
+            "governed-lineage-incomplete",
+            "mdp requirements --dir <pack> --job <job>",
+        ));
+    }
+    if let Some((context, context_path, _)) = requirements_context.into_iter().next() {
+        let context_schema = schema(SchemaTarget::RequirementsModelContextV1);
+        if jsonschema::draft202012::validate(&context_schema, &context).is_err() {
+            return Err(diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            ));
+        }
+        let expected = crate::commands::requirements::requirements_model_context(root, job)
+            .map_err(|_| {
+                diagnostic(
+                    "governed-lineage-invalid",
+                    "mdp requirements --dir <pack> --job <job>",
+                )
+            })?;
+        let context_bytes = canonical_json_bytes(&context).map_err(|_| {
+            diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            )
+        })?;
+        let expected_bytes = canonical_json_bytes(&expected).map_err(|_| {
+            diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            )
+        })?;
+        if context_bytes != expected_bytes
+            || context["contract"] != REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1
+            || context["source_contract"] != REQUIREMENTS_CONTRACT_V2
+        {
+            return Err(diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            ));
+        }
+        let _ = context_path;
+    }
     let binding = read_named("source-binding");
     let request = read_named("source-attempt-request");
     let results = read_named("collected-attempt-results");
@@ -469,7 +558,8 @@ fn validate_governed_lineage(
             "mdp requirements --dir <pack> --job <job>",
         ));
     };
-    if request.is_none() || results.is_none() || normalized.is_none() {
+    if request.is_none() || results.is_none() || (require_normalized_output && normalized.is_none())
+    {
         return Err(diagnostic(
             "governed-lineage-incomplete",
             "mdp requirements --dir <pack> --job <job>",
@@ -1313,7 +1403,75 @@ mod tests {
             [authority("source-binding"), authority("source_binding")]
                 .into_iter()
                 .collect();
-        assert!(validate_governed_lineage(&root, "job", &root, &authorities).is_err());
+        assert!(validate_governed_lineage(&root, "job", &root, &authorities, true, false).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn normalization_lineage_allows_upstream_chain_without_output() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-lineage-normalization-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let binding = root.join("binding.json");
+        let request = root.join("request.json");
+        let results = root.join("results.json");
+        for path in [&binding, &request, &results] {
+            std::fs::write(path, b"{}\n").unwrap();
+        }
+        let authority = |name: &str, path: &PathBuf| {
+            (
+                name.to_string(),
+                (
+                    ArtifactAuthority {
+                        logical_name: name.to_string(),
+                        schema_id: match name {
+                            "source-binding" => "mdp.source-binding.v2",
+                            "source-attempt-request" => "mdp.source-attempt-request.v2",
+                            _ => "mdp.collected-attempt-results.v2",
+                        }
+                        .into(),
+                        media_type: "application/json".into(),
+                        byte_count: 3,
+                        sha256: "a".repeat(64),
+                        provenance: EvidenceProvenance::MdpObserved,
+                        provenance_refs: Vec::new(),
+                    },
+                    path.clone(),
+                ),
+            )
+        };
+        let authorities: BTreeMap<String, (ArtifactAuthority, PathBuf)> = [
+            authority("source-binding", &binding),
+            authority("source-attempt-request", &request),
+            authority("collected-attempt-results", &results),
+        ]
+        .into_iter()
+        .collect();
+        // The fixture bytes are intentionally not a complete source binding;
+        // this test isolates the compiler's phase rule. A pre-normalization
+        // compile must not report the missing downstream output artifact;
+        // a consumer of a normalized input still must.
+        let normalization =
+            validate_governed_lineage(&root, "job", &root, &authorities, false, false).unwrap_err();
+        assert_eq!(
+            normalization
+                .downcast_ref::<super::CompilerError>()
+                .map(|error| error.0.code.as_str()),
+            Some("governed-lineage-invalid")
+        );
+        let downstream =
+            validate_governed_lineage(&root, "job", &root, &authorities, true, false).unwrap_err();
+        assert_eq!(
+            downstream
+                .downcast_ref::<super::CompilerError>()
+                .map(|error| error.0.code.as_str()),
+            Some("governed-lineage-incomplete")
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -7,7 +7,7 @@ import { identityBoundDirectoryCandidates } from './lib/identity-bound-directory
 import { superviseProcess } from './lib/process-supervisor.mjs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -1059,50 +1059,177 @@ sys.stdout.write(json.dumps({
   const proposalPack = join(roots.pack, 'proposal')
   cpSync(join(repoRoot, 'plugin', 'assets', 'templates', 'basic'), gtmPack, { recursive: true })
   cpSync(join(repoRoot, 'plugin', 'assets', 'templates', 'proposal'), proposalPack, { recursive: true })
-  const rawRow = join(roots.input, 'collected-attempt-results.json')
-  cpSync(join(repoRoot, 'examples', 'clay-audiences-self-serve-enterprise-expansion', 'fixtures', 'collected-attempt-results.json'), rawRow)
-  const requirements = join(roots.input, 'requirements.json')
-  writeFileSync(requirements, JSON.stringify({ contract: 'mdp.requirements.v2' }))
-  const sourceBindingSha = join(roots.input, 'source-binding.sha256')
-  const sourceAttemptSha = join(roots.input, 'source-attempt.sha256')
-  const collectedResultsSha = join(roots.input, 'collected-results.sha256')
-  for (const path of [sourceBindingSha, sourceAttemptSha, collectedResultsSha]) writeFileSync(path, `${'a'.repeat(64)}\n`)
-  const rawOpportunity = join(roots.input, 'raw-opportunity.json')
-  writeFileSync(rawOpportunity, JSON.stringify({ company_name: 'Synthetic Example', opportunity_summary: 'Conference demonstration fixture' }))
+  // Build the exact v3 requirements projection and a small, fully synthetic
+  // upstream evidence chain for each profile.  The MCP handoff test must
+  // exercise the same four declared inputs as a real host; a placeholder
+  // requirements object or hash-only files would be rejected before the
+  // offline model driver is reached.
+  const compileModelContext = (pack, job, path) => {
+    const result = spawnSync(realCli, ['--json', 'requirements', '--dir', pack, '--job', job, '--model-context'], { encoding: 'utf8' })
+    assert.equal(result.status, 0, `model context compilation failed: ${result.stderr || result.stdout}`)
+    const response = JSON.parse(result.stdout)
+    assert.equal(response.ok, true, `model context compilation was not authoritative: ${result.stdout}`)
+    writeFileSync(path, JSON.stringify(response.data))
+    return response.data
+  }
+
+  const writeJson = (path, value) => {
+    const bytes = JSON.stringify(value)
+    writeFileSync(path, bytes)
+    return createHash('sha256').update(bytes).digest('hex')
+  }
+
+  const syntheticValue = (profileName, attribute) => {
+    const gtm = {
+      company_name: 'Synthetic Agent Systems',
+      company_domain: 'synthetic-agent-systems.invalid',
+      person_name: 'Casey Operator',
+      person_title: 'GTM Systems Engineer',
+      person_responsibilities: 'Owns GTM data workflows and agent-assisted routing systems.',
+      company_fit_observation: 'Synthetic fixture describes a maintained agent-assisted GTM workflow.',
+      why_now_observation: 'Synthetic fixture records a current workflow-standardization initiative.',
+      contact_policy: 'clear',
+    }
+    const proposal = {
+      buyer_name: 'Synthetic Buyer',
+      opportunity_summary: 'Synthetic opportunity for contract review.',
+      due_date: '2026-09-30',
+      review_mode_observation: 'Synthetic fixture places the opportunity at review.',
+      buyer_context_observation: 'Synthetic fixture contains buyer context.',
+      requirement_observation: 'Synthetic fixture contains a bounded requirement.',
+      proof_observation: 'Synthetic fixture contains approved proof notes.',
+      proof_status: 'approved',
+      policy_conflict_observation: 'Synthetic fixture reports no policy conflict.',
+      policy_conflict_status: 'none',
+      source_safety: 'synthetic',
+    }
+    return (profileName === 'gtm' ? gtm : proposal)[attribute] || 'Synthetic fixture value.'
+  }
+
+  const buildV3Lineage = (profileName, pack, job, context, contextPath, directory) => {
+    const contract = context.decision_input_contracts[0]
+    const now = '2026-08-31T12:00:00Z'
+    const lineageDirectory = join(directory, profileName)
+    mkdirSync(lineageDirectory, { recursive: true })
+    const observed = context.decision_input_contracts.flatMap((decisionContract) => decisionContract.attributes.filter((attribute) => attribute.processing === 'observed'))
+    const attributes = new Map(observed.map((attribute) => [attribute.id, attribute]))
+    const sourceFor = (attributeId) => {
+      const attribute = attributes.get(attributeId)
+      if (!attribute || !attribute.source_classes.includes('synthetic_fixture')) {
+        throw new Error(`synthetic fixture source is not allowed for ${attributeId}`)
+      }
+      return 'synthetic_fixture'
+    }
+    const projectionBindings = context.decision_input_contracts.flatMap((decisionContract) => decisionContract.signal_projections.map((projection) => ({
+      decision_input_contract_id: decisionContract.id,
+      projection_id: projection.id,
+      qualified_projection_id: `${decisionContract.id}#${projection.id}`,
+      contributor_attribute_ids: projection.contributor_attribute_ids,
+      source: {
+        logical_source_id: `mcp-${profileName}-${projection.id}`,
+        source_class: sourceFor(projection.contributor_attribute_ids[0]),
+        acquisition_mode: 'synthetic-fixture',
+        upstream_reference: `fixture:${profileName}:${projection.id}`,
+      },
+    })))
+    const binding = {
+      contract: 'mdp.source-binding.v2',
+      binding_release: 'mcp-v3-synthetic-fixture',
+      job_id: job,
+      pack: {
+        id: context.pack.id,
+        version: context.pack.version,
+        sha256: context.pack.sha256,
+      },
+      requirements: {
+        contract: 'mdp.requirements.v2',
+        sha256: context.requirements_sha256,
+        decision_input_contracts: [{ id: contract.id, version: contract.version }],
+      },
+      normalization_release: 'mcp-v3-synthetic-normalizer',
+      adapter: { profile: 'mcp_synthetic_v3', version: '1.0.0' },
+      transformation: { id: 'identity_v3' },
+      projection_bindings: projectionBindings,
+    }
+    const bindingPath = join(lineageDirectory, 'source-binding.json')
+    const bindingSha = writeJson(bindingPath, binding)
+    const attempts = observed.map((attribute, index) => ({
+      attempt_id: `mcp-${profileName}-attempt-${String(index + 1).padStart(3, '0')}`,
+      attribute_id: attribute.id,
+      source_class: sourceFor(attribute.id),
+      source_locator: `fixture:${profileName}:${attribute.id}`,
+      requested_at: now,
+      decision_input_contract_id: contract.id,
+    }))
+    const request = {
+      contract: 'mdp.source-attempt-request.v2',
+      job_id: job,
+      decision_input_contracts: [{ id: contract.id, version: contract.version }],
+      as_of: now,
+      source_binding_sha256: bindingSha,
+      attempts,
+    }
+    const requestPath = join(lineageDirectory, 'source-attempt-request.json')
+    const requestSha = writeJson(requestPath, request)
+    const attemptResults = attempts.map((attempt) => ({
+      attempt_id: attempt.attempt_id,
+      attribute_id: attempt.attribute_id,
+      source_class: attempt.source_class,
+      source_locator: attempt.source_locator,
+      decision_input_contract_id: attempt.decision_input_contract_id,
+      status: 'observed',
+      value: syntheticValue(profileName, attempt.attribute_id),
+      observed_at: now,
+      confidence: 100,
+      freshness: { observed_at: now, age_days: 0 },
+      provenance: [{
+        attempt_id: attempt.attempt_id,
+        source_class: attempt.source_class,
+        source_locator: attempt.source_locator,
+        observed_at: now,
+        excerpt: syntheticValue(profileName, attempt.attribute_id),
+      }],
+    }))
+    const collected = {
+      contract: 'mdp.collected-attempt-results.v2',
+      job_id: job,
+      decision_input_contracts: [{ id: contract.id, version: contract.version }],
+      source_binding_sha256: bindingSha,
+      source_attempt_request_sha256: requestSha,
+      attributes: Object.fromEntries(attemptResults.map((item) => [item.attribute_id, {
+        status: item.status,
+        value: item.value,
+        provenance: item.provenance,
+        confidence: item.confidence,
+        freshness: item.freshness,
+      }])),
+      attempt_results: attemptResults,
+    }
+    const resultsPath = join(lineageDirectory, 'collected-attempt-results.json')
+    writeJson(resultsPath, collected)
+    return { contextPath, bindingPath, requestPath, resultsPath }
+  }
 
   const profiles = [
-    {
-      name: 'gtm',
-      pack: gtmPack,
-      job: 'prospect-fit-or-brief',
-      operation: 'model:prospect-fit-or-brief/normalization',
+    { name: 'gtm', pack: gtmPack, job: 'prospect-fit-or-brief', operation: 'model:prospect-fit-or-brief/normalization' },
+    { name: 'proposal', pack: proposalPack, job: 'bid-no-bid-review', operation: 'model:bid-no-bid-review/normalization' },
+  ].map((profile) => {
+    const contextPath = join(roots.input, `${profile.name}-requirements.json`)
+    const context = compileModelContext(profile.pack, profile.job, contextPath)
+    const lineage = buildV3Lineage(profile.name, profile.pack, profile.job, context, contextPath, roots.input)
+    return {
+      ...profile,
       inputs: [
-        `raw_row=${rawRow}`,
-        `decision_input_requirements=${requirements}`,
-        `source_binding_sha256=${sourceBindingSha}`,
-        `source_attempt_request_sha256=${sourceAttemptSha}`,
-        `collected_attempt_results_sha256=${collectedResultsSha}`,
+        `collected-attempt-results=${lineage.resultsPath}`,
+        `decision-input-requirements=${lineage.contextPath}`,
+        `source-binding=${lineage.bindingPath}`,
+        `source-attempt-request=${lineage.requestPath}`,
       ],
-    },
-    {
-      name: 'proposal',
-      pack: proposalPack,
-      job: 'bid-no-bid-review',
-      operation: 'model:bid-no-bid-review/normalization',
-      inputs: [
-        `raw_opportunity=${rawOpportunity}`,
-        `decision_input_requirements=${requirements}`,
-        `source_binding_sha256=${sourceBindingSha}`,
-        `source_attempt_request_sha256=${sourceAttemptSha}`,
-        `collected_attempt_results_sha256=${collectedResultsSha}`,
-      ],
-    },
-  ].map((profile) => ({
-    ...profile,
-    request: join(roots.work, `${profile.name}-request.json`),
-    run: join(roots.output, `${profile.name}-run`),
-    consent: `${profile.name}-consent`,
-  }))
+      request: join(roots.work, `${profile.name}-request.json`),
+      run: join(roots.output, `${profile.name}-run`),
+      consent: `${profile.name}-consent`,
+    }
+  })
   const roleEnv = {
     ...Object.fromEntries(Object.entries(roots).filter(([role]) => role !== 'bin').map(([role, path]) => [`MDP_MCP_${role.toUpperCase()}_ROOTS`, path])),
     PATH: `${roots.bin}${delimiter}${process.env.PATH || ''}`,

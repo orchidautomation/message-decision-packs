@@ -34,6 +34,43 @@ Inspect `data.model_steps`. A native run's `operation` must equal one emitted
 skill prose. Unbound authoring and extraction prompts are not executable model
 steps.
 
+### Compile the normalization model context
+
+For a v3 normalization step, compile the bounded model-facing projection in
+addition to the full requirements report:
+
+```bash
+mdp --json requirements \
+  --dir PACK_ROOT \
+  --job JOB_ID \
+  --model-context > REQUIREMENTS_RESPONSE.json
+```
+
+The command's `data` value is the exact
+`mdp.requirements-model-context.v1` artifact. Persist that value (rather than
+the surrounding CLI response) as `decision-input-requirements.json`. It
+contains the job-scoped collection specification, closed classification
+taxonomies and definitions, semantic output contract, no-draft policy, and
+the `requirements_sha256`/`taxonomy_set_sha256` bindings. The full
+`mdp.requirements.v2` result remains the host's validation authority; the
+bounded projection is the only requirements artifact sent to the model.
+
+The normalization request supplies four lineage-bound inputs:
+
+```text
+decision-input-requirements
+source-binding
+source-attempt-request
+collected-attempt-results
+```
+
+The host collects the attempted evidence using its own tools, invokes the
+model for semantic classifications only, then seals the v3 envelope and runs
+deterministic fit/routing. `prepare-run` rejects a missing, tampered, stale, or
+cross-pack model-context artifact before a provider call. Keep the projection
+under the 128 KiB native input limit; a larger pack must be narrowed at the
+requirements/route boundary rather than truncated.
+
 The shipped templates use one resolver and driver contract:
 
 - basic GTM: `normalize-prospect-row`, `generate-outbound-copy-v1`, and

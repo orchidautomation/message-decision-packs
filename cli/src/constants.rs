@@ -19,6 +19,11 @@ pub(crate) const PROPOSAL_MCP_RUN_RESULT_CONTRACT: &str = "mdp.proposal-mcp-run-
 pub(crate) const PROPOSAL_RUN_MANIFEST_CONTRACT: &str = "mdp.proposal-run-manifest.v0";
 pub(crate) const REQUIREMENTS_CONTRACT: &str = "mdp.requirements.v1";
 pub(crate) const REQUIREMENTS_CONTRACT_V2: &str = "mdp.requirements.v2";
+/// Bounded model-facing projection of a compiled `mdp.requirements.v2` value.
+/// The full requirements document contains executable schemas and product
+/// foundation context that are not needed by the normalization model and can
+/// exceed the native model-input budget.
+pub(crate) const REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1: &str = "mdp.requirements-model-context.v1";
 pub(crate) const SOURCE_BINDING_CONTRACT: &str = "mdp.source-binding.v1";
 pub(crate) const SOURCE_BINDING_CONTRACT_V2: &str = "mdp.source-binding.v2";
 pub(crate) const SOURCE_BINDING_VALIDATION_CONTRACT: &str = "mdp.source-binding-validation.v1";

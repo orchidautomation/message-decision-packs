@@ -509,7 +509,12 @@ pub(crate) enum DecisionInputDecisionEffect {
 pub(crate) struct DecisionInputProvenancePolicy {
     #[serde(default)]
     pub(crate) required: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // Keep the empty list on serialized manifests.  Manifest lint treats
+    // `required_fields` as an explicit part of the policy object even when a
+    // model-classified attribute deliberately has no source provenance of its
+    // own; omitting it makes generated starters fail the same contract that
+    // their checked-in YAML satisfies.
+    #[serde(default)]
     pub(crate) required_fields: Vec<DecisionInputProvenanceField>,
 }
 

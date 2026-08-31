@@ -312,6 +312,26 @@ Run `requirements` first. The compiled artifact tells the host what evidence to 
 mdp --json requirements --dir ./mdp-demo --job prospect-fit-or-brief
 ```
 
+For a current v3 normalization producer, also compile its bounded model
+context:
+
+```bash
+mdp --json requirements \
+  --dir ./mdp-demo \
+  --job prospect-fit-or-brief \
+  --model-context
+```
+
+Persist only the response's `data` object as
+`decision-input-requirements.json`. That object is the
+`mdp.requirements-model-context.v1` contract. It carries the exact taxonomy
+definitions and enum values the model may classify, while the full
+`mdp.requirements.v2` response remains the host-side authority. The host then
+passes this artifact, the source binding, the source-attempt request, and the
+collected-attempt-results ledger to the normalization step. The model returns
+semantic classifications and explanations only; MDP seals provenance and
+hashes before deterministic fit and routing.
+
 The host may use local files, a CRM, a browser, a customer agent, or another approved tool to fulfill that provider-neutral collection specification. It returns attempted-complete evidence with stable attempt IDs and provenance. The normalization model returns only `classifications`, `gaps`, and `rejected_claims`; the runtime validates every enum and evidence reference, then host-wraps the neutral `mdp.normalized-decision-input.v3` envelope. The model never echoes hashes and never chooses fit, route, pursuit, approval, or draft authority.
 
 Proposal packs use `.mdp/prompts/normalize-opportunity.yaml` through the same v3 mechanism. Buyer, requirement, proof, timing, policy-conflict, and source-safety facts are observed. Proposal stage and category are classified from the compiled taxonomy. Pursue, review, or decline remains a deterministic policy result.

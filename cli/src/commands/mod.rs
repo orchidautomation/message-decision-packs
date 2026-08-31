@@ -56,7 +56,7 @@ pub(crate) use proof_output::{
 };
 pub(crate) use readiness::readiness;
 pub(crate) use readme::{check_readme, refresh_readme};
-pub(crate) use requirements::requirements;
+pub(crate) use requirements::{requirements, requirements_model_context};
 pub(crate) use routing::{
     check_claims_scoped, route_budget_preflight_command, route_budget_preflight_query_command,
     route_scoped,

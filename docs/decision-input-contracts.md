@@ -25,9 +25,10 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 
 Start with `mdp --json capabilities`, but use the selected command's `--help`
 and `requirements --job` output as the exact installed contract. The result is
-`mdp.requirements.v1` for scalar-only jobs or `mdp.requirements.v2` for a job
-whose bound Decision Input Contract declares signal projections. It is the
-handoff to a collector and normalization host. It includes:
+`mdp.requirements.v1` for scalar-only jobs, `mdp.requirements.v2` for a job
+whose bound Decision Input Contract declares signal projections, or the v3
+runtime fields when the selected contract declares semantic classification.
+It is the handoff to a collector and normalization host. It includes:
 
 - bound contract IDs and versions;
 - normalization prompt path and version;
@@ -40,13 +41,30 @@ handoff to a collector and normalization host. It includes:
   and every observed attribute-to-`normalized_prospect` output-path projection;
 - explicit no-draft outcomes and layer boundaries.
 
+For a v3 producer, request the bounded model projection explicitly:
+
+```bash
+mdp --json requirements --dir PACK_ROOT --job JOB_ID --model-context
+```
+
+Persist the command's `data` value as the
+`mdp.requirements-model-context.v1` artifact. It contains the exact
+job-scoped collection questions, observed-versus-model-classified processing,
+closed taxonomy values and definitions, semantic output schema, and the
+requirements/taxonomy hashes. The full `mdp.requirements.v2` result remains
+the host validation authority and is not sent to the model. The v3
+normalization request binds this projection together with
+`source-binding`, `source-attempt-request`, and
+`collected-attempt-results`; the host owns collection and the model returns
+semantic classifications only.
+
 Legacy jobs without a binding return `available: false`; existing packs keep
 their `lead_input_requirements` fit/readiness behavior.
 
 ## New Generated GTM Packs
 
-Fresh `mdp init --template gtm` output declares
-`gtm.prospect-context@1.0.0` and binds it transitively through the shared
+Fresh governed `mdp init --template gtm` output declares
+`gtm.prospect-context@3.0.0` and binds it transitively through the shared
 `prospect` input contract. The binding covers all three prospect-driven
 canonical jobs:
 
@@ -54,10 +72,16 @@ canonical jobs:
 - `outbound-copy-brief`
 - `outbound-copy-review`
 
-The minimum contract asks for reviewed person and company identity, persona,
-segment, a why-now trigger, and contact policy. Trigger and contact-policy
-decisions may contain repeated sourced observations, so the starter declares
-explicit signal projections and compiles the signal-aware v2 artifact matrix.
+The v3 contract asks the host to collect reviewed person/company identity,
+title and responsibilities, account fit evidence, why-now evidence, and
+contact policy. Persona and segment are **model-classified** attributes: the
+compiled taxonomy definitions, positive indicators, exclusions, and required
+contributors are the enum authority. The model may explain a classification
+in a bounded `basis` and cite attempt IDs, but the host seals the envelope and
+deterministic MDP decides fit, readiness, and routing. Trigger and
+contact-policy decisions may contain repeated sourced observations, so the
+starter retains explicit signal projections and compiles the signal-aware
+lineage matrix.
 The generated `examples/decision-input-scenarios.json` fixture records the
 attempted-complete, insufficient, disqualified, human-review, malformed, and
 provider-error outcomes without performing collection or provider execution.
@@ -78,14 +102,14 @@ unavailable, and remains legacy/unassessed rather than governed.
 `data.contract_version_matrix` is authoritative for the selected job. The
 public matrix is:
 
-| Artifact | Scalar v1 | Signal-aware v2 |
-|---|---|---|
-| Requirements | `mdp.requirements.v1` | `mdp.requirements.v2` |
-| Source binding | `mdp.source-binding.v1` | `mdp.source-binding.v2` |
-| Source-attempt request | `mdp.source-attempt-request.v1` | `mdp.source-attempt-request.v2` |
-| Collected attempt results | `mdp.collected-attempt-results.v1` | `mdp.collected-attempt-results.v2` |
-| Normalized output | `mdp.normalized-decision-input.v1` | `mdp.normalized-decision-input.v2` |
-| Post-validation signal receipt | not applicable | `mdp.signal-projection-decision-receipt.v1` |
+| Artifact | Scalar v1 | Signal-aware v2 | Semantic v3 |
+|---|---|---|---|
+| Requirements | `mdp.requirements.v1` | `mdp.requirements.v2` | `mdp.requirements.v2` + `mdp.requirements-model-context.v1` |
+| Source binding | `mdp.source-binding.v1` | `mdp.source-binding.v2` | `mdp.source-binding.v2` |
+| Source-attempt request | `mdp.source-attempt-request.v1` | `mdp.source-attempt-request.v2` | `mdp.source-attempt-request.v2` |
+| Collected attempt results | `mdp.collected-attempt-results.v1` | `mdp.collected-attempt-results.v2` | `mdp.collected-attempt-results.v2` |
+| Normalized output | `mdp.normalized-decision-input.v1` | `mdp.normalized-decision-input.v2` | `mdp.normalized-decision-input.v3` |
+| Post-validation signal receipt | not applicable | `mdp.signal-projection-decision-receipt.v1` | host-sealed v3 envelope and run receipt |
 
 The v2 normalized-output SHA-256 appears only in the post-validation receipt;
 it cannot appear inside the output bytes being hashed. MDP rejects:
@@ -96,9 +120,11 @@ it cannot appear inside the output bytes being hashed. MDP rejects:
 - different source-binding hashes across the v2 request, results, and
   normalized output.
 
-V1 and v2 are distinct job-execution paths, not fields to combine. Existing
-scalar-only packs and prospect JSON stay valid. Their signal strings remain
-readable as `legacy` or `unassessed` context but cannot satisfy a v2 role.
+V1, v2, and v3 are distinct job-execution paths, not fields to combine.
+Existing scalar-only packs and prospect JSON stay valid. Their signal strings
+remain readable as `legacy` or `unassessed` context but cannot satisfy a v2 or
+v3 role. A v3 model context is a bounded projection of the full requirements
+compilation, not a second source of enum authority.
 
 ## Synthetic v2 fixture scaffolding
 

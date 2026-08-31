@@ -10,7 +10,8 @@ use crate::commands::source_binding::{
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT, COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2, REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1,
+    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
 };
 use crate::model_steps::{MODEL_STEP_RESOLUTION_V1, resolve_model_steps};
 use crate::models::{
@@ -383,6 +384,66 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         response["draft_allowed"] = json!(false);
     }
     finalize_requirements(response)
+}
+
+/// Return the bounded, model-facing projection of a compiled v3 requirements
+/// document.  The full requirements result intentionally remains the
+/// authority for host validation, but it includes large executable schemas and
+/// product-foundation material that the semantic normalizer neither needs nor
+/// should receive.  This projection keeps every field used by the v3 host
+/// sealer plus the collection/taxonomy guidance the model needs to classify
+/// closed values.  Its source hash binds the projection back to the exact
+/// compiler result; the host re-compiles and compares that hash before sealing.
+pub(crate) fn requirements_model_context(root: &Path, job_id: &str) -> Result<Value> {
+    let compiled = requirements(root, job_id)?;
+    if compiled["contract"] != REQUIREMENTS_CONTRACT_V2
+        || compiled["runtime_contract_version"] != "v3"
+        || compiled["available"] != true
+    {
+        return Err(anyhow!(
+            "model context requires an available v3 mdp.requirements.v2 job"
+        ));
+    }
+    let required = [
+        "requirements_sha256",
+        "taxonomy_set_sha256",
+        "pack",
+        "job",
+        "collection_specification",
+        "classification_specification",
+        "decision_input_contracts",
+        "normalized_output_schema",
+        "semantic_validation",
+        "no_draft_policy",
+    ];
+    if required.iter().any(|key| compiled[*key].is_null()) {
+        return Err(anyhow!(
+            "compiled requirements omit a required model-context field"
+        ));
+    }
+    let context = json!({
+        "contract": REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1,
+        "source_contract": REQUIREMENTS_CONTRACT_V2,
+        "runtime_contract_version": "v3",
+        "requirements_sha256": compiled["requirements_sha256"].clone(),
+        "taxonomy_set_sha256": compiled["taxonomy_set_sha256"].clone(),
+        "pack": compiled["pack"].clone(),
+        "job": compiled["job"].clone(),
+        "collection_specification": compiled["collection_specification"].clone(),
+        "classification_specification": compiled["classification_specification"].clone(),
+        "decision_input_contracts": compiled["decision_input_contracts"].clone(),
+        "normalized_output_schema": compiled["normalized_output_schema"].clone(),
+        "semantic_validation": compiled["semantic_validation"].clone(),
+        "no_draft_policy": compiled["no_draft_policy"].clone(),
+        "boundaries": compiled["boundaries"].clone()
+    });
+    let context_bytes = serde_json::to_vec(&context)?;
+    if context_bytes.len() > 128 * 1024 {
+        return Err(anyhow!(
+            "requirements model context exceeds the 131072 byte native input limit"
+        ));
+    }
+    Ok(context)
 }
 
 fn classification_specification(taxonomies: &[ClassificationTaxonomy]) -> Value {
@@ -3974,6 +4035,53 @@ optional:
             "prompts/normalize-prospect.yaml"
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn requirements_model_context_is_bounded_and_binds_full_compilation() {
+        let root =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic");
+        let full = requirements(&root, "prospect-fit-or-brief")
+            .expect("canonical v3 requirements should compile");
+        let context = requirements_model_context(&root, "prospect-fit-or-brief")
+            .expect("model context should compile");
+
+        assert_eq!(context["contract"], REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1);
+        assert_eq!(context["source_contract"], REQUIREMENTS_CONTRACT_V2);
+        assert_eq!(context["runtime_contract_version"], "v3");
+        assert_eq!(context["requirements_sha256"], full["requirements_sha256"]);
+        assert_eq!(context["taxonomy_set_sha256"], full["taxonomy_set_sha256"]);
+        assert!(context["classification_specification"].is_object());
+        assert!(context["collection_specification"].is_object());
+        assert!(context["boundaries"].is_object());
+
+        let bytes = serde_json::to_vec(&context).expect("context should serialize");
+        assert!(
+            bytes.len() <= 128 * 1024,
+            "model context must fit the native input budget: {} bytes",
+            bytes.len()
+        );
+        let schema =
+            crate::commands::schemas::schema(crate::cli::SchemaTarget::RequirementsModelContextV1);
+        assert!(
+            draft202012::validate(&schema, &context).is_ok(),
+            "model context must validate against its closed top-level schema"
+        );
+
+        let mut tampered = context.clone();
+        tampered["job"]["id"] = json!("other-job");
+        assert!(
+            draft202012::validate(&schema, &tampered).is_ok(),
+            "nested job shape is intentionally open to profile fields"
+        );
+        assert_ne!(
+            canonical_json_sha256(&tampered).expect("tampered context hashes"),
+            canonical_json_sha256(&context).expect("context hashes")
+        );
+
+        let mut extra = context;
+        extra["unexpected"] = json!(true);
+        assert!(draft202012::validate(&schema, &extra).is_err());
     }
 
     fn clay_validation_fixture() -> (PathBuf, Value, Value, String, PathBuf) {
