@@ -27,6 +27,7 @@ fn template_help() -> &'static str {
 #[command(name = "mdp")]
 #[command(
     about = "Understand, validate, and route local message decision packs",
+    subcommand_help_heading = "Commands — Start · Inspect · Decide · Produce/Verify · Advanced",
     after_help = "Quickstart: mdp init --dir PACK_ROOT --name NAME; mdp status --dir PACK_ROOT; mdp validate --dir PACK_ROOT. Use: mdp check --dir PACK_ROOT --job JOB_ID. MDP is local/offline and requires no authentication."
 )]
 #[command(version)]
@@ -119,7 +120,12 @@ pub(crate) enum Commands {
         after_help = "Doctor checks the running CLI and the requested pack. Profile activation is reported separately and does not make a structurally valid pack invalid. Job readiness is not assessed here; use `mdp check --dir PACK_ROOT --job JOB_ID`."
     )]
     Doctor {
-        #[arg(long, default_value = ".")]
+        #[arg(
+            long,
+            default_value = ".",
+            help = "Pack root to inspect (the directory containing .mdp)",
+            value_name = "PACK_ROOT"
+        )]
         dir: PathBuf,
     },
     #[command(
@@ -127,11 +133,17 @@ pub(crate) enum Commands {
         after_help = "Example: mdp check --dir ./mdp-demo --job outbound-copy-brief"
     )]
     Check {
-        #[arg(long, default_value = ".")]
+        #[arg(
+            long,
+            default_value = ".",
+            help = "Pack root to check (the directory containing .mdp)",
+            value_name = "PACK_ROOT"
+        )]
         dir: PathBuf,
         #[arg(
             long,
-            help = "Exact jobs[].id to assess; omit for generic pack readiness"
+            help = "Exact canonical jobs[].id to assess; omit for generic pack readiness",
+            value_name = "JOB_ID"
         )]
         job: Option<String>,
         #[arg(
@@ -142,16 +154,34 @@ pub(crate) enum Commands {
     },
     #[command(about = "Print canonical skill inventory and pack-aware eligibility")]
     Skills {
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Pack root to inspect (the directory containing .mdp)",
+            value_name = "PACK_ROOT"
+        )]
         dir: Option<PathBuf>,
-        #[arg(long, requires = "dir")]
+        #[arg(
+            long,
+            requires = "dir",
+            help = "Exact canonical jobs[].id; free-text job descriptions are not accepted",
+            value_name = "JOB_ID"
+        )]
         job: Option<String>,
     },
     #[command(about = "Compile the decision inputs required for one pack job")]
     Requirements {
-        #[arg(long, default_value = ".")]
+        #[arg(
+            long,
+            default_value = ".",
+            help = "Pack root to inspect (the directory containing .mdp)",
+            value_name = "PACK_ROOT"
+        )]
         dir: PathBuf,
-        #[arg(long, help = "Closed profile job id to compile")]
+        #[arg(
+            long,
+            help = "Exact canonical jobs[].id to compile",
+            value_name = "JOB_ID"
+        )]
         job: String,
         #[arg(
             long,
