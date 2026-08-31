@@ -8309,14 +8309,11 @@ mod tests {
                 "collected-attempt-results" => serde_json::json!({
                     "attributes": {
                         "person_title": {
-                            "status": "observed", "provenance": "synthetic_fixture",
-                            "confidence": 0.99, "freshness": "2026-08-31T00:00:00Z",
+                            "status": "observed",
                             "value": "Founding GTM Engineer"
                         },
                         "person_location": {
-                            "status": "not_found", "provenance": "synthetic_fixture",
-                            "confidence": 0.0, "freshness": null,
-                            "error": "synthetic fixture has no location"
+                            "status": "not_found"
                         }
                     },
                     "attempt_results": [
@@ -8442,17 +8439,15 @@ mod tests {
             crate::artifact_hash::sha256_hex(&invocation_bytes)
         );
         assert_eq!(
-            parsed["attributes"]["person_location"]["status"],
-            "not_found"
+            parsed["attributes"]["person_title"],
+            serde_json::json!({
+                "status": "observed",
+                "value": "Founding GTM Engineer"
+            })
         );
         assert_eq!(
-            parsed["attributes"]["person_location"]["error"],
-            "synthetic fixture has no location"
-        );
-        assert!(
-            parsed["attributes"]["person_location"]
-                .get("value")
-                .is_none()
+            parsed["attributes"]["person_location"],
+            serde_json::json!({"status": "not_found"})
         );
         assert!(
             parsed["normalized_input"]["attributes"]
