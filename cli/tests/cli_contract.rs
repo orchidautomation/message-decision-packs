@@ -135,8 +135,25 @@ fn help_and_capabilities_expose_grouping_status_and_canonical_options() {
     let help = run(&["--help"]);
     assert!(help.status.success());
     let text = String::from_utf8(help.stdout).unwrap();
-    assert!(text.contains("Start") && text.contains("Inspect") && text.contains("Decide"));
-    assert!(text.contains("Produce/Verify") && text.contains("Advanced"));
+    let sections = [
+        ("Start:", "init"),
+        ("Inspect:", "status"),
+        ("Decide:", "check"),
+        ("Produce/Verify:", "brief"),
+        ("Advanced:", "conformance"),
+    ];
+    for (index, (heading, command)) in sections.iter().enumerate() {
+        let section_start = text.find(heading).unwrap();
+        let section_end = sections
+            .get(index + 1)
+            .and_then(|(next_heading, _)| text.find(next_heading))
+            .unwrap_or(text.len());
+        let section = &text[section_start..section_end];
+        assert!(
+            section.contains(&format!("  {command}")),
+            "{command} should be listed under {heading}, not merely elsewhere in help"
+        );
+    }
 
     let check_help = run(&["check", "--help"]);
     let check_text = String::from_utf8(check_help.stdout).unwrap();
@@ -156,9 +173,4 @@ fn help_and_capabilities_expose_grouping_status_and_canonical_options() {
         .unwrap();
     assert_eq!(status["output_contract"], "mdp.status.v1");
     assert_eq!(status["side_effects"], "read-only-observational");
-}
-
-#[allow(dead_code)]
-fn _path_display(path: &Path) -> String {
-    path.display().to_string()
 }

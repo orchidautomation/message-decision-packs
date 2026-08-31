@@ -62,10 +62,18 @@ fn main() {
                     } else {
                         DisplayKind::Version
                     };
-                    let text = err.render().to_string();
+                    let text = if is_root_help(&raw_args) {
+                        crate::cli::grouped_root_help()
+                    } else {
+                        err.render().to_string()
+                    };
                     let _ = crate::output::print_display_envelope(true, kind, &text);
                 } else {
-                    let _ = err.print();
+                    if is_root_help(&raw_args) {
+                        print!("{}", crate::cli::grouped_root_help());
+                    } else {
+                        let _ = err.print();
+                    }
                 }
                 std::process::exit(0);
             }
@@ -115,6 +123,11 @@ fn main() {
         }
         std::process::exit(1);
     }
+}
+
+fn is_root_help(args: &[String]) -> bool {
+    args.iter().skip(1).all(|arg| arg.starts_with('-'))
+        && args.iter().any(|arg| arg == "--help" || arg == "-h")
 }
 
 fn prepare_run_error_envelope(data: serde_json::Value) -> serde_json::Value {

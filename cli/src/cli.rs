@@ -1,3 +1,4 @@
+use clap::CommandFactory;
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -27,7 +28,6 @@ fn template_help() -> &'static str {
 #[command(name = "mdp")]
 #[command(
     about = "Understand, validate, and route local message decision packs",
-    subcommand_help_heading = "Commands — Start · Inspect · Decide · Produce/Verify · Advanced",
     after_help = "Quickstart: mdp init --dir PACK_ROOT --name NAME; mdp status --dir PACK_ROOT; mdp validate --dir PACK_ROOT. Use: mdp check --dir PACK_ROOT --job JOB_ID. MDP is local/offline and requires no authentication."
 )]
 #[command(version)]
@@ -721,6 +721,96 @@ pub(crate) enum Commands {
         #[arg(value_enum)]
         target: SchemaTarget,
     },
+}
+
+/// Render the root Clap inventory into real workflow sections. Clap remains
+/// authoritative for names, ordering, and descriptions; this presentation
+/// only groups those same commands for first-contact help.
+pub(crate) fn grouped_root_help() -> String {
+    let mut command = Cli::command();
+    let mut output = format!(
+        "{}\n\n{}\n",
+        command
+            .get_about()
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        command.render_usage()
+    );
+    let groups = [
+        ("Start", &["init", "author"][..]),
+        (
+            "Inspect",
+            &[
+                "status",
+                "doctor",
+                "capabilities",
+                "skills",
+                "explain",
+                "gaps",
+                "readme",
+            ][..],
+        ),
+        (
+            "Decide",
+            &[
+                "check",
+                "requirements",
+                "route",
+                "route-budget",
+                "fit",
+                "check-claims",
+            ][..],
+        ),
+        (
+            "Produce/Verify",
+            &[
+                "brief",
+                "copy",
+                "emit-brief",
+                "render-brief",
+                "validate",
+                "validate-prompt-output",
+                "verify-output",
+                "author-proof-output",
+                "eval",
+            ][..],
+        ),
+    ];
+    let subcommands = command.get_subcommands().collect::<Vec<_>>();
+    for (heading, names) in groups {
+        output.push_str(&format!("\n{heading}:\n"));
+        for subcommand in subcommands
+            .iter()
+            .filter(|subcommand| names.contains(&subcommand.get_name()))
+        {
+            output.push_str(&format!(
+                "  {:<24} {}\n",
+                subcommand.get_name(),
+                subcommand
+                    .get_about()
+                    .map(ToString::to_string)
+                    .unwrap_or_default()
+            ));
+        }
+    }
+    output.push_str("\nAdvanced:\n");
+    for subcommand in subcommands.iter().filter(|subcommand| {
+        !groups
+            .iter()
+            .any(|(_, names)| names.contains(&subcommand.get_name()))
+    }) {
+        output.push_str(&format!(
+            "  {:<24} {}\n",
+            subcommand.get_name(),
+            subcommand
+                .get_about()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        ));
+    }
+    output.push_str("\nOptions:\n  --json                   Emit stable machine-readable JSON\n  --summary                Emit a concise status summary instead of the full command payload\n  -h, --help               Print help\n  -V, --version            Print version\n");
+    output.push_str("\nUse `mdp <COMMAND> --help` for command-specific options.\n");
+    output
 }
 
 #[derive(Subcommand)]
