@@ -4,14 +4,17 @@ use crate::commands::health::{profile_activation_decision, validate_pack};
 use crate::commands::schemas::schema;
 use crate::commands::schemas::signal_observation_v2_schema;
 use crate::commands::source_binding::{
-    semantic_v3_lineage_version_matrix, source_binding_schema_v1, source_binding_schema_v2,
-    source_lineage_version_matrix, validate_source_binding_v2,
+    semantic_v3_lineage_version_matrix, source_binding_schema_v2, source_lineage_version_matrix,
+    validate_source_binding_v2,
+};
+use crate::commands::v3_normalization::{
+    validate_v3_sealed_envelope, validate_v3_semantic_payload,
 };
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT, COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2, REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1,
-    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V3, REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2,
+    REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
 };
 use crate::model_steps::{MODEL_STEP_RESOLUTION_V1, resolve_model_steps};
 use crate::models::{
@@ -373,7 +376,11 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     }
     if v3_aware {
         response["runtime_contract_version"] = json!("v3");
-        response["source_binding_schema"] = source_binding_schema_v1();
+        // Semantic v3 keeps the existing signal-aware v2 binding and
+        // attempted-complete results contracts.  The model-classified
+        // attributes are excluded from those ledgers, but projection
+        // bindings still need the v2 adapter metadata and coverage checks.
+        response["source_binding_schema"] = source_binding_schema_v2();
         response["contract_version_matrix"] = semantic_v3_lineage_version_matrix();
         if let Some(object) = response.as_object_mut() {
             object.remove("normalized_prospect_schema");
@@ -614,48 +621,51 @@ pub(crate) fn validate_normalized_decision_input_with_projection(
     }
 
     let mut issues = Vec::new();
+    let is_v3 = output["contract"] == NORMALIZED_DECISION_INPUT_CONTRACT_V3;
     // Convert once at the ingress boundary and run shared readiness/value
     // checks against the neutral representation.  Persona interpretation and
     // the legacy projected-prospect renderer remain adapter-owned elsewhere.
-    if let Some(prospect) = output["normalized_prospect"].as_object() {
-        let manifest = read_manifest(root)?;
-        let job = manifest
-            .jobs
-            .iter()
-            .find(|job| job.id == job_id)
-            .ok_or_else(|| anyhow!("unknown profile job {job_id}"))?;
-        if crate::decision_input::select_adapter_for_job(&manifest, job).is_err() {
-            issues.push(decision_input_issue(
-                "decision_input_adapter_ownership_invalid",
-                format!("{artifact_path}#/normalized_prospect"),
-                "normalized decision input does not have an unambiguous profile/input owner",
-            ));
-        } else if let Ok(input) = crate::decision_input::from_gtm_normalized(prospect) {
-            let mut neutral_requirements = manifest.lead_input_requirements.clone();
-            // v2 signal authority is carried by the lineage projection rather
-            // than the legacy normalized_prospect.signals array.
-            if output["contract"] == NORMALIZED_DECISION_INPUT_CONTRACT_V2 {
-                neutral_requirements
-                    .required_fields
-                    .retain(|field| field != "signals");
-                neutral_requirements.required_signal_fields.clear();
-            }
-            // v2's lineage projection is the authority for signal-backed
-            // readiness; retain its existing validator and only apply the
-            // neutral requirements pass to scalar v1 ingress.
-            if output["contract"] != NORMALIZED_DECISION_INPUT_CONTRACT_V2 {
-                for violation in crate::value_contracts::decision_input_contract_violations(
-                    &crate::decision_input::requirements_view(&neutral_requirements),
-                    &input,
-                ) {
-                    issues.push(decision_input_issue(
-                        "decision_input_contract_violation",
-                        format!(
-                            "{artifact_path}#/normalized_prospect/{}",
-                            violation.path.replace('/', "/")
-                        ),
-                        violation.reason,
-                    ));
+    if !is_v3 {
+        if let Some(prospect) = output["normalized_prospect"].as_object() {
+            let manifest = read_manifest(root)?;
+            let job = manifest
+                .jobs
+                .iter()
+                .find(|job| job.id == job_id)
+                .ok_or_else(|| anyhow!("unknown profile job {job_id}"))?;
+            if crate::decision_input::select_adapter_for_job(&manifest, job).is_err() {
+                issues.push(decision_input_issue(
+                    "decision_input_adapter_ownership_invalid",
+                    format!("{artifact_path}#/normalized_prospect"),
+                    "normalized decision input does not have an unambiguous profile/input owner",
+                ));
+            } else if let Ok(input) = crate::decision_input::from_gtm_normalized(prospect) {
+                let mut neutral_requirements = manifest.lead_input_requirements.clone();
+                // v2 signal authority is carried by the lineage projection rather
+                // than the legacy normalized_prospect.signals array.
+                if output["contract"] == NORMALIZED_DECISION_INPUT_CONTRACT_V2 {
+                    neutral_requirements
+                        .required_fields
+                        .retain(|field| field != "signals");
+                    neutral_requirements.required_signal_fields.clear();
+                }
+                // v2's lineage projection is the authority for signal-backed
+                // readiness; retain its existing validator and only apply the
+                // neutral requirements pass to scalar v1 ingress.
+                if output["contract"] != NORMALIZED_DECISION_INPUT_CONTRACT_V2 {
+                    for violation in crate::value_contracts::decision_input_contract_violations(
+                        &crate::decision_input::requirements_view(&neutral_requirements),
+                        &input,
+                    ) {
+                        issues.push(decision_input_issue(
+                            "decision_input_contract_violation",
+                            format!(
+                                "{artifact_path}#/normalized_prospect/{}",
+                                violation.path.replace('/', "/")
+                            ),
+                            violation.reason,
+                        ));
+                    }
                 }
             }
         }
@@ -683,6 +693,21 @@ pub(crate) fn validate_normalized_decision_input_with_projection(
         &mut issues,
     );
     validate_no_unbound_prospect_fields(&compiled, output, artifact_path, &mut issues);
+    if is_v3 {
+        validate_v3_normalized_decision_input(
+            &compiled,
+            output,
+            artifact_path,
+            source_binding,
+            source_attempt_request,
+            collected_attempt_results,
+            &mut issues,
+        );
+        return Ok(NormalizedDecisionInputValidation {
+            issues,
+            signal_projection: None,
+        });
+    }
     for contract in compiled["decision_input_contracts"]
         .as_array()
         .into_iter()
@@ -750,6 +775,653 @@ pub(crate) fn validate_normalized_decision_input_with_projection(
         issues,
         signal_projection,
     })
+}
+
+/// Validate the v3 host-sealed envelope at the public prompt-output boundary.
+///
+/// The v3 runtime deliberately keeps the model payload semantic-only and
+/// moves all observations, projections, hashes, and outcomes into a host-owned
+/// envelope.  The legacy validator above predates that boundary and projects
+/// through `normalized_prospect`; using it for v3 would reject a valid envelope
+/// (or, worse, make the old profile adapter authoritative again).  Keep this
+/// validator explicit so v0/v1/v2 compatibility remains unchanged while the
+/// neutral v3 shape is checked end to end.
+#[allow(clippy::too_many_arguments)]
+fn validate_v3_normalized_decision_input(
+    compiled: &Value,
+    output: &Value,
+    artifact_path: &str,
+    source_binding: Option<(&Value, &str, &str)>,
+    source_attempt_request: Option<(&Value, &str, &str)>,
+    collected_attempt_results: Option<(&Value, &str, &str)>,
+    issues: &mut Vec<Value>,
+) {
+    if let Err(v3_issues) = validate_v3_sealed_envelope(output) {
+        for v3_issue in v3_issues {
+            issues.push(decision_input_issue(
+                v3_issue.code,
+                format!("{artifact_path}#{}", v3_issue.path),
+                format!(
+                    "v3 envelope validation failed: expected {}, observed {}",
+                    v3_issue.expected, v3_issue.observed
+                ),
+            ));
+        }
+    }
+
+    let expected_contract_ids = compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|contract| contract["id"].as_str())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if output["decision_input_contracts"] != json!(expected_contract_ids) {
+        issues.push(decision_input_issue(
+            "decision_input_v3_contract_identity_mismatch",
+            format!("{artifact_path}#/decision_input_contracts"),
+            "v3 decision_input_contracts must exactly match the compiled job contracts",
+        ));
+    }
+    if output["outcome"] != "decision-input-normalization" {
+        issues.push(decision_input_issue(
+            "decision_input_v3_outcome_invalid",
+            format!("{artifact_path}#/outcome"),
+            "v3 normalization outcome must be decision-input-normalization",
+        ));
+    }
+    for (field, expected) in [
+        (
+            "requirements_sha256",
+            compiled["requirements_sha256"].as_str(),
+        ),
+        (
+            "taxonomy_set_sha256",
+            compiled["taxonomy_set_sha256"].as_str(),
+        ),
+    ] {
+        if output[field].as_str() != expected {
+            issues.push(decision_input_issue(
+                "decision_input_v3_compiled_hash_mismatch",
+                format!("{artifact_path}#/{field}"),
+                format!("v3 {field} must equal the exact compiled job digest"),
+            ));
+        }
+    }
+
+    // The normalization receipt is host-owned metadata.  Permit an optional
+    // prompt hash, but require every compiled contract's exact prompt path and
+    // version and reject extra contract entries.
+    let expected_normalizations = compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|contract| {
+            json!({
+                "contract_id": contract["id"],
+                "prompt": contract["normalization"]["prompt"],
+                "prompt_version": contract["normalization"]["prompt_version"]
+            })
+        })
+        .collect::<Vec<_>>();
+    let actual_normalizations = output["normalization"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    if actual_normalizations.len() != expected_normalizations.len() {
+        issues.push(decision_input_issue(
+            "decision_input_v3_normalization_identity_mismatch",
+            format!("{artifact_path}#/normalization"),
+            "v3 normalization must contain exactly one receipt per compiled contract",
+        ));
+    }
+    for expected in expected_normalizations {
+        let found = actual_normalizations.iter().any(|actual| {
+            actual["contract_id"] == expected["contract_id"]
+                && actual["prompt"] == expected["prompt"]
+                && actual["prompt_version"] == expected["prompt_version"]
+        });
+        if !found {
+            issues.push(decision_input_issue(
+                "decision_input_v3_normalization_identity_mismatch",
+                format!("{artifact_path}#/normalization"),
+                "v3 normalization receipt does not match the compiled contract, prompt, and version",
+            ));
+        }
+    }
+
+    // Source binding is still integration-owned, but its exact identity and
+    // compiled projection coverage must be proven before a v3 envelope can be
+    // treated as an input to deterministic evaluation.
+    let binding_sha256 = source_binding.map(|(_, _, sha256)| sha256);
+    if let Some((binding, binding_path, binding_file_sha256)) = source_binding {
+        if output["source_binding_sha256"].as_str() != Some(binding_file_sha256) {
+            issues.push(decision_input_issue(
+                "decision_input_source_binding_hash_mismatch",
+                format!("{artifact_path}#/source_binding_sha256"),
+                "v3 envelope is not bound to the exact supplied source binding",
+            ));
+        }
+        if jsonschema::draft202012::validate(&compiled["source_binding_schema"], binding).is_err() {
+            issues.push(decision_input_issue(
+                "decision_input_source_binding_schema_mismatch",
+                binding_path,
+                "source binding does not satisfy the exact compiled signal-aware schema",
+            ));
+        } else {
+            match validate_source_binding_v2(compiled, binding, binding_path) {
+                Ok(validation) if validation["valid"] == true => {}
+                Ok(validation) => issues.extend(
+                    validation["diagnostics"]
+                        .as_array()
+                        .cloned()
+                        .unwrap_or_default(),
+                ),
+                Err(error) => issues.push(decision_input_issue(
+                    "decision_input_source_binding_semantic_validation_failed",
+                    binding_path,
+                    format!("source binding semantic validation failed: {error}"),
+                )),
+            }
+        }
+    } else {
+        issues.push(decision_input_issue(
+            "decision_input_source_binding_missing",
+            artifact_path,
+            "v3 normalization requires the exact mdp.source-binding.v2 artifact",
+        ));
+    }
+
+    if let Some((request, request_path, _)) = source_attempt_request {
+        if let Some(binding_sha256) = binding_sha256
+            && request["source_binding_sha256"].as_str() != Some(binding_sha256)
+        {
+            issues.push(decision_input_issue(
+                "decision_input_request_source_binding_hash_mismatch",
+                format!("{request_path}#/source_binding_sha256"),
+                "source-attempt request is not bound to the exact supplied source binding",
+            ));
+        }
+    }
+    if let Some((results, results_path, _)) = collected_attempt_results {
+        if let Some(binding_sha256) = binding_sha256
+            && results["source_binding_sha256"].as_str() != Some(binding_sha256)
+        {
+            issues.push(decision_input_issue(
+                "decision_input_results_source_binding_hash_mismatch",
+                format!("{results_path}#/source_binding_sha256"),
+                "collected attempt results are not bound to the exact supplied source binding",
+            ));
+        }
+    }
+
+    let compiled_attributes = compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|contract| contract["attributes"].as_array().into_iter().flatten())
+        .filter_map(|attribute| Some((attribute["id"].as_str()?.to_string(), attribute)))
+        .collect::<BTreeMap<_, _>>();
+    let observed_attribute_ids = compiled_attributes.keys().cloned().collect::<Vec<_>>();
+    let mut observed_attempt_ids = Vec::new();
+    let mut result_by_attribute = BTreeMap::new();
+    let mut result_by_attempt = BTreeMap::new();
+    if let Some((results, results_path, _)) = collected_attempt_results {
+        for (index, result) in results["attempt_results"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let result_path = format!("{results_path}#/attempt_results/{index}");
+            let Some(attempt_id) = result["attempt_id"].as_str() else {
+                continue;
+            };
+            if result_by_attempt
+                .insert(attempt_id.to_string(), result)
+                .is_some()
+            {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_attempt_id_duplicate",
+                    format!("{result_path}/attempt_id"),
+                    "v3 collected attempt IDs must be unique",
+                ));
+            }
+            if result["status"] == "observed" {
+                observed_attempt_ids.push(attempt_id.to_string());
+                if let Some(attribute_id) = result["attribute_id"].as_str() {
+                    result_by_attribute
+                        .entry(attribute_id.to_string())
+                        .or_insert(result);
+                }
+            }
+            let Some(request) = source_attempt_request.and_then(|(request, _, _)| {
+                request["attempts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|attempt| attempt["attempt_id"] == attempt_id)
+            }) else {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_attempt_not_requested",
+                    format!("{result_path}/attempt_id"),
+                    "every v3 collected attempt must exist in the exact source-attempt request",
+                ));
+                continue;
+            };
+            for field in [
+                "decision_input_contract_id",
+                "attribute_id",
+                "source_class",
+                "source_locator",
+            ] {
+                if result[field] != request[field] {
+                    issues.push(decision_input_issue(
+                        "decision_input_v3_attempt_request_mismatch",
+                        format!("{result_path}/{field}"),
+                        format!(
+                            "collected attempt {field} must match the exact source-attempt request"
+                        ),
+                    ));
+                }
+            }
+            if let (Some(observed_at), Some(as_of)) = (
+                result["observed_at"]
+                    .as_str()
+                    .and_then(parse_utc_timestamp_seconds),
+                source_attempt_request.and_then(|(request, _, _)| {
+                    request["as_of"]
+                        .as_str()
+                        .and_then(parse_utc_timestamp_seconds)
+                }),
+            ) && observed_at > as_of
+            {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_attempt_observed_at_out_of_bounds",
+                    format!("{result_path}/observed_at"),
+                    "collected attempt observed_at must not exceed the trusted source-attempt as_of",
+                ));
+            }
+        }
+    }
+
+    // The provider may only classify declared attributes using observed
+    // contributor attempts.  Coverage is checked separately because the
+    // generic semantic validator intentionally permits partial payloads for
+    // diagnostics, while a bound normalization step requires every taxonomy.
+    let taxonomies = compiled["classification_specification"]["taxonomies"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|taxonomy| {
+            serde_json::from_value::<ClassificationTaxonomy>(taxonomy.clone()).ok()
+        })
+        .collect::<Vec<_>>();
+    let semantic = json!({
+        "classifications": output["classifications"],
+        "gaps": output["gaps"],
+        "rejected_claims": output["rejected_claims"]
+    });
+    if let Err(v3_issues) = validate_v3_semantic_payload(
+        &semantic,
+        &taxonomies,
+        &observed_attribute_ids,
+        &observed_attempt_ids,
+    ) {
+        for v3_issue in v3_issues {
+            issues.push(decision_input_issue(
+                v3_issue.code,
+                format!("{artifact_path}#{}", v3_issue.path),
+                format!(
+                    "v3 semantic validation failed: expected {}, observed {}",
+                    v3_issue.expected, v3_issue.observed
+                ),
+            ));
+        }
+    }
+    let expected_classifications = taxonomies
+        .iter()
+        .map(|taxonomy| taxonomy.output_attribute.clone())
+        .collect::<BTreeSet<_>>();
+    let actual_classifications = output["classifications"]
+        .as_object()
+        .map(|classifications| classifications.keys().cloned().collect::<BTreeSet<_>>())
+        .unwrap_or_default();
+    if actual_classifications != expected_classifications {
+        issues.push(decision_input_issue(
+            "v3_classification_coverage_mismatch",
+            format!("{artifact_path}#/classifications"),
+            "v3 classifications must contain exactly one entry for every compiled classification taxonomy",
+        ));
+    }
+
+    let Some(normalized_input) = output["normalized_input"].as_object() else {
+        issues.push(decision_input_issue(
+            "decision_input_v3_normalized_input_missing",
+            format!("{artifact_path}#/normalized_input"),
+            "v3 normalized_input must be an object with fields, signals, and attributes",
+        ));
+        return;
+    };
+    let fields = normalized_input["fields"].as_object();
+    let projected_attributes = normalized_input["attributes"].as_object();
+    if fields.is_none() || projected_attributes.is_none() {
+        issues.push(decision_input_issue(
+            "decision_input_v3_normalized_input_shape_invalid",
+            format!("{artifact_path}#/normalized_input"),
+            "v3 normalized_input.fields and normalized_input.attributes must be objects",
+        ));
+        return;
+    }
+    let fields = fields.expect("checked above");
+    let projected_attributes = projected_attributes.expect("checked above");
+    let host_attributes = output["attributes"].as_object();
+    if host_attributes.is_none() {
+        issues.push(decision_input_issue(
+            "decision_input_v3_attributes_shape_invalid",
+            format!("{artifact_path}#/attributes"),
+            "v3 attributes must be an object",
+        ));
+    }
+    let empty_host_attributes = Map::new();
+    let host_attributes = host_attributes.unwrap_or(&empty_host_attributes);
+
+    let mut allowed_fields = BTreeSet::new();
+    let mut allowed_projected_attributes = BTreeSet::new();
+    for (attribute_id, attribute) in &compiled_attributes {
+        let Some(output_path) = attribute["output_path"].as_str() else {
+            continue;
+        };
+        if let Some(name) = output_path.strip_prefix("attributes.") {
+            allowed_projected_attributes.insert(name.to_string());
+        } else if !output_path.contains('.') {
+            allowed_fields.insert(output_path.to_string());
+        }
+
+        let processing = attribute["processing"].as_str().unwrap_or("observed");
+        let expected_value = if processing == "model-classified" {
+            output["classifications"][attribute_id]
+                .get("status")
+                .filter(|status| *status == "classified")
+                .and_then(|_| output["classifications"][attribute_id].get("value"))
+        } else {
+            result_by_attribute
+                .get(attribute_id)
+                .filter(|attempt| attempt["status"] == "observed")
+                .and_then(|attempt| attempt.get("value"))
+        };
+        let actual_value = v3_projected_value(normalized_input, output_path);
+        if let Some(expected_value) = expected_value {
+            if actual_value != Some(expected_value) {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_projection_mismatch",
+                    format!(
+                        "{artifact_path}#/normalized_input/{}",
+                        output_path.replace('.', "/")
+                    ),
+                    format!("v3 projection for {attribute_id} must equal its host-derived value"),
+                ));
+            }
+        } else if actual_value.is_some_and(meaningful_projected_value) {
+            issues.push(decision_input_issue(
+                "decision_input_v3_unobserved_projection_present",
+                format!(
+                    "{artifact_path}#/normalized_input/{}",
+                    output_path.replace('.', "/")
+                ),
+                format!(
+                    "v3 projection for {attribute_id} must be absent when no value is eligible"
+                ),
+            ));
+        }
+
+        if processing == "model-classified" && host_attributes.contains_key(attribute_id) {
+            issues.push(decision_input_issue(
+                "decision_input_v3_model_attribute_in_host_map",
+                format!("{artifact_path}#/attributes/{attribute_id}"),
+                "model-classified attributes must not be copied into the host observed-attribute map",
+            ));
+        }
+    }
+    for key in fields.keys() {
+        if !allowed_fields.contains(key) && meaningful_projected_value(&fields[key]) {
+            issues.push(decision_input_issue(
+                "decision_input_v3_unbound_field",
+                format!("{artifact_path}#/normalized_input/fields/{key}"),
+                "normalized_input.fields may contain only declared output paths",
+            ));
+        }
+    }
+    for key in projected_attributes.keys() {
+        if !allowed_projected_attributes.contains(key)
+            && meaningful_projected_value(&projected_attributes[key])
+        {
+            issues.push(decision_input_issue(
+                "decision_input_v3_unbound_attribute",
+                format!("{artifact_path}#/normalized_input/attributes/{key}"),
+                "normalized_input.attributes may contain only declared output paths",
+            ));
+        }
+    }
+    for key in host_attributes.keys() {
+        if !compiled_attributes.contains_key(key) {
+            issues.push(decision_input_issue(
+                "decision_input_v3_unbound_host_attribute",
+                format!("{artifact_path}#/attributes/{key}"),
+                "host attributes must be declared by the compiled decision-input contract",
+            ));
+        }
+    }
+
+    if output["signal_observations"] != normalized_input["signals"] {
+        issues.push(decision_input_issue(
+            "decision_input_v3_signal_projection_mismatch",
+            format!("{artifact_path}#/normalized_input/signals"),
+            "normalized_input.signals must exactly echo the host-owned signal_observations",
+        ));
+    }
+    validate_v3_signal_observations(
+        compiled,
+        output,
+        artifact_path,
+        source_binding,
+        &result_by_attempt,
+        issues,
+    );
+}
+
+fn v3_projected_value<'a>(
+    normalized_input: &'a Map<String, Value>,
+    output_path: &str,
+) -> Option<&'a Value> {
+    if let Some(name) = output_path.strip_prefix("attributes.") {
+        normalized_input["attributes"].as_object()?.get(name)
+    } else if !output_path.contains('.') {
+        normalized_input["fields"].as_object()?.get(output_path)
+    } else {
+        None
+    }
+}
+
+fn validate_v3_signal_observations(
+    compiled: &Value,
+    output: &Value,
+    artifact_path: &str,
+    source_binding: Option<(&Value, &str, &str)>,
+    result_by_attempt: &BTreeMap<String, &Value>,
+    issues: &mut Vec<Value>,
+) {
+    let Some(observations) = output["signal_observations"].as_array() else {
+        return;
+    };
+    let mut seen_ids = BTreeSet::new();
+    for (index, observation) in observations.iter().enumerate() {
+        let path = format!("{artifact_path}#/signal_observations/{index}");
+        let Some(observation_id) = observation["id"].as_str() else {
+            issues.push(decision_input_issue(
+                "decision_input_v3_signal_observation_invalid",
+                path,
+                "v3 signal observation requires a stable id",
+            ));
+            continue;
+        };
+        if !seen_ids.insert(observation_id.to_string()) {
+            issues.push(decision_input_issue(
+                "decision_input_v3_signal_observation_duplicate",
+                format!("{path}/id"),
+                "v3 signal observation IDs must be unique",
+            ));
+        }
+        let Some(projection_id) = observation["projection_id"].as_str() else {
+            issues.push(decision_input_issue(
+                "decision_input_v3_signal_projection_unknown",
+                format!("{path}/projection_id"),
+                "v3 signal observation must identify a compiled projection",
+            ));
+            continue;
+        };
+        let matches = compiled["decision_input_contracts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|contract| {
+                contract["signal_projections"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(move |projection| projection["id"] == projection_id)
+                    .map(move |projection| (contract, projection))
+            })
+            .collect::<Vec<_>>();
+        let Some((contract, projection)) = matches.first().copied() else {
+            issues.push(decision_input_issue(
+                "decision_input_v3_signal_projection_unknown",
+                format!("{path}/projection_id"),
+                "v3 signal observation references an undeclared compiled projection",
+            ));
+            continue;
+        };
+        if matches.len() > 1 {
+            issues.push(decision_input_issue(
+                "decision_input_v3_signal_projection_ambiguous",
+                format!("{path}/projection_id"),
+                "v3 signal projection IDs must be unique across selected contracts",
+            ));
+        }
+        for (field, expected) in [
+            ("kind", &projection["kind"]),
+            ("roles", &projection["roles"]),
+        ] {
+            if observation[field] != *expected {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_signal_projection_authority_mismatch",
+                    format!("{path}/{field}"),
+                    format!("v3 signal {field} must echo the compiled projection"),
+                ));
+            }
+        }
+        let expected_contributors = projection["contributor_attribute_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<BTreeSet<_>>();
+        let actual_contributors = observation["contributor_attribute_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<BTreeSet<_>>();
+        if actual_contributors.is_empty()
+            || actual_contributors
+                .iter()
+                .any(|contributor| !expected_contributors.contains(contributor))
+        {
+            issues.push(decision_input_issue(
+                "decision_input_v3_signal_projection_authority_mismatch",
+                format!("{path}/contributor_attribute_ids"),
+                "v3 signal contributors must be a non-empty subset of the compiled projection contributors",
+            ));
+        }
+        let qualified = format!(
+            "{}#{}",
+            contract["id"].as_str().unwrap_or_default(),
+            projection_id
+        );
+        if let Some((binding, binding_path, _)) = source_binding {
+            let mapping = binding["projection_bindings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|mapping| mapping["qualified_projection_id"] == qualified);
+            let Some(mapping) = mapping else {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_signal_binding_projection_missing",
+                    format!("{binding_path}#/projection_bindings"),
+                    "v3 signal observation must have a source-binding projection mapping",
+                ));
+                continue;
+            };
+            if observation["source_class"] != mapping["source"]["source_class"] {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_signal_source_class_mismatch",
+                    format!("{path}/source_class"),
+                    "v3 signal source_class must echo its source-binding mapping",
+                ));
+            }
+        }
+        let attempt_ids = observation["attempt_ids"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if attempt_ids.is_empty() {
+            issues.push(decision_input_issue(
+                "decision_input_v3_signal_attempt_missing",
+                format!("{path}/attempt_ids"),
+                "v3 signal observation requires at least one observed attempt",
+            ));
+        }
+        for attempt_id in attempt_ids.iter().filter_map(Value::as_str) {
+            let Some(result) = result_by_attempt.get(attempt_id).copied() else {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_signal_attempt_unknown",
+                    format!("{path}/attempt_ids"),
+                    "v3 signal observation references an unknown collected attempt",
+                ));
+                continue;
+            };
+            let contributors = observation["contributor_attribute_ids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect::<BTreeSet<_>>();
+            if result["status"] != "observed"
+                || !contributors.contains(result["attribute_id"].as_str().unwrap_or_default())
+            {
+                issues.push(decision_input_issue(
+                    "decision_input_v3_signal_attempt_ineligible",
+                    format!("{path}/attempt_ids"),
+                    "v3 signals may reference only observed attempts for compiled contributors",
+                ));
+            }
+            for field in [
+                "value",
+                "source_class",
+                "source_locator",
+                "observed_at",
+                "confidence",
+            ] {
+                if observation[field] != result[field] {
+                    issues.push(decision_input_issue(
+                        "decision_input_v3_signal_attempt_mismatch",
+                        format!("{path}/{field}"),
+                        format!("v3 signal {field} must echo its collected attempt"),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 fn validate_observed_value_format(
