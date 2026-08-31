@@ -5432,17 +5432,24 @@ conditional:
             let compiled = requirements(&root, job_id).expect("requirements should compile");
             assert_eq!(compiled["valid"], true, "{job_id}");
             assert_eq!(compiled["available"], true, "{job_id}");
-            assert_eq!(compiled["runtime_contract_version"], "v2", "{job_id}");
+            assert_eq!(compiled["runtime_contract_version"], "v3", "{job_id}");
             assert_eq!(
                 compiled["normalized_output_schema"]["properties"]["contract"]["const"],
-                "mdp.normalized-decision-input.v2",
+                "mdp.normalized-decision-input.v3",
                 "{job_id}"
             );
             assert_eq!(
                 compiled["decision_input_contracts"][0]["id"],
                 "gtm.prospect-context"
             );
-            assert_eq!(compiled["decision_input_contracts"][0]["version"], "1.0.0");
+            assert_eq!(compiled["decision_input_contracts"][0]["version"], "3.0.0");
+            assert_eq!(
+                compiled["classification_specification"]["taxonomies"]
+                    .as_array()
+                    .map(Vec::len),
+                Some(2),
+                "{job_id}"
+            );
             assert!(
                 compiled["requirements_sha256"]
                     .as_str()
@@ -5492,6 +5499,7 @@ conditional:
         let mut manifest: serde_yaml::Value =
             serde_yaml::from_str(&raw).expect("manifest should parse");
         manifest["decision_input_contracts"] = serde_yaml::Value::Sequence(Vec::new());
+        manifest["classification_taxonomies"] = serde_yaml::Value::Sequence(Vec::new());
         manifest["input_contracts"][0]["decision_input_contracts"] =
             serde_yaml::Value::Sequence(Vec::new());
         for job in manifest["jobs"]

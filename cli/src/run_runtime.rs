@@ -12,7 +12,7 @@ use crate::commands::routing::{
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::commands::v3_normalization::{
     V3SealInputs, reject_host_field_injection, seal_v3_envelope, v3_semantic_provider_schema,
-    validate_v3_sealed_envelope,
+    validate_v3_sealed_envelope, validate_v3_semantic_payload,
 };
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
@@ -21,6 +21,7 @@ use crate::constants::{
     SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2, V3_OUTCOME_KIND,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
+use crate::models::ClassificationTaxonomy;
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
     ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DEADLINE_OBSERVATION_V1,
@@ -2120,12 +2121,18 @@ where
         if normalized.authority.media_type != "application/json"
             || !matches!(
                 normalized.authority.schema_id.as_str(),
-                NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+                NORMALIZED_DECISION_INPUT_CONTRACT
+                    | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+                    | NORMALIZED_DECISION_INPUT_CONTRACT_V3
             )
         {
             return Err(anyhow!("declared input schema or media type mismatch"));
         }
-        let signal_aware = normalized.authority.schema_id == NORMALIZED_DECISION_INPUT_CONTRACT_V2;
+        let is_v3 = normalized.authority.schema_id == NORMALIZED_DECISION_INPUT_CONTRACT_V3;
+        let signal_aware = matches!(
+            normalized.authority.schema_id.as_str(),
+            NORMALIZED_DECISION_INPUT_CONTRACT_V2 | NORMALIZED_DECISION_INPUT_CONTRACT_V3
+        );
         let (source_attempt_schema, collected_results_schema) =
             gtm_lineage_schema_ids(signal_aware);
         let source_attempt = required_typed_input(
@@ -2169,79 +2176,104 @@ where
         } else {
             None
         };
-        let result = if signal_aware {
-            validate_prompt_output_file_with_lineage_inputs(
-                &staged_pack,
-                &normalized.staged_path,
-                Some(&staged_bound_prompt),
-                None,
-                None,
-                source_binding.map(|input| input.staged_path.as_path()),
-                Some(&source_attempt.staged_path),
-                Some(&attempt_results.staged_path),
-                None,
-                None,
-            )?
-        } else {
-            validate_prompt_output_file_with_inputs(
-                &staged_pack,
-                &normalized.staged_path,
-                Some(&staged_bound_prompt),
-                None,
-                None,
-                Some(&source_attempt.staged_path),
-                Some(&attempt_results.staged_path),
-                None,
-                None,
-            )?
-        };
-        let ready = governed_normalization_outcome(
-            result["valid"].as_bool() == Some(true),
-            signal_aware,
-            normalized_value["outcome"].as_str(),
-        );
-        validation = Some(result);
-        if ready {
-            let prospect = &normalized_value["normalized_prospect"];
-            if !prospect.is_object() {
-                (TerminalState::NoDraftDecisionInvalid, None)
+        if is_v3 {
+            validate_v3_sealed_envelope(&normalized_value).map_err(|_| {
+                run_failure(RunFailureKind::PolicyBlocked, "v3-sealed-envelope-invalid")
+            })?;
+            if normalized_value["source_binding_sha256"]
+                != source_binding.expect("v3 source binding").initial_sha256
+                || normalized_value["source_attempt_request_sha256"]
+                    != source_attempt.initial_sha256
+                || normalized_value["collected_attempt_results_sha256"]
+                    != attempt_results.initial_sha256
+            {
+                return Err(run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "v3-lineage-hash-mismatch",
+                ));
+            }
+            let compiled = requirements(&staged_pack, normalized_job_id)?;
+            if normalized_value["requirements_sha256"] != compiled["requirements_sha256"]
+                || normalized_value["taxonomy_set_sha256"] != compiled["taxonomy_set_sha256"]
+            {
+                return Err(run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "v3-compiled-identity-mismatch",
+                ));
+            }
+            let selected_taxonomies: Vec<ClassificationTaxonomy> = serde_json::from_value(
+                compiled["classification_specification"]["taxonomies"].clone(),
+            )
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "v3-taxonomy-set-invalid"))?;
+            let compiled_attribute_ids = compiled["decision_input_contracts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|contract| contract["attributes"].as_array().into_iter().flatten())
+                .filter_map(|attribute| attribute["id"].as_str().map(str::to_owned))
+                .collect::<Vec<_>>();
+            let collected_value: Value =
+                serde_json::from_slice(&fs::read(&attempt_results.staged_path)?)?;
+            let observed_attempts = data_object(&collected_value)["attempt_results"]
+                .as_array()
+                .ok_or_else(|| {
+                    run_failure(
+                        RunFailureKind::PolicyBlocked,
+                        "v3-collected-attempt-results-invalid",
+                    )
+                })?
+                .iter()
+                .filter(|attempt| attempt["status"] == "observed")
+                .collect::<Vec<_>>();
+            let semantic = json!({
+                "classifications": normalized_value["classifications"].clone(),
+                "gaps": normalized_value["gaps"].clone(),
+                "rejected_claims": normalized_value["rejected_claims"].clone(),
+            });
+            validate_v3_classification_evidence(
+                &semantic,
+                &selected_taxonomies,
+                &compiled_attribute_ids,
+                &observed_attempts,
+            )?;
+            let envelope = normalized_value.as_object().ok_or_else(|| {
+                run_failure(RunFailureKind::PolicyBlocked, "v3-sealed-envelope-invalid")
+            })?;
+            let decision_input =
+                crate::decision_input::from_v3_normalized(envelope).map_err(|_| {
+                    run_failure(RunFailureKind::PolicyBlocked, "v3-neutral-input-invalid")
+                })?;
+            let prospect = decision_input.to_gtm_prospect().map_err(|_| {
+                run_failure(RunFailureKind::PolicyBlocked, "v3-gtm-projection-invalid")
+            })?;
+            let classifications_ready = normalized_value["classifications"]
+                .as_object()
+                .is_some_and(|values| {
+                    !values.is_empty()
+                        && values.values().all(|value| value["status"] == "classified")
+                });
+            if !classifications_ready {
+                validation = Some(
+                    json!({"contract": NORMALIZED_DECISION_INPUT_CONTRACT_V3, "valid": true, "ready": false}),
+                );
+                (TerminalState::NoDraftOutputInvalid, None)
             } else {
-                let prospect_path = private_dir.join("projected-prospect.json");
-                write_json_create_new(&prospect_path, prospect)?;
-                let fit_result = if signal_aware {
-                    fit_normalized(
-                        &staged_pack,
-                        &normalized.staged_path,
-                        &staged_bound_prompt,
-                        &source_binding.expect("v2 source binding").staged_path,
-                        &source_attempt.staged_path,
-                        &attempt_results.staged_path,
-                        Some(normalized_job_id),
-                    )?
-                } else if ingress
-                    .as_ref()
-                    .is_some_and(|ingress| ingress.is_governed())
-                {
-                    let prospect: crate::models::Prospect =
-                        serde_json::from_value(prospect.clone()).map_err(|_| {
-                            run_failure(
-                                RunFailureKind::PolicyBlocked,
-                                "normalized-prospect-invalid",
-                            )
-                        })?;
-                    fit_prospect_with_governed_authority(
-                        &staged_pack,
-                        prospect,
-                        normalized_job_id,
-                        json!({
-                            "normalized_output_sha256": normalized.initial_sha256,
-                            "source_attempt_request_sha256": source_attempt.initial_sha256,
-                            "collected_attempt_results_sha256": attempt_results.initial_sha256
-                        }),
-                    )?
-                } else {
-                    fit(&staged_pack, &prospect_path)?
-                };
+                validation = Some(
+                    json!({"contract": NORMALIZED_DECISION_INPUT_CONTRACT_V3, "valid": true, "ready": true}),
+                );
+                let fit_result = fit_prospect_with_governed_authority(
+                    &staged_pack,
+                    prospect,
+                    normalized_job_id,
+                    json!({
+                        "normalized_output_sha256": normalized.initial_sha256,
+                        "requirements_sha256": normalized_value["requirements_sha256"],
+                        "taxonomy_set_sha256": normalized_value["taxonomy_set_sha256"],
+                        "source_binding_sha256": source_binding.expect("v3 source binding").initial_sha256,
+                        "source_attempt_request_sha256": source_attempt.initial_sha256,
+                        "collected_attempt_results_sha256": attempt_results.initial_sha256
+                    }),
+                )?;
                 (
                     TerminalState::Success,
                     Some(gtm_success_artifacts(
@@ -2253,7 +2285,92 @@ where
                 )
             }
         } else {
-            (TerminalState::NoDraftOutputInvalid, None)
+            let result = if signal_aware {
+                validate_prompt_output_file_with_lineage_inputs(
+                    &staged_pack,
+                    &normalized.staged_path,
+                    Some(&staged_bound_prompt),
+                    None,
+                    None,
+                    source_binding.map(|input| input.staged_path.as_path()),
+                    Some(&source_attempt.staged_path),
+                    Some(&attempt_results.staged_path),
+                    None,
+                    None,
+                )?
+            } else {
+                validate_prompt_output_file_with_inputs(
+                    &staged_pack,
+                    &normalized.staged_path,
+                    Some(&staged_bound_prompt),
+                    None,
+                    None,
+                    Some(&source_attempt.staged_path),
+                    Some(&attempt_results.staged_path),
+                    None,
+                    None,
+                )?
+            };
+            let ready = governed_normalization_outcome(
+                result["valid"].as_bool() == Some(true),
+                signal_aware,
+                normalized_value["outcome"].as_str(),
+            );
+            validation = Some(result);
+            if ready {
+                let prospect = &normalized_value["normalized_prospect"];
+                if !prospect.is_object() {
+                    (TerminalState::NoDraftDecisionInvalid, None)
+                } else {
+                    let prospect_path = private_dir.join("projected-prospect.json");
+                    write_json_create_new(&prospect_path, prospect)?;
+                    let fit_result = if signal_aware {
+                        fit_normalized(
+                            &staged_pack,
+                            &normalized.staged_path,
+                            &staged_bound_prompt,
+                            &source_binding.expect("v2 source binding").staged_path,
+                            &source_attempt.staged_path,
+                            &attempt_results.staged_path,
+                            Some(normalized_job_id),
+                        )?
+                    } else if ingress
+                        .as_ref()
+                        .is_some_and(|ingress| ingress.is_governed())
+                    {
+                        let prospect: crate::models::Prospect =
+                            serde_json::from_value(prospect.clone()).map_err(|_| {
+                                run_failure(
+                                    RunFailureKind::PolicyBlocked,
+                                    "normalized-prospect-invalid",
+                                )
+                            })?;
+                        fit_prospect_with_governed_authority(
+                            &staged_pack,
+                            prospect,
+                            normalized_job_id,
+                            json!({
+                                "normalized_output_sha256": normalized.initial_sha256,
+                                "source_attempt_request_sha256": source_attempt.initial_sha256,
+                                "collected_attempt_results_sha256": attempt_results.initial_sha256
+                            }),
+                        )?
+                    } else {
+                        fit(&staged_pack, &prospect_path)?
+                    };
+                    (
+                        TerminalState::Success,
+                        Some(gtm_success_artifacts(
+                            request,
+                            &bundle,
+                            &bundle_sha256,
+                            fit_result,
+                        )?),
+                    )
+                }
+            } else {
+                (TerminalState::NoDraftOutputInvalid, None)
+            }
         }
     } else {
         (TerminalState::NoDraftPolicyBlocked, None)
@@ -3494,6 +3611,132 @@ fn provider_schema_source_for_contract(
 /// The returned bytes are the exact sealed envelope used by deterministic
 /// evaluation. Failures use stable policy-blocked diagnostics so the CLI can
 /// surface them as actionable.
+fn staged_json_value(
+    staged_inputs: &[StagedInput],
+    names: &[&str],
+    missing: &'static str,
+) -> Result<Value> {
+    let input = staged_inputs
+        .iter()
+        .find(|input| names.contains(&input.logical_name.as_str()))
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, missing))?;
+    serde_json::from_slice(&fs::read(&input.staged_path)?)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, missing))
+}
+
+fn data_object(value: &Value) -> &Value {
+    value
+        .get("data")
+        .filter(|data| data.is_object())
+        .unwrap_or(value)
+}
+
+fn validate_v3_classification_evidence(
+    semantic: &Value,
+    selected_taxonomies: &[ClassificationTaxonomy],
+    compiled_attribute_ids: &[String],
+    observed_attempts: &[&Value],
+) -> Result<()> {
+    let known_attempt_ids = observed_attempts
+        .iter()
+        .filter_map(|attempt| attempt["attempt_id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    validate_v3_semantic_payload(
+        semantic,
+        selected_taxonomies,
+        compiled_attribute_ids,
+        &known_attempt_ids,
+    )
+    .map_err(|issues| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            issues
+                .first()
+                .map(|issue| v3_issue_to_failure_code(issue.code))
+                .unwrap_or("v3-semantic-output-invalid"),
+        )
+    })?;
+
+    let classifications = semantic["classifications"]
+        .as_object()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "v3-semantic-output-invalid"))?;
+    let expected_outputs = selected_taxonomies
+        .iter()
+        .map(|taxonomy| taxonomy.output_attribute.as_str())
+        .collect::<HashSet<_>>();
+    let actual_outputs = classifications
+        .keys()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    if actual_outputs != expected_outputs {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "v3-classification-coverage-mismatch",
+        ));
+    }
+
+    for taxonomy in selected_taxonomies {
+        let classification = classifications
+            .get(&taxonomy.output_attribute)
+            .ok_or_else(|| {
+                run_failure(RunFailureKind::PolicyBlocked, "v3-classification-missing")
+            })?;
+        if classification["taxonomy_id"] != taxonomy.id
+            || classification["taxonomy_version"] != taxonomy.version
+        {
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-classification-taxonomy-mismatch",
+            ));
+        }
+        let mut contributor_ids = HashSet::new();
+        for attempt_id in classification["derived_from"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            let attempt = observed_attempts
+                .iter()
+                .find(|attempt| attempt["attempt_id"] == attempt_id)
+                .ok_or_else(|| {
+                    run_failure(
+                        RunFailureKind::PolicyBlocked,
+                        "v3-classification-evidence-invalid",
+                    )
+                })?;
+            let attribute_id = attempt["attribute_id"].as_str().unwrap_or_default();
+            let source_class = attempt["source_class"].as_str().unwrap_or_default();
+            let source_class_allowed = taxonomy.source_classes.iter().any(|allowed| {
+                serde_json::to_value(allowed)
+                    .ok()
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .as_deref()
+                    == Some(source_class)
+            });
+            if !taxonomy
+                .contributor_attribute_ids
+                .iter()
+                .any(|id| id == attribute_id)
+                || !source_class_allowed
+            {
+                return Err(run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "v3-classification-evidence-ineligible",
+                ));
+            }
+            contributor_ids.insert(attribute_id);
+        }
+        if contributor_ids.len() < taxonomy.minimum_evidence.observed_contributors as usize {
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-classification-minimum-evidence",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn host_wrap_v3_normalization_output(
     step: &CompiledModelStepV1,
     staged_inputs: &[StagedInput],
@@ -3545,36 +3788,74 @@ fn host_wrap_v3_normalization_output(
             "v3-semantic-output-invalid",
         ));
     }
-    // The runtime seals every host-owned envelope field. Selected taxonomy,
-    // requirements, source binding, attempt request, and collected results
-    // sha256s are bound from staged inputs.
-    let requirements_sha256 = staged_inputs
-        .iter()
-        .find(|input| {
-            matches!(
-                input.logical_name.as_str(),
-                "decision-input-requirements" | "decision_input_requirements"
-            )
-        })
-        .map(|input| input.authority.sha256.clone())
+    // Parse the exact compiled artifact instead of treating its file hash as
+    // the semantic identities it contains. This binds the sealed envelope to
+    // the compiler-issued requirements and taxonomy-set hashes.
+    let requirements_value = staged_json_value(
+        staged_inputs,
+        &["decision-input-requirements", "decision_input_requirements"],
+        "v3-requirements-source-missing",
+    )?;
+    let requirements_data = data_object(&requirements_value);
+    let requirements_sha256 = requirements_data["requirements_sha256"]
+        .as_str()
+        .filter(|value| is_canonical_sha256(value))
         .ok_or_else(|| {
             run_failure(
                 RunFailureKind::PolicyBlocked,
-                "v3-requirements-source-missing",
+                "v3-requirements-hash-missing",
+            )
+        })?
+        .to_owned();
+    let taxonomy_set_sha256 = requirements_data["taxonomy_set_sha256"]
+        .as_str()
+        .filter(|value| is_canonical_sha256(value))
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-taxonomy-set-hash-missing",
+            )
+        })?
+        .to_owned();
+    let selected_taxonomies: Vec<ClassificationTaxonomy> = serde_json::from_value(
+        requirements_data["classification_specification"]["taxonomies"].clone(),
+    )
+    .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "v3-taxonomy-set-invalid"))?;
+    let compiled_attributes = requirements_data["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|contract| contract["attributes"].as_array().into_iter().flatten())
+        .collect::<Vec<_>>();
+    let compiled_attribute_ids = compiled_attributes
+        .iter()
+        .filter_map(|attribute| attribute["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+
+    let collected_value = staged_json_value(
+        staged_inputs,
+        &["collected-attempt-results", "collected_attempt_results"],
+        "v3-collected-attempt-results-missing",
+    )?;
+    let collected_data = data_object(&collected_value);
+    let attempt_results = collected_data["attempt_results"]
+        .as_array()
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-collected-attempt-results-invalid",
             )
         })?;
-    let taxonomy_set_sha256 = staged_inputs
+    let observed_attempts = attempt_results
         .iter()
-        .find(|input| matches!(input.logical_name.as_str(), "taxonomy-set" | "taxonomy_set"))
-        .map(|input| input.authority.sha256.clone())
-        .unwrap_or_else(|| {
-            // The taxonomy set hash may be supplied alongside the
-            // requirements contract as part of the v3 compiled artifact. If
-            // the staged inputs do not bind it explicitly, default to the
-            // requirements hash so the envelope remains sealable; the host
-            // has already enforced identity before this point.
-            requirements_sha256.clone()
-        });
+        .filter(|attempt| attempt["status"] == "observed")
+        .collect::<Vec<_>>();
+    validate_v3_classification_evidence(
+        &semantic,
+        &selected_taxonomies,
+        &compiled_attribute_ids,
+        &observed_attempts,
+    )?;
     let source_binding_sha256 = staged_inputs
         .iter()
         .find(|input| {
@@ -3654,10 +3935,80 @@ fn host_wrap_v3_normalization_output(
         .as_object()
         .cloned()
         .unwrap_or_default();
-    let signal_observations: Vec<Value> = semantic["signal_observations"]
+    let mut attributes = Map::new();
+    let mut fields = Map::new();
+    let mut projected_attributes = Map::new();
+    for attribute in &compiled_attributes {
+        let Some(attribute_id) = attribute["id"].as_str() else {
+            continue;
+        };
+        let output_path = attribute["output_path"].as_str().unwrap_or_default();
+        let processing = attribute["processing"].as_str().unwrap_or("observed");
+        let projected_value = if processing == "model-classified" {
+            classifications
+                .get(attribute_id)
+                .filter(|classification| classification["status"] == "classified")
+                .and_then(|classification| classification.get("value"))
+                .cloned()
+        } else {
+            let attempt = observed_attempts
+                .iter()
+                .find(|attempt| attempt["attribute_id"] == attribute_id);
+            if let Some(attempt) = attempt {
+                attributes.insert(attribute_id.to_owned(), (*attempt).clone());
+            }
+            attempt.and_then(|attempt| attempt.get("value")).cloned()
+        };
+        let Some(value) = projected_value else {
+            continue;
+        };
+        if let Some(name) = output_path.strip_prefix("attributes.") {
+            projected_attributes.insert(name.to_owned(), value);
+        } else if !output_path.is_empty() && !output_path.contains('.') {
+            fields.insert(output_path.to_owned(), value);
+        }
+    }
+
+    let mut signal_observations = Vec::new();
+    for projection in requirements_data["decision_input_contracts"]
         .as_array()
-        .cloned()
-        .unwrap_or_default();
+        .into_iter()
+        .flatten()
+        .flat_map(|contract| {
+            contract["signal_projections"]
+                .as_array()
+                .into_iter()
+                .flatten()
+        })
+    {
+        let contributors = projection["contributor_attribute_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<HashSet<_>>();
+        for attempt in observed_attempts.iter().filter(|attempt| {
+            attempt["attribute_id"]
+                .as_str()
+                .is_some_and(|id| contributors.contains(id))
+        }) {
+            signal_observations.push(json!({
+                "id": attempt["attempt_id"],
+                "title": attempt["value"],
+                "value": attempt["value"],
+                "source": attempt["source_locator"],
+                "source_class": attempt["source_class"],
+                "source_locator": attempt["source_locator"],
+                "observed_at": attempt["observed_at"],
+                "confidence": attempt["confidence"],
+                "attempt_ids": [attempt["attempt_id"].clone()],
+                "contributor_attribute_ids": [attempt["attribute_id"].clone()],
+                "projection_id": projection["id"],
+                "roles": projection["roles"],
+                "kind": projection["kind"]
+            }));
+        }
+    }
     let gaps: Vec<Value> = semantic["gaps"].as_array().cloned().unwrap_or_default();
     let rejected_claims: Vec<Value> = semantic["rejected_claims"]
         .as_array()
@@ -3669,17 +4020,9 @@ fn host_wrap_v3_normalization_output(
     // output and host-staged identity hashes, without copying raw evidence
     // prose into the compact envelope.
     let mut normalized_input = Map::new();
-    let fields = Map::new();
-    let mut signal_observations_projection: Vec<Value> = Vec::new();
-    for observation in &signal_observations {
-        signal_observations_projection.push(observation.clone());
-    }
     normalized_input.insert("fields".into(), Value::Object(fields));
-    normalized_input.insert(
-        "signals".into(),
-        Value::Array(signal_observations_projection),
-    );
-    normalized_input.insert("attributes".into(), Value::Object(classifications.clone()));
+    normalized_input.insert("signals".into(), Value::Array(signal_observations.clone()));
+    normalized_input.insert("attributes".into(), Value::Object(projected_attributes));
 
     let invocation_receipt_sha256 = sha256_hex(invocation_bytes);
 
@@ -3692,7 +4035,8 @@ fn host_wrap_v3_normalization_output(
         source_binding_sha256: &source_binding_sha256,
         source_attempt_request_sha256: &source_attempt_request_sha256,
         collected_attempt_results_sha256: &collected_attempt_results_sha256,
-        attributes: &Map::new(),
+        invocation_receipt_sha256: &invocation_receipt_sha256,
+        attributes: &attributes,
         classifications: &classifications,
         signal_observations: &signal_observations,
         normalized_input: &normalized_input,
@@ -3711,18 +4055,7 @@ fn host_wrap_v3_normalization_output(
         )
     })?;
 
-    let mut wrapped = serde_json::Map::new();
-    if let Value::Object(ref sealed_object) = sealed {
-        for (key, value) in sealed_object {
-            wrapped.insert(key.clone(), value.clone());
-        }
-    }
-    wrapped.insert(
-        "invocation_receipt_sha256".into(),
-        Value::String(invocation_receipt_sha256),
-    );
-    let envelope_value = Value::Object(wrapped);
-    let mut bytes = serde_json::to_vec_pretty(&envelope_value)?;
+    let mut bytes = serde_json::to_vec_pretty(&sealed)?;
     bytes.push(b'\n');
     Ok(bytes)
 }
@@ -3736,6 +4069,14 @@ fn v3_issue_to_failure_code(code: &str) -> &'static str {
         "v3_envelope_contract_mismatch" => "v3-envelope-contract-mismatch",
         "v3_envelope_missing_neutral_input" => "v3-envelope-missing-neutral-input",
         "v3_envelope_schema_mismatch" => "v3-sealed-envelope-schema-mismatch",
+        "v3_semantic_payload_malformed" => "v3-semantic-output-malformed",
+        "v3_classification_unknown_taxonomy" => "v3-classification-unknown-taxonomy",
+        "v3_classification_unknown_value" => "v3-classification-unknown-value",
+        "v3_classification_unknown_evidence_ref" => "v3-classification-unknown-evidence-ref",
+        "v3_classification_missing_derived_from" => "v3-classification-missing-evidence",
+        "v3_classification_basis_empty" => "v3-classification-basis-empty",
+        "v3_classification_basis_too_long" => "v3-classification-basis-too-long",
+        "v3_classification_unknown_attribute" => "v3-classification-unknown-attribute",
         _ => "v3-sealed-envelope-invalid",
     }
 }
@@ -7332,6 +7673,43 @@ mod tests {
         (invocation, bytes)
     }
 
+    fn materialize_v3_staged_inputs(staged: &mut [super::StagedInput]) -> PathBuf {
+        let temp = temp_path("v3-staged");
+        std::fs::create_dir_all(&temp).unwrap();
+        for input in staged {
+            let path = temp.join(format!("{}.json", input.logical_name));
+            let value = match input.logical_name.as_str() {
+                "decision-input-requirements" => serde_json::json!({
+                    "requirements_sha256": "a".repeat(64),
+                    "taxonomy_set_sha256": "b".repeat(64),
+                    "classification_specification": {"taxonomies": [{
+                        "id": "buyer-persona", "version": "1", "output_attribute": "persona",
+                        "contributor_attribute_ids": ["person_title"],
+                        "source_classes": ["synthetic_fixture"],
+                        "minimum_evidence": {"observed_contributors": 1},
+                        "basis_max_chars": 500,
+                        "ambiguity_policy": "human-review", "no_match_policy": "gap", "conflict_policy": "human-review",
+                        "values": [{"value": "GTM Systems Owner", "definition": "Owns GTM systems."}]
+                    }]},
+                    "decision_input_contracts": [{"id": "gtm.prospect-context", "attributes": [
+                        {"id": "person_title", "processing": "observed", "output_path": "title"},
+                        {"id": "persona", "processing": "model-classified", "output_path": "persona"}
+                    ], "signal_projections": []}]
+                }),
+                "collected-attempt-results" => serde_json::json!({"attempt_results": [{
+                    "attempt_id": "synthetic-attempt-001", "attribute_id": "person_title",
+                    "status": "observed", "value": "Founding GTM Engineer",
+                    "source_class": "synthetic_fixture", "source_locator": "fixture:title"
+                }]}),
+                _ => serde_json::json!({}),
+            };
+            std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+            input.staged_path = path.clone();
+            input.source_path = path;
+        }
+        temp
+    }
+
     #[test]
     fn v3_provider_preflight_projects_only_semantic_fields() {
         let step = v3_envelope_test_step();
@@ -7352,7 +7730,8 @@ mod tests {
     #[test]
     fn v3_wrap_seals_a_semantic_payload_with_host_owned_fields() {
         let step = v3_envelope_test_step();
-        let staged = v3_staged_inputs(&"a".repeat(64));
+        let mut staged = v3_staged_inputs(&"a".repeat(64));
+        let temp = materialize_v3_staged_inputs(&mut staged);
         let (invocation, invocation_bytes) = v3_invocation(&step);
         let semantic = serde_json::json!({
             "classifications": {
@@ -7381,6 +7760,45 @@ mod tests {
             parsed["invocation_receipt_sha256"],
             crate::artifact_hash::sha256_hex(&invocation_bytes)
         );
+        let _ = std::fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn v3_wrap_rejects_classification_from_non_contributor_evidence() {
+        let step = v3_envelope_test_step();
+        let mut staged = v3_staged_inputs(&"a".repeat(64));
+        let temp = materialize_v3_staged_inputs(&mut staged);
+        let requirements = staged
+            .iter()
+            .find(|input| input.logical_name == "decision-input-requirements")
+            .unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&requirements.staged_path).unwrap()).unwrap();
+        value["classification_specification"]["taxonomies"][0]["contributor_attribute_ids"] =
+            serde_json::json!(["person_responsibilities"]);
+        std::fs::write(
+            &requirements.staged_path,
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let semantic = serde_json::json!({
+            "classifications": {"persona": {
+                "status": "classified", "value": "GTM Systems Owner",
+                "taxonomy_id": "buyer-persona", "taxonomy_version": "1",
+                "derived_from": ["synthetic-attempt-001"], "basis": "title only"
+            }}, "gaps": [], "rejected_claims": []
+        });
+        let error = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            &semantic.to_string(),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "v3-classification-evidence-ineligible");
+        let _ = std::fs::remove_dir_all(temp);
     }
 
     #[test]

@@ -32,9 +32,14 @@ bodies through chat.
 2. Branch on `data.available` from requirements:
    - When `true`, this skill must not collect missing prospect data or run the
      customer-funded normalization call.
-     Inspect the runtime version matrix and compiled signal projections first.
-     For v2, require the exact `SOURCE_BINDING_JSON`; structured observations
-     belong only in the v2 envelope and roles never come from keywords.
+     Inspect the runtime version matrix, compiled collection specification,
+     selected taxonomies, and signal projections first. For v2 or v3, require
+     the exact `SOURCE_BINDING_JSON`; roles never come from keywords. For v3,
+     the host supplies researched title, responsibilities, company-fit, and
+     separate why-now observations without pre-assigning persona or segment.
+     Run the resolved normalization step through generative `mdp run` so the
+     CLI—not the provider—validates classification lineage and seals the
+     neutral envelope.
      - If all four artifacts—`SOURCE_BINDING_JSON`,
        `SOURCE_ATTEMPT_REQUEST_JSON`, `COLLECTED_ATTEMPT_RESULTS_JSON`, and
        `OUTPUT_JSON`—are already supplied,
@@ -64,11 +69,14 @@ bodies through chat.
        Resume only when the host returns all three exact artifacts: the
        preserved request file, the collected-results ledger used as `raw_row`,
        and the normalized output.
-     - For either the already-supplied or resumed path, validate the envelope
-       against the exact source binding, request, and collected-results files. Stop before extracting
-       `normalized_prospect` unless validation passes and top-level `outcome`
-       is exactly `ready`.
-     - For v2, do not extract a detached prospect. Run `mdp --json fit` with
+     - For either the already-supplied or resumed path, keep the exact binding,
+       request, results, prompt, and output bytes together.
+     - For v3, verify the normalization run bundle and receipt, then use its
+       exact sealed output. The provider semantic payload is not itself a
+       normalized decision input. For v1/v2, validate the compatibility
+       envelope against the exact source binding, request, and collected-results
+       files and require its governed ready outcome.
+     - For v2 or v3, do not extract a detached prospect. Run `mdp --json fit` with
        `--normalized-input OUTPUT_JSON`, `--prompt BOUND_PROMPT_PATH`,
        `--source-binding SOURCE_BINDING_JSON`, `--source-attempt-request
        SOURCE_ATTEMPT_REQUEST_JSON`, `--collected-attempt-results
@@ -89,7 +97,7 @@ mdp --json fit --dir PACK_ROOT --job JOB_ID --prospect PROSPECT_JSON
 4. If the user asked only for fit, return status, matched rules, disqualifiers, qualification gates, missing/invalid requirements, and gaps.
 5. If the user asked for a brief and fit permits it, preserve the same runtime-version boundary used for fit.
 
-For v2, keep the verified envelope attached:
+For v2 or v3, keep the verified envelope attached:
 
 ```bash
 mdp --json --summary brief --context --dir PACK_ROOT --normalized-input OUTPUT_JSON --prompt BOUND_PROMPT_PATH --source-binding SOURCE_BINDING_JSON --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON --job prospect-fit-or-brief --channel CHANNEL
@@ -112,7 +120,7 @@ Use `--out BRIEF_JSON --dry-run` before a requested durable write. Use `--readab
   detached input, extract `normalized_prospect`, or draft from the blocked context.
 - Report `lineage-validated`, `legacy`, and `unassessed` exactly. Lineage
   validation proves internal linkage, not host authenticity or truth.
-- For a lineage-validated v2 normalized input, accepted signal observations are
+- For a lineage-validated v2 or v3 normalized input, accepted signal observations are
   the canonical signal set for readiness and qualification. Do not require a
   duplicate `normalized_prospect.signals[]` value to satisfy a pack's legacy
   `signals`/`signals.source` readiness declarations; scalar/v1 and explicitly

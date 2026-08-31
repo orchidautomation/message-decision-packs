@@ -6123,14 +6123,18 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         }
         if !matches!(
             contract.schema_ref.as_deref(),
-            Some(NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2)
+            Some(
+                NORMALIZED_DECISION_INPUT_CONTRACT
+                    | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+                    | crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3
+            )
         ) {
             issues.push(issue(
                 "decision_input_prompt_schema_ref_required",
                 "error",
                 format!("{path}#/output_contract/schema_ref"),
                 format!(
-                    "decision-input-normalization prompts must use schema_ref {NORMALIZED_DECISION_INPUT_CONTRACT} or {NORMALIZED_DECISION_INPUT_CONTRACT_V2}"
+                    "decision-input-normalization prompts must use a canonical normalized Decision Input schema_ref"
                 ),
             ));
         }
@@ -6235,7 +6239,16 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         return;
     }
 
-    let required = if is_decision_input_normalization {
+    let is_v3_normalization = is_decision_input_normalization
+        && contract.schema_ref.as_deref()
+            == Some(crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3);
+    let required = if is_v3_normalization {
+        crate::models::NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS
+            .iter()
+            .chain(crate::models::NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+            .copied()
+            .collect::<Vec<_>>()
+    } else if is_decision_input_normalization {
         [
             "contract",
             "job_id",
@@ -6246,7 +6259,7 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             "outcome",
             "draft_allowed",
         ]
-        .as_slice()
+        .to_vec()
     } else {
         [
             "contract",
@@ -6256,9 +6269,9 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             "gaps",
             "rejected_claims",
         ]
-        .as_slice()
+        .to_vec()
     };
-    for field in required {
+    for field in &required {
         if !contract
             .required_top_level
             .iter()
@@ -6575,6 +6588,19 @@ fn validate_decision_input_prompt_example(
             format!("{path}#/output_contract/example/contract"),
             format!("decision-input normalization example contract must be {expected_contract}"),
         ));
+    }
+    if prompt.output_contract.schema_ref.as_deref()
+        == Some(crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3)
+    {
+        if crate::commands::v3_normalization::validate_v3_sealed_envelope(example).is_err() {
+            issues.push(issue(
+                "prompt_v3_example_invalid",
+                "error",
+                format!("{path}#/output_contract/example"),
+                "v3 decision-input normalization examples must satisfy the sealed neutral envelope schema",
+            ));
+        }
+        return;
     }
     if example["draft_allowed"].as_bool() != Some(false) {
         issues.push(issue(

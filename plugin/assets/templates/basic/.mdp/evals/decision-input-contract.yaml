@@ -12,7 +12,7 @@ expect_no_draft_outcomes:
 - human-review
 - malformed
 - provider-error
-expect_runtime_contract_version: v2
+expect_runtime_contract_version: v3
 id: decision-input-contract
 job: prospect-fit-or-brief
 profile_eval:

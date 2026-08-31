@@ -203,6 +203,7 @@ lead_input_requirements:
   - company
   - company_domain
   - trigger
+  - background
   - persona
   - segment
   - signals
@@ -210,6 +211,7 @@ lead_input_requirements:
   - source
   required_attributes:
   - contact_policy
+  - person_responsibilities
   value_contracts:
     segment:
       type: string
@@ -242,6 +244,9 @@ lead_input_requirements:
       - do-not-contact
       - needs-review
       description: Reviewed host-owned permission state; MDP does not collect or change it.
+    person_responsibilities:
+      type: string
+      description: Bounded observed responsibilities used with the authoritative title for taxonomy classification.
     fiscal_year:
       type: string
       description: Optional reviewed account metadata. Keep proof in signals, not attributes.
@@ -344,14 +349,84 @@ primitive_map:
     - account-context-present
     - account-context-missing
     - decision-input-contract
+classification_taxonomies:
+- id: gtm-persona
+  version: 1.0.0
+  output_attribute: persona
+  contributor_attribute_ids:
+  - person_title
+  - person_responsibilities
+  source_classes:
+  - user_provided
+  - customer_system
+  - reviewed_internal
+  - public_web
+  - synthetic_fixture
+  minimum_evidence:
+    observed_contributors: 2
+  basis_max_chars: 500
+  ambiguity_policy: human-review
+  no_match_policy: gap
+  conflict_policy: human-review
+  values:
+  - value: GTM Engineering
+    definition: Owns or builds technical GTM systems, data workflows, automation, integrations, or agent-assisted revenue operations.
+    positive_indicators:
+    - Current title explicitly names GTM engineering, growth engineering, revenue systems, or a closely equivalent technical operations role.
+    - Current responsibilities include building or governing GTM data, automation, integrations, agents, or operational systems.
+    exclusions:
+    - Quota-carrying sales responsibility without ownership of GTM systems or automation.
+    - Generic RevOps coordination without evidence of technical system ownership.
+  - value: PMM
+    definition: Owns product marketing, positioning, messaging, launches, competitive narrative, or sales-enablement content.
+    positive_indicators:
+    - Current title explicitly names product marketing or a closely equivalent messaging role.
+    - Current responsibilities include positioning, messaging, launches, competitive narrative, or enablement.
+    exclusions:
+    - Demand generation or sales work without product-marketing ownership.
+    - Product management without positioning or messaging ownership.
+  - value: PM
+    definition: Owns product direction, requirements, prioritization, or delivery decisions for a software product.
+    positive_indicators:
+    - Current title explicitly names product management or product leadership.
+    - Current responsibilities include roadmap, prioritization, requirements, or product delivery decisions.
+    exclusions:
+    - Project or program management without product decision authority.
+    - Product marketing without roadmap or product-delivery ownership.
+- id: gtm-account-segment
+  version: 1.0.0
+  output_attribute: segment
+  contributor_attribute_ids:
+  - company_fit_observation
+  source_classes:
+  - user_provided
+  - customer_system
+  - reviewed_internal
+  - public_web
+  - synthetic_fixture
+  minimum_evidence:
+    observed_contributors: 1
+  basis_max_chars: 500
+  ambiguity_policy: human-review
+  no_match_policy: gap
+  conflict_policy: human-review
+  values:
+  - value: agent-assisted GTM
+    definition: The company has observable use, ownership, or active development of AI-assisted, automated, or programmatic GTM operations where governed messaging context is relevant.
+    positive_indicators:
+    - Evidence describes GTM engineering, revenue systems, operational AI, agents, or programmatic GTM workflows.
+    - Evidence describes an active initiative to standardize or govern AI-assisted revenue or messaging operations.
+    exclusions:
+    - Generic AI positioning with no connection to GTM operations.
+    - Ordinary CRM or sales tooling use without evidence of automation, agents, or programmatic operations.
 decision_input_contracts:
 - id: gtm.prospect-context
-  version: 1.0.0
-  description: Minimum attempted-complete prospect context required before canonical GTM fit, brief, or copy-review work.
+  version: 3.0.0
+  description: Researched person and company evidence required before v3 taxonomy classification and deterministic GTM fit, brief, or copy-review work.
   normalization:
     prompt: prompts/normalize-prospect.yaml
-    prompt_version: gtm-prospect-context.v2
-    normalized_schema_ref: mdp.normalized-decision-input.v2
+    prompt_version: gtm-prospect-context.v3
+    normalized_schema_ref: mdp.normalized-decision-input.v3
   source_classes:
   - user_provided
   - customer_system
@@ -360,6 +435,7 @@ decision_input_contracts:
   - synthetic_fixture
   attributes:
   - id: company_name
+    processing: observed
     question: What is the reviewed company or account name?
     output_path: company
     value:
@@ -395,6 +471,7 @@ decision_input_contracts:
     sensitivity: customer-private
     status_behavior: {}
   - id: company_domain
+    processing: observed
     question: What is the reviewed canonical company domain?
     output_path: company_domain
     value:
@@ -430,6 +507,7 @@ decision_input_contracts:
     sensitivity: customer-private
     status_behavior: {}
   - id: person_name
+    processing: observed
     question: What is the reviewed name of the intended person?
     output_path: name
     value:
@@ -465,6 +543,7 @@ decision_input_contracts:
     sensitivity: personal-data
     status_behavior: {}
   - id: person_title
+    processing: observed
     question: What is the person's current reviewed job title?
     output_path: title
     value:
@@ -499,9 +578,11 @@ decision_input_contracts:
       allow_unknown: false
     sensitivity: personal-data
     status_behavior: {}
-  - id: persona
-    question: Which pack-owned persona is supported by the reviewed person context?
-    output_path: persona
+  - id: person_responsibilities
+    processing: observed
+    question: What current responsibilities or ownership are explicitly supported for this person?
+    description: Return bounded researched responsibilities, not an inferred persona label.
+    output_path: attributes.person_responsibilities
     value:
       type: string
     requirement: required
@@ -534,9 +615,45 @@ decision_input_contracts:
       allow_unknown: false
     sensitivity: personal-data
     status_behavior: {}
-  - id: segment
-    question: Which pack-owned segment is supported by the reviewed account context?
-    output_path: segment
+  - id: persona
+    processing: model-classified
+    classification_taxonomy:
+      id: gtm-persona
+      version: 1.0.0
+    question: Which pack-owned persona is supported by the reviewed person context?
+    output_path: persona
+    value:
+      type: string
+      enum:
+      - GTM Engineering
+      - PMM
+      - PM
+    requirement: required
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    source_classes: []
+    provenance:
+      required: false
+      required_fields: []
+    confidence:
+      required: false
+      minimum: 0
+    freshness:
+      required: false
+      max_age_days: 0
+      allow_unknown: true
+    sensitivity: personal-data
+    status_behavior: {}
+  - id: company_fit_observation
+    processing: observed
+    question: What separate source-backed company observation supports or contradicts fit with agent-assisted GTM operations?
+    description: Return the researched account-fit observation itself; do not assign the pack-owned segment.
+    output_path: background
     value:
       type: string
     requirement: required
@@ -569,8 +686,42 @@ decision_input_contracts:
       allow_unknown: false
     sensitivity: customer-private
     status_behavior: {}
-  - id: trigger
-    question: What source-backed event or condition makes this prospect relevant now?
+  - id: segment
+    processing: model-classified
+    classification_taxonomy:
+      id: gtm-account-segment
+      version: 1.0.0
+    question: Which pack-owned segment is supported by the reviewed account context?
+    output_path: segment
+    value:
+      type: string
+      enum:
+      - agent-assisted GTM
+    requirement: required
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    sensitivity: customer-private
+    source_classes: []
+    provenance:
+      required: false
+      required_fields: []
+    confidence:
+      required: false
+      minimum: 0
+    freshness:
+      required: false
+      max_age_days: 0
+      allow_unknown: true
+    status_behavior: {}
+  - id: why_now_observation
+    processing: observed
+    question: What separate source-backed event or condition makes this prospect relevant now?
+    description: Return the researched why-now observation itself. Keep it distinct from the account-fit observation.
     output_path: trigger
     value:
       type: string
@@ -605,6 +756,7 @@ decision_input_contracts:
     sensitivity: customer-private
     status_behavior: {}
   - id: contact_policy
+    processing: observed
     question: Does reviewed policy permit this prospect to enter deterministic fit and brief evaluation?
     output_path: attributes.contact_policy
     value:
@@ -655,7 +807,7 @@ decision_input_contracts:
     - why-now
     - fit
     contributor_attribute_ids:
-    - trigger
+    - why_now_observation
     value:
       type: string
     cardinality:

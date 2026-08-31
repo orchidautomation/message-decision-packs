@@ -26,7 +26,9 @@ use crate::models::{
     GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, MAX_SIGNAL_ATTEMPTS, MAX_SIGNAL_CONTRIBUTORS,
     MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_LOCATOR_LEN,
     MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE, MAX_SIGNAL_PROJECTIONS_PER_CONTRACT,
-    MAX_SIGNAL_QUALIFIED_ID_LEN, SIGNAL_OBSERVATION_CONTRACT_V2,
+    MAX_SIGNAL_QUALIFIED_ID_LEN, NORMALIZATION_HOST_ENVELOPE_CONTRACT,
+    NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS, NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS,
+    SIGNAL_OBSERVATION_CONTRACT_V2,
 };
 use crate::primitives::PrimitiveId;
 use crate::run_contracts::{
@@ -4541,6 +4543,31 @@ fn value_contract_schema() -> Value {
     })
 }
 
+fn prompt_host_envelope_schema(contract: &str, owned: &[&str], semantic: &[&str]) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "owned_top_level", "semantic_required_top_level"],
+        "properties": {
+            "contract": {"const": contract},
+            "owned_top_level": {
+                "type": "array",
+                "minItems": owned.len(),
+                "maxItems": owned.len(),
+                "uniqueItems": true,
+                "items": {"enum": owned}
+            },
+            "semantic_required_top_level": {
+                "type": "array",
+                "minItems": semantic.len(),
+                "maxItems": semantic.len(),
+                "uniqueItems": true,
+                "items": {"enum": semantic}
+            }
+        }
+    })
+}
+
 fn prompt_schema(card_kinds: [&str; 15]) -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4747,37 +4774,32 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                         "enum": [
                             PROMPT_CARD_PATCH_SCHEMA_REF,
                             PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-                            NORMALIZED_DECISION_INPUT_CONTRACT
+                            NORMALIZED_DECISION_INPUT_CONTRACT,
+                            NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+                            NORMALIZED_DECISION_INPUT_CONTRACT_V3
                         ],
                         "description": "Compact reference to the response schema family. The CLI derives the concrete schema from this ref, output_kind, prompt_id, and target_card_kinds."
                     },
                     "schema": prompt_response_schema_contract(),
                     "host_envelope": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["contract", "owned_top_level", "semantic_required_top_level"],
-                        "properties": {
-                            "contract": {"const": GOVERNED_HOST_ENVELOPE_CONTRACT},
-                            "owned_top_level": {
-                                "type": "array",
-                                "minItems": 8,
-                                "maxItems": 8,
-                                "uniqueItems": true,
-                                "items": {"enum": GOVERNED_HOST_ENVELOPE_OWNED_FIELDS}
-                            },
-                            "semantic_required_top_level": {
-                                "type": "array",
-                                "minItems": 4,
-                                "maxItems": 4,
-                                "uniqueItems": true,
-                                "items": {"enum": GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS}
-                            }
-                        }
+                        "oneOf": [
+                            prompt_host_envelope_schema(
+                                GOVERNED_HOST_ENVELOPE_CONTRACT,
+                                GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+                                GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS
+                            ),
+                            prompt_host_envelope_schema(
+                                NORMALIZATION_HOST_ENVELOPE_CONTRACT,
+                                NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
+                                NORMALIZATION_HOST_ENVELOPE_SEMANTIC_FIELDS
+                            )
+                        ]
                     },
                     "example": {
                         "anyOf": [
                             prompt_output_schema(card_kinds),
                             decision_input_envelope_schema(),
+                            crate::commands::v3_normalization::v3_sealed_envelope_schema(),
                             governed_artifact_example_schema()
                         ]
                     }
