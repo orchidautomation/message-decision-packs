@@ -80,6 +80,35 @@ const mergeProjectedSchemas = (left, right) => {
   return { anyOf: [left, right] }
 }
 
+// OpenAI's strict structured-output subset requires an explicit JSON Schema
+// `type` on every property, including properties constrained only by `const`
+// or `enum`. Pack-authored schemas are allowed to omit that redundant type,
+// so infer it only when the value is unambiguous. This keeps the canonical
+// schema untouched while producing a provider-compatible projection.
+const jsonSchemaTypeForValue = (value) => {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  switch (typeof value) {
+    case 'string': return 'string'
+    case 'boolean': return 'boolean'
+    case 'number': return Number.isInteger(value) ? 'integer' : 'number'
+    case 'object': return 'object'
+    default: return null
+  }
+}
+
+const inferEnumType = (values) => {
+  if (!Array.isArray(values) || values.length === 0) return null
+  const types = values.map(jsonSchemaTypeForValue)
+  if (types.every((type) => type && type === types[0])) return types[0]
+
+  // JSON has one numeric primitive type even though JSON Schema distinguishes
+  // `integer` from `number`. Preserve `integer` only when every value is an
+  // integer; otherwise a homogeneous numeric enum is a `number` enum.
+  if (values.every((value) => typeof value === 'number' && Number.isFinite(value))) return 'number'
+  return null
+}
+
 const projectSchemaNode = (schema) => {
   if (typeof schema === 'boolean') {
     if (schema) return {}
@@ -105,6 +134,17 @@ const projectSchemaNode = (schema) => {
   }
   if (Array.isArray(schema.allOf)) {
     for (const branch of schema.allOf) projected = mergeProjectedSchemas(projected, projectSchemaNode(branch))
+  }
+
+  if (!projected.type && Object.prototype.hasOwnProperty.call(projected, 'const')) {
+    const inferredType = jsonSchemaTypeForValue(projected.const)
+    if (!inferredType) throw new TypeError('const schema value must have a provider-compatible type')
+    projected.type = inferredType
+  }
+  if (!projected.type && Object.prototype.hasOwnProperty.call(projected, 'enum')) {
+    const inferredType = inferEnumType(projected.enum)
+    if (!inferredType) throw new TypeError('enum schema values must share a provider-compatible type')
+    projected.type = inferredType
   }
   if (projected.type === 'object' || projected.properties) {
     const properties = projected.properties || {}

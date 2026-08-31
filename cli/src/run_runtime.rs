@@ -3575,6 +3575,49 @@ fn project_output_schema_for_openai(schema: &Value) -> Result<Value> {
     Ok(projected)
 }
 
+fn json_schema_type_for_value(value: &Value) -> Option<&'static str> {
+    match value {
+        Value::Null => Some("null"),
+        Value::Bool(_) => Some("boolean"),
+        Value::String(_) => Some("string"),
+        Value::Array(_) => Some("array"),
+        Value::Object(_) => Some("object"),
+        Value::Number(number) => {
+            if number
+                .as_f64()
+                .is_some_and(|value| value.is_finite() && value.fract() == 0.0)
+            {
+                Some("integer")
+            } else {
+                Some("number")
+            }
+        }
+    }
+}
+
+fn infer_enum_type(value: &Value) -> Result<&'static str> {
+    let values = value
+        .as_array()
+        .ok_or_else(|| anyhow!("schema enum must be an array"))?;
+    if values.is_empty() {
+        return Err(anyhow!("schema enum must be non-empty"));
+    }
+    let types = values
+        .iter()
+        .map(json_schema_type_for_value)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| anyhow!("enum schema values must have provider-compatible types"))?;
+    if types.iter().all(|schema_type| *schema_type == types[0]) {
+        return Ok(types[0]);
+    }
+    if values.iter().all(Value::is_number) {
+        return Ok("number");
+    }
+    Err(anyhow!(
+        "enum schema values must share a provider-compatible type"
+    ))
+}
+
 fn provider_schema_source(schema: &Value, required_top_level: &[String]) -> Result<Value> {
     let mut source = schema.clone();
     let object = source.as_object_mut().ok_or_else(|| {
@@ -4407,6 +4450,19 @@ fn project_schema_node(schema: &Value) -> Result<Value> {
     if let Some(branches) = object.get("allOf").and_then(Value::as_array) {
         for branch in branches {
             projected = merge_projected_schemas(projected, project_schema_node(branch)?)?;
+        }
+    }
+    if !projected.contains_key("type") {
+        let inferred_type = if let Some(constant) = projected.get("const") {
+            json_schema_type_for_value(constant)
+                .ok_or_else(|| anyhow!("const schema value must have a provider-compatible type"))?
+        } else if let Some(enum_value) = projected.get("enum") {
+            infer_enum_type(enum_value)?
+        } else {
+            ""
+        };
+        if !inferred_type.is_empty() {
+            projected.insert("type".into(), Value::String(inferred_type.into()));
         }
     }
     let is_object = projected.get("type").and_then(Value::as_str) == Some("object")
@@ -5704,6 +5760,36 @@ mod tests {
             serde_json::json!(["count", "detail", "status"])
         );
         assert!(projected["properties"]["detail"].get("not").is_none());
+    }
+
+    #[test]
+    fn provider_schema_projection_infers_primitive_const_and_enum_types() {
+        let projected = project_output_schema_for_openai(&serde_json::json!({
+            "type": "object",
+            "properties": {
+                "contract": {"const": "mdp.prompt-output.v0"},
+                "state": {"enum": ["ready", "gap"]},
+                "count": {"enum": [1, 2]},
+                "ratio": {"enum": [0.5, 1.5]},
+                "enabled": {"const": true}
+            }
+        }))
+        .unwrap();
+        assert_eq!(projected["properties"]["contract"]["type"], "string");
+        assert_eq!(projected["properties"]["state"]["type"], "string");
+        assert_eq!(projected["properties"]["count"]["type"], "integer");
+        assert_eq!(projected["properties"]["ratio"]["type"], "number");
+        assert_eq!(projected["properties"]["enabled"]["type"], "boolean");
+    }
+
+    #[test]
+    fn provider_schema_projection_rejects_mixed_enum_types() {
+        let error = project_output_schema_for_openai(&serde_json::json!({
+            "type": "object",
+            "properties": {"mixed": {"enum": ["ready", 1]}}
+        }))
+        .unwrap_err();
+        assert!(error.to_string().contains("enum schema values must share"));
     }
 
     #[test]
