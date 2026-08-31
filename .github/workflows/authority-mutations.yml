@@ -2,36 +2,62 @@ name: Authority mutations
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - "cli/src/**"
-      - "cli/Cargo.toml"
-      - "cli/Cargo.lock"
-      - "plugin/assets/authority-conformance/corpus.json"
-      - "assets/authority-conformance/corpus.json"
-      - "scripts/test-authority-mutations.sh"
-      - "scripts/test-authority-mutations-contract.mjs"
-      - ".github/workflows/authority-mutations.yml"
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches:
-      - main
-    paths:
-      - "cli/src/**"
-      - "cli/Cargo.toml"
-      - "cli/Cargo.lock"
-      - "plugin/assets/authority-conformance/corpus.json"
-      - "assets/authority-conformance/corpus.json"
-      - "scripts/test-authority-mutations.sh"
-      - "scripts/test-authority-mutations-contract.mjs"
-      - ".github/workflows/authority-mutations.yml"
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: authority-mutations-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  authority-mutation-classifier:
+    runs-on: ubuntu-latest
+    outputs:
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - name: Classify authority mutation policy
+        id: classify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fullEvents = new Set(['push', 'schedule', 'workflow_dispatch'])
+            if (fullEvents.has(context.eventName) || (context.eventName === 'push' && context.ref.startsWith('refs/tags/'))) {
+              core.setOutput('classification', 'full')
+              return
+            }
+            if (context.eventName !== 'pull_request') {
+              core.setFailed(`unsupported event for authority mutation policy: ${context.eventName}`)
+              return
+            }
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: context.issue.number, per_page: 100,
+            })
+            const smokePath = (path) =>
+              path === '.github/workflows/authority-mutations.yml' ||
+              path === 'scripts/test-authority-mutations.sh' ||
+              path === 'scripts/test-authority-mutations-contract.mjs' ||
+              path === 'cli/Cargo.toml' ||
+              path === 'cli/Cargo.lock' ||
+              path.startsWith('cli/src/authority/') ||
+              path.startsWith('plugin/assets/authority-conformance/') ||
+              path.startsWith('assets/authority-conformance/')
+            const classification = files.some(({ filename }) => smokePath(filename)) ? 'smoke' : 'skip'
+            core.setOutput('classification', classification)
+            core.info(`authority mutation policy=${classification} changed_files=${files.length}`)
+
   authority-mutation-tool:
+    needs: authority-mutation-classifier
+    if: needs.authority-mutation-classifier.result == 'success' && (needs.authority-mutation-classifier.outputs.classification == 'smoke' || needs.authority-mutation-classifier.outputs.classification == 'full')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -49,20 +75,40 @@ jobs:
           if-no-files-found: error
 
   authority-mutation-contract:
-    needs: authority-mutation-tool
+    needs: authority-mutation-classifier
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 24
+        with: { node-version: 24 }
       - name: Validate authority mutation contract
         run: node scripts/test-authority-mutations-contract.mjs
 
+  authority-mutation-smoke:
+    needs: [authority-mutation-classifier, authority-mutation-tool, authority-mutation-contract]
+    if: needs.authority-mutation-classifier.result == 'success' && needs.authority-mutation-classifier.outputs.classification == 'smoke' && needs.authority-mutation-tool.result == 'success' && needs.authority-mutation-contract.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v8
+        with:
+          name: cargo-mutants-27.1.0
+          path: ${{ runner.temp }}/cargo-mutants-bin
+      - name: Add cargo-mutants to PATH
+        run: |
+          chmod +x "$RUNNER_TEMP/cargo-mutants-bin/cargo-mutants"
+          echo "$RUNNER_TEMP/cargo-mutants-bin" >> "$GITHUB_PATH"
+      - name: Kill smoke authority mutants
+        run: bash scripts/test-authority-mutations.sh --smoke
+
   authority-mutation-shard:
     name: authority-mutation-shard-${{ matrix.shard }}
-    needs: [authority-mutation-tool, authority-mutation-contract]
+    needs: [authority-mutation-classifier, authority-mutation-tool, authority-mutation-contract]
+    if: needs.authority-mutation-classifier.result == 'success' && needs.authority-mutation-classifier.outputs.classification == 'full' && needs.authority-mutation-tool.result == 'success' && needs.authority-mutation-contract.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -103,10 +149,20 @@ jobs:
 
   authority-mutations:
     if: always()
-    needs: authority-mutation-shard
+    needs: [authority-mutation-classifier, authority-mutation-contract, authority-mutation-smoke, authority-mutation-shard]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every authority mutation shard
+      - name: Require the valid authority mutation policy result
         env:
-          SHARD_RESULT: ${{ needs.authority-mutation-shard.result }}
-        run: test "$SHARD_RESULT" = success
+          CLASSIFICATION: ${{ needs.authority-mutation-classifier.outputs.classification }}
+          CLASSIFIER_RESULT: ${{ needs.authority-mutation-classifier.result }}
+          CONTRACT_RESULT: ${{ needs.authority-mutation-contract.result }}
+          SMOKE_RESULT: ${{ needs.authority-mutation-smoke.result }}
+          FULL_RESULT: ${{ needs.authority-mutation-shard.result }}
+        run: |
+          test "$CLASSIFIER_RESULT" = success
+          test "$CONTRACT_RESULT" = success
+          case "$CLASSIFICATION:$SMOKE_RESULT:$FULL_RESULT" in
+            smoke:success:skipped|skip:skipped:skipped|full:skipped:success) ;;
+            *) echo "invalid authority mutation result tuple: $CLASSIFICATION:$SMOKE_RESULT:$FULL_RESULT" >&2; exit 1 ;;
+          esac

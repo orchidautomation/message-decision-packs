@@ -2,265 +2,172 @@
 
 import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const workflowPath = join(root, '.github/workflows/authority-mutations.yml')
-const scriptPath = join(root, 'scripts/test-authority-mutations.sh')
+const workflow = readFileSync(join(root, '.github/workflows/authority-mutations.yml'), 'utf8')
+const script = readFileSync(join(root, 'scripts/test-authority-mutations.sh'), 'utf8')
+const ci = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8')
 
-const expectedShardMatrix = ['0/4', '1/4', '2/4', '3/4']
-const expectedVersion = '27.1.0'
-const expectedMaxCandidates = 24
-const expectedBuildTimeout = 120
-const expectedTestTimeout = 240
-const expectedSelector = '(from_run|permits_projection)'
-const expectedFile = 'src/authority/mod.rs'
+const complete = ['0/4', '1/4', '2/4', '3/4']
+const smoke = ['from_run', 'permits_projection']
+const smokeDescriptions = [
+  'replace SourceAuthority::from_run -> Self with Default::default\\(\\)',
+  'replace match guard decision_blocked with false in SourceAuthority::from_run',
+  'replace SourceAuthority::permits_projection -> bool with false',
+  'replace > with == in SourceAuthority::permits_projection',
+]
 
-const workflow = readFileSync(workflowPath, 'utf8')
-const script = readFileSync(scriptPath, 'utf8')
-
-// Workflow: every required shard must be present, exactly once, and the matrix
-// shard list must equal the documented topology.
 function jobBlock(text, name) {
   const lines = text.split(/\r?\n/)
-  const marker = `${name}:`
-  const start = lines.findIndex(
-    (line) => line.trim() === marker && line.match(/^\s*/u)[0].length === 2,
-  )
+  const start = lines.findIndex((line) => line.trim() === `${name}:` && line.match(/^\s*/u)[0].length === 2)
   assert.notEqual(start, -1, `missing job: ${name}`)
   let end = lines.length
   for (let index = start + 1; index < lines.length; index += 1) {
-    const trimmed = lines[index].trim()
     const indent = lines[index].match(/^\s*/u)[0].length
-    if (trimmed && indent <= 2) {
-      end = index
-      break
-    }
+    if (lines[index].trim() && indent <= 2) { end = index; break }
   }
-  return lines.slice(start, end)
+  return lines.slice(start, end).join('\n')
 }
 
-const shardJob = jobBlock(workflow, 'authority-mutation-shard')
-// strategy: must precede matrix:, so we slice from matrix: until the next
-// non-indented sibling (steps:).
-const matrixStart = shardJob.findIndex((line) => line.trim() === 'matrix:')
-assert.ok(matrixStart > -1, 'authority-mutation-shard job must declare a strategy.matrix block')
-let matrixEnd = shardJob.length
-for (let index = matrixStart + 1; index < shardJob.length; index += 1) {
-  const trimmed = shardJob[index].trim()
-  const indent = shardJob[index].match(/^\s*/u)[0].length
-  if (trimmed && indent <= 6) {
-    matrixEnd = index
-    break
-  }
-}
-const matrixBlock = shardJob.slice(matrixStart, matrixEnd)
-const matrixText = matrixBlock.join('\n')
-const shardListMatch = matrixText.match(/shard:\s*\[([^\]]+)\]/u)
-assert.ok(shardListMatch, 'authority-mutation-shard job must declare a shard list')
-const shardList = shardListMatch[1]
-  .split(',')
-  .map((s) => s.trim().replace(/^["']|["']$/gu, ''))
-  .filter(Boolean)
-assert.deepEqual(
-  shardList,
-  expectedShardMatrix,
-  'authority mutation shard matrix must enumerate exactly the documented 0/4..3/4 topology',
-)
-
-// Every shard must be referenced exactly once, both as matrix input and as a
-// runtime argument passed into the script.
-const duplicates = shardList.filter((value, index, list) => list.indexOf(value) !== index)
-assert.deepEqual(duplicates, [], 'authority mutation shard list must not contain duplicates')
-
-// Each shard job must invoke the script with its matrix.shard as the first
-// positional argument and must not bypass failures.
-for (const line of shardJob) {
-  if (line.match(/^\s{4}shard:/u)) continue
-  if (line.match(/^\s{6}-/u)) {
-    assert.ok(
-      !/continue-on-error/.test(line),
-      'authority-mutation-shard step must not use continue-on-error',
-    )
-  }
-}
-assert.ok(
-  shardJob.join('\n').includes('bash scripts/test-authority-mutations.sh "${{ matrix.shard }}"'),
-  'authority-mutation-shard step must invoke scripts/test-authority-mutations.sh with the exact matrix shard argument',
-)
-
-// The aggregate job must require every shard to succeed.
-const aggregateJob = jobBlock(workflow, 'authority-mutations')
-const aggregateText = aggregateJob.join('\n')
-assert.match(
-  aggregateText,
-  /SHARD_RESULT\s*:\s*\$\{\{\s*needs\.authority-mutation-shard\.result\s*\}\}/u,
-  'aggregate job must read the authority-mutation-shard matrix result',
-)
-assert.match(
-  aggregateText,
-  /test\s+"\$SHARD_RESULT"\s*=\s*success/u,
-  'aggregate job must require the authority-mutation-shard matrix result to equal "success"',
-)
-assert.ok(
-  /needs:\s*authority-mutation-shard/.test(aggregateText),
-  'aggregate job must depend on authority-mutation-shard',
-)
-assert.ok(
-  /if:\s*always\(\)/.test(aggregateText),
-  'aggregate job must run with if: always() so a shard failure still produces the aggregate gate',
-)
-
-// Cargo-mutants tool job must install the pinned version and not skip on
-// non-zero exits.
-const toolJob = jobBlock(workflow, 'authority-mutation-tool')
-const toolText = toolJob.join('\n')
-assert.match(
-  toolText,
-  new RegExp(`cargo install cargo-mutants --version ${expectedVersion} --locked`, 'u'),
-  `authority-mutation-tool job must install cargo-mutants ${expectedVersion} (locked)`,
-)
-assert.ok(
-  /timeout-minutes:\s*5/.test(toolText),
-  'authority-mutation-tool job must declare timeout-minutes: 5 to fail fast on a broken tool install',
-)
-assert.ok(
-  /timeout-minutes:\s*40/.test(shardJob.join('\n')),
-  'authority-mutation-shard job must declare timeout-minutes: 40 to fail closed on hung mutations',
-)
-
-// Cache boundaries: build-cli caches must be keyed by runner OS, matrix
-// target, pinned Rust toolchain, and the CLI lockfile so incompatible
-// artifacts cannot be reused.
-function releaseJobBlock() {
-  const releasePath = join(root, '.github/workflows/release.yml')
-  if (!existsSync(releasePath)) return null
-  return readFileSync(releasePath, 'utf8')
-}
-const releaseWorkflow = releaseJobBlock()
-if (releaseWorkflow) {
-  const buildCli = jobBlock(releaseWorkflow, 'build-cli')
-  const buildCliText = buildCli.join('\n')
-  assert.match(
-    buildCliText,
-    /uses:\s*Swatinem\/rust-cache@v2/u,
-    'release build-cli job must use Swatinem/rust-cache@v2',
+function classify(event, paths) {
+  if (event !== 'pull_request') return 'full'
+  return paths.some((path) =>
+    path === '.github/workflows/authority-mutations.yml' ||
+    path === 'scripts/test-authority-mutations.sh' ||
+    path === 'scripts/test-authority-mutations-contract.mjs' ||
+    path === 'cli/Cargo.toml' ||
+    path === 'cli/Cargo.lock' ||
+    path.startsWith('cli/src/authority/') ||
+    path.startsWith('plugin/assets/authority-conformance/') ||
+    path.startsWith('assets/authority-conformance/'),
   )
-  assert.match(
-    buildCliText,
-    /shared-key:\s*release-\$\{\{\s*matrix\.os\s*\}\}-\$\{\{\s*matrix\.target\s*\}\}/u,
-    'release cache shared-key must include both ${{ matrix.os }} and ${{ matrix.target }}',
-  )
-  assert.match(
-    buildCliText,
-    /workspaces:\s*\|\s*\n\s*cli -> cli\/target/u,
-    'release cache workspaces must map cli -> cli/target and never include source or release-assets',
+    ? 'smoke'
+    : 'skip'
+}
+function aggregate(classification, contract, smokeResult, fullResult, classifier = 'success') {
+  if (classifier !== 'success' || contract !== 'success') return false
+  return (
+    (classification === 'smoke' && smokeResult === 'success' && fullResult === 'skipped') ||
+    (classification === 'skip' && smokeResult === 'skipped' && fullResult === 'skipped') ||
+    (classification === 'full' && smokeResult === 'skipped' && fullResult === 'success')
   )
 }
 
-// Authority shard cache: each shard must cache only the cli/ target, never
-// mutated source, and must be keyed by runner OS, Rust 1.88.0, lockfile,
-// cargo-mutants version, and shard topology.
-assert.match(
-  workflow,
-  /uses:\s*Swatinem\/rust-cache@v2/u,
-  'authority-mutation-shard job must use Swatinem/rust-cache@v2 to cache dependency builds',
-)
-assert.match(
-  workflow,
-  /shared-key:\s*authority-mutations-\$\{\{\s*runner\.os\s*\}\}-\$\{\{\s*matrix\.shard\s*\}\}/u,
-  'authority cache shared-key must combine runner.os with matrix.shard to prevent cross-shard contamination',
-)
-assert.match(
-  workflow,
-  /workspaces:\s*\|\s*\n\s*cli -> cli\/target/u,
-  'authority cache workspaces must map cli -> cli/target only',
-)
-assert.doesNotMatch(
-  workflow,
-  /workspaces:[\s\S]{0,200}\b(?:src|source|assets|release-assets)\b/u,
-  'authority cache workspaces must never include source, assets, or release-assets',
-)
+// Pure policy fixtures exercise the fail-closed routing contract.
+assert.equal(classify('push', ['README.md']), 'full')
+assert.equal(classify('schedule', []), 'full')
+assert.equal(classify('workflow_dispatch', []), 'full')
+assert.equal(classify('pull_request', ['cli/src/main.rs']), 'skip')
+assert.equal(classify('pull_request', ['docs/getting-started.md']), 'skip')
+assert.equal(classify('pull_request', ['cli/src/authority/mod.rs']), 'smoke')
+assert.equal(classify('pull_request', ['scripts/test-authority-mutations.sh']), 'smoke')
+assert.equal(classify('pull_request', ['cli/Cargo.toml']), 'smoke')
+assert.equal(classify('pull_request', ['cli/Cargo.lock']), 'smoke')
+assert.equal(classify('pull_request', ['plugin/assets/authority-conformance/corpus.json']), 'smoke')
 
-// Script contract: must enforce the supported topology, candidate cap, and
-// the deterministic listing mode used by the disjoint-coverage check.
-assert.match(
-  script,
-  new RegExp(`EXPECTED_VERSION="${expectedVersion}"`),
-  'authority mutation script must pin the cargo-mutants version',
-)
-assert.match(
-  script,
-  new RegExp(`MAX_CANDIDATES=${expectedMaxCandidates}`),
-  'authority mutation script must cap the candidate count at 24',
-)
-assert.match(
-  script,
-  new RegExp(`BUILD_TIMEOUT_SECONDS=${expectedBuildTimeout}`),
-  'authority mutation script must cap build timeout at 120s',
-)
-assert.match(
-  script,
-  new RegExp(`TEST_TIMEOUT_SECONDS=${expectedTestTimeout}`),
-  'authority mutation script must cap test timeout at 240s',
-)
-assert.ok(
-  script.includes(`SELECTOR='${expectedSelector}'`),
-  'authority mutation script must use the (from_run|permits_projection) selector',
-)
-assert.match(
-  script,
-  new RegExp(`MUTATION_FILE='${expectedFile}'`),
-  'authority mutation script must target src/authority/mod.rs',
-)
-assert.ok(
-  script.includes('0/4|1/4|2/4|3/4) shard_args='),
-  'authority mutation script must enumerate the 0/4..3/4 shard topology in a single case branch',
-)
-assert.doesNotMatch(
-  script,
-  /\b0\/2\b|\b1\/2\b/u,
-  'authority mutation script must not accept the legacy two-shard topology',
-)
-assert.match(
-  script,
-  /MDP_AUTHORITY_MUTATIONS_LIST_ONLY/u,
-  'authority mutation script must expose a deterministic list-only mode for the shard coverage contract',
-)
-assert.match(
-  script,
-  /--list/u,
-  'authority mutation script must accept a --list flag to print the candidate list',
-)
-assert.match(
-  script,
-  /--help/u,
-  'authority mutation script must accept --help for contract smoke runs',
-)
-assert.match(
-  script,
-  /--in-place/u,
-  'authority mutation script must invoke cargo-mutants with --in-place so each shard run is isolated',
-)
+for (const tuple of [
+  ['smoke', 'success', 'success', 'skipped'],
+  ['skip', 'success', 'skipped', 'skipped'],
+  ['full', 'success', 'skipped', 'success'],
+]) assert.equal(aggregate(...tuple), true)
+for (const tuple of [
+  ['smoke', 'success', 'failure', 'skipped'],
+  ['skip', 'success', 'success', 'skipped'],
+  ['full', 'success', 'skipped', 'failure'],
+  ['smoke', 'failure', 'success', 'skipped'],
+  ['skip', 'failure', 'skipped', 'skipped'],
+  ['skip', 'success', 'skipped', 'skipped', 'failure'],
+  ['unknown', 'success', 'skipped', 'skipped'],
+]) assert.equal(aggregate(...tuple), false)
 
-// Fail-closed: comments, echo, and conditional bypasses must not be enough
-// to satisfy any of the required assertions. We assert that the script
-// itself contains none of the documented bypass patterns.
-const bypassAnchors = [
-  /^\s*#\s*cargo\s+mutants/mu,
-]
-for (const anchor of bypassAnchors) {
-  assert.equal(
-    anchor.test(script),
-    false,
-    `authority mutation script must not contain a documented bypass pattern: ${anchor}`,
-  )
+assert.match(workflow, /branches:\s*\[main\]/u)
+const pullRequestTrigger = workflow.match(/pull_request:\n([\s\S]*?)(?=\n\s{2}\w|$)/u)?.[1] ?? ''
+assert.match(pullRequestTrigger, /branches:\s*\[main\]/u)
+assert.doesNotMatch(pullRequestTrigger, /paths:/u, 'pull_request must reach the classifier for every path')
+assert.match(workflow, /tags:\s*\["v\*"\]/u)
+assert.match(workflow, /schedule:/u)
+assert.match(workflow, /workflow_dispatch:/u)
+assert.match(workflow, /actions\/github-script@v7/u)
+assert.match(workflow, /github\.paginate\(github\.rest\.pulls\.listFiles/u)
+assert.match(workflow, /classification.*\? 'smoke' : 'skip'/u)
+assert.match(workflow, /core\.setFailed\(`unsupported event/u)
+assert.match(workflow, /authority-mutation-classifier:/u)
+assert.match(workflow, /authority-mutations-\$\{\{ github\.event\.pull_request\.number/u)
+assert.match(workflow, /authority-mutation-smoke:/u)
+assert.match(workflow, /bash scripts\/test-authority-mutations\.sh --smoke/u)
+assert.match(workflow, /authority-mutation-shard:/u)
+assert.deepEqual([...workflow.matchAll(/shard: \["([^"]+)", "([^"]+)", "([^"]+)", "([^"]+)"\]/gu)][0].slice(1), complete)
+assert.match(workflow, /authority-mutations:\n    if: always\(\)/u)
+assert.match(workflow, /needs: \[authority-mutation-classifier, authority-mutation-contract, authority-mutation-smoke, authority-mutation-shard\]/u)
+assert.match(workflow, /smoke:success:skipped\|skip:skipped:skipped\|full:skipped:success/u)
+assert.match(workflow, /test "\$CLASSIFIER_RESULT" = success/u)
+assert.match(workflow, /test "\$CONTRACT_RESULT" = success/u)
+assert.match(workflow, /cargo install cargo-mutants --version 27\.1\.0 --locked/u)
+assert.match(workflow, /timeout-minutes: 5/u)
+assert.match(workflow, /timeout-minutes: 40/u)
+assert.match(workflow, /uses: Swatinem\/rust-cache@v2/u)
+assert.match(workflow, /shared-key: authority-mutations-\$\{\{ runner\.os \}\}-\$\{\{ matrix\.shard \}\}/u)
+assert.match(workflow, /workspaces:\s*\|\s*\n\s*cli -> cli\/target/u)
+assert.doesNotMatch(workflow, /workspaces:[\s\S]{0,200}\b(?:src|source|assets|release-assets)\b/u)
+assert.doesNotMatch(workflow, /continue-on-error/u)
+
+assert.match(script, /set -euo pipefail/u)
+assert.match(script, /EXPECTED_VERSION="27\.1\.0"/u)
+assert.match(script, /MAX_CANDIDATES=24/u)
+assert.match(script, /MAX_SMOKE_CANDIDATES=8/u)
+assert.match(script, /BUILD_TIMEOUT_SECONDS=120/u)
+assert.match(script, /TEST_TIMEOUT_SECONDS=240/u)
+assert.match(script, /SELECTOR='\(from_run\|permits_projection\)'/u)
+assert.match(script, /MUTATION_FILE='src\/authority\/mod\.rs'/u)
+for (const description of smokeDescriptions) assert.ok(script.includes(`'${description}'`), `missing smoke selector: ${description}`)
+assert.match(script, /SMOKE_SELECTOR='\(replace SourceAuthority::from_run/u)
+assert.match(script, /expected exactly one/u)
+assert.match(script, /--smoke/u)
+assert.match(script, /does not support sharding/u)
+assert.match(script, /awk 'NF \{ seen\[\$0\]\+\+ \}/u)
+assert.match(script, /outside the complete candidate set/u)
+assert.match(script, /--in-place/u)
+const smokeExecution = script.slice(script.lastIndexOf('if [ "$smoke" = "1" ]; then'))
+const smokeElse = smokeExecution.indexOf('\nelse\n')
+assert.equal((smokeExecution.slice(0, smokeElse).match(/cargo mutants/g) || []).length, 1, 'smoke mode must execute cargo-mutants once for the union selector')
+assert.match(script, /0\/4\|1\/4\|2\/4\|3\/4/u)
+assert.match(workflow, /bash scripts\/test-authority-mutations\.sh "\$\{\{ matrix\.shard \}\}"/u)
+assert.doesNotMatch(script, /0\/2|1\/2/u)
+assert.doesNotMatch(script, /^\s*#\s*cargo\s+mutants/mu)
+assert.match(ci, /node scripts\/test-authority-mutations-contract\.mjs/u)
+assert.match(ci, /scripts\/test-authority-mutations\.sh/u)
+
+if (existsSync(join(root, '.github/workflows/release.yml'))) {
+  const release = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8')
+  const buildCli = jobBlock(release, 'build-cli')
+  assert.match(buildCli, /uses:\s*Swatinem\/rust-cache@v2/u)
+  assert.match(buildCli, /shared-key:\s*release-\$\{\{\s*matrix\.os\s*\}\}-\$\{\{\s*matrix\.target\s*\}\}/u)
+  assert.match(buildCli, /workspaces:\s*\|\s*\n\s*cli -> cli\/target/u)
+  assert.doesNotMatch(buildCli, /workspaces:[\s\S]{0,200}\b(?:src|source|assets|release-assets)\b/u)
 }
 
-// The required shard matrix union must equal the unsharded candidate list.
-// When cargo-mutants is unavailable locally, the disjoint-coverage helper
-// short-circuits with a clear message; we only assert it in environments
-// where the binary is installed. The script's deterministic listing path
-// stays the same regardless of execution.
+// When the pinned tool is available, prove that the complete four-shard
+// topology is disjoint and exhaustive. The check is optional locally because
+// CI installs the pinned binary in the workflow tool job.
+const toolProbe = spawnSync('cargo-mutants', ['--help'], { stdio: 'ignore' })
+if (toolProbe.error?.code === 'ENOENT') {
+  console.log('cargo-mutants not installed locally; skipped list topology execution.')
+} else {
+  const list = (args) => execFileSync('bash', [join(root, 'scripts/test-authority-mutations.sh'), '--list', ...args], {
+    cwd: root, env: { ...process.env, MDP_AUTHORITY_MUTATIONS_LIST_ONLY: '1' }, encoding: 'utf8',
+  }).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const completeList = list([])
+  const shardLists = complete.map((shard) => list([shard]))
+  assert.equal(new Set(completeList).size, completeList.length, 'complete candidate list must not contain duplicates')
+  assert.deepEqual(shardLists.flat().sort(), completeList.slice().sort(), 'complete shard union must equal unsharded candidates')
+  assert.equal(new Set(shardLists.flat()).size, completeList.length, 'complete shards must be disjoint')
+  const smokeList = list(['--smoke'])
+  assert.equal(smokeList.length, 4, 'smoke list must contain exactly four candidates')
+  const displayDescription = (description) => description.replaceAll('\\(', '(').replaceAll('\\)', ')')
+  assert.deepEqual(smokeDescriptions.map((description) => smokeList.filter((candidate) => candidate.includes(displayDescription(description))).length), [1, 1, 1, 1], 'smoke list must contain one candidate for each declared description')
+}
+
 console.log('Authority mutation workflow and script contracts passed.')

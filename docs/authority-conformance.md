@@ -41,13 +41,17 @@ The focused property suite uses 256 cases and transformation sequences of at mos
 make validate-authority-mutations
 ```
 
-The mutation gate pins `cargo-mutants` 27.1.0, permits at most 24 candidates,
-builds the pinned tool once per workflow run, splits the selected candidates
-across two isolated CI shards, and uses a 120-second build timeout, a 120-second
-per-mutant test timeout, and a 25-minute limit per shard. The run-scoped tool
-artifact keeps installation time outside each shard's mutation budget. The
-aggregate `authority-mutations` check passes only when both shards pass. Local
-runs remain unsharded unless `0/2` or `1/2` is passed explicitly.
+The mutation gate pins `cargo-mutants` 27.1.0 and keeps the complete campaign
+at at most 24 candidates. Pull requests touching the authority implementation,
+authority corpus, mutation runner/contract, or mutation workflow run a bounded
+smoke campaign selecting `from_run` and `permits_projection`; unrelated pull
+requests skip mutation workers but still receive the stable
+`authority-mutations` required check. Pushes to `main`, release tags, scheduled
+runs, and manual dispatch retain the complete campaign across isolated `0/4`,
+`1/4`, `2/4`, and `3/4` shards. The complete and smoke paths use 120-second
+build and 240-second per-mutant test timeouts. Classification and the aggregate
+truth table fail closed, so only the valid smoke, skip, or full result tuple can
+pass branch protection.
 
 ## Review and release proof
 
