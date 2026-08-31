@@ -8,7 +8,7 @@ if ! command -v mdp >/dev/null 2>&1; then
   exit 1
 fi
 
-mdp --json init --template gtm --name "Example Message Pack" --dir "$TARGET_DIR" --force
+mdp --json init --template gtm --dir "$TARGET_DIR" --force
 mdp --json validate --dir "$TARGET_DIR"
 mdp --json route --entries --dir "$TARGET_DIR" --persona "GTM Engineering" --job "linkedin outbound copy"
 mdp --json fit --dir "$TARGET_DIR" --prospect "$TARGET_DIR/examples/clay-row.json"

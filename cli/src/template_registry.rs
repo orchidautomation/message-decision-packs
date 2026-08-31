@@ -71,7 +71,7 @@ const PROPOSAL_EXAMPLES: &[&str] = &["examples/proof-output/valid-binding.json"]
 static DESCRIPTORS: &[TemplateDescriptor] = &[
     TemplateDescriptor {
         id: "gtm",
-        default_name: "Example Message Pack",
+        default_name: "Basic MDP Template",
         profile_id: "gtm",
         asset_root: "basic",
         options: GTM_OPTIONS,
