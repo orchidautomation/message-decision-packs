@@ -27,12 +27,14 @@
     "complete": "The full Rust test suite passed: 918 tests across unit and integration binaries, with zero failures",
     "format": "cargo fmt --manifest-path cli/Cargo.toml --check passed",
     "diff": "git diff --check passed",
+    "versionSync": "The 0.1.104 version is synchronized across Cargo, the canonical Codex plugin manifest, and Pluxx config; local version-sync regression checks passed",
     "authoritativeNext": "Exact pull-request-head GitHub Actions is the authoritative hosted-runner proof"
   },
   "boundaries": {
     "authority": "The host sealer copies collected attribute status objects; requirements validation remains unchanged",
     "projection": "Only observed attempts contribute normalized values, signals, and classification evidence",
     "relay": "Orchid Work event emission remained unavailable because the adapter compared semantically identical plan objects using key-order-sensitive JSON serialization",
+    "planDeviation": "Pull-request CI exposed the canonical Codex plugin manifest as a fourth authored version authority; Sol integration synchronized it to 0.1.104 after the plan had named only three surfaces",
     "delivery": "No merge, release, deployment, installation, or outreach action was performed"
   },
   "delivery": {
