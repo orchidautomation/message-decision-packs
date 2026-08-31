@@ -11,8 +11,12 @@ BUILD_TIMEOUT_SECONDS=120
 # authority changes rather than intermittently timing out its baseline.
 TEST_TIMEOUT_SECONDS=240
 SELECTOR='(from_run|permits_projection)'
-SMOKE_SELECTOR='^(from_run|permits_projection)$'
-SMOKE_SELECTORS=('from_run' 'permits_projection')
+SMOKE_SELECTORS=(
+  'replace SourceAuthority::from_run -> Self with Default::default\(\)'
+  'replace match guard decision_blocked with false in SourceAuthority::from_run'
+  'replace SourceAuthority::permits_projection -> bool with false'
+  'replace > with == in SourceAuthority::permits_projection'
+)
 MUTATION_FILE='src/authority/mod.rs'
 
 usage() {
@@ -109,11 +113,12 @@ trap 'rm -f "$list_file" "$complete_list_file"' EXIT
 if [ "$smoke" = "1" ]; then
   : >"$list_file"
   for smoke_selector in "${SMOKE_SELECTORS[@]}"; do
-    selector="^${smoke_selector}$"
+    selector="$smoke_selector"
     selector_file="$(mktemp)"
     cargo mutants --list --file "$MUTATION_FILE" --re "$selector" >"$selector_file"
-    if ! grep -qve '^[[:space:]]*$' "$selector_file"; then
-      echo "smoke selector produced no candidates: ${smoke_selector}" >&2
+    selector_count="$(grep -cve '^[[:space:]]*$' "$selector_file" || true)"
+    if [ "$selector_count" -ne 1 ]; then
+      echo "smoke selector produced ${selector_count} candidates, expected exactly one: ${smoke_selector}" >&2
       rm -f "$selector_file"
       exit 1
     fi
@@ -133,7 +138,6 @@ if [ "$smoke" = "1" ]; then
       exit 1
     fi
   done <"$list_file"
-  selector="$SMOKE_SELECTOR"
 else
   selector="$SELECTOR"
   cargo mutants --list --file "$MUTATION_FILE" --re "$selector" "${shard_args[@]}" >"$list_file"
@@ -163,10 +167,21 @@ printf 'authority mutation candidates=%s version=%s shard=%s\n' \
 # cargo-mutants' crate-only scratch copy cannot compile the unmutated baseline.
 # CI runs each shard in its own disposable checkout, making in-place mode safe
 # while preserving parallel coverage across the isolated jobs.
-cargo mutants \
-  --file "$MUTATION_FILE" \
-  --re "$selector" \
-  --build-timeout "$BUILD_TIMEOUT_SECONDS" \
-  --timeout "$TEST_TIMEOUT_SECONDS" \
-  --in-place \
-  "${shard_args[@]}"
+if [ "$smoke" = "1" ]; then
+  for smoke_selector in "${SMOKE_SELECTORS[@]}"; do
+    cargo mutants \
+      --file "$MUTATION_FILE" \
+      --re "$smoke_selector" \
+      --build-timeout "$BUILD_TIMEOUT_SECONDS" \
+      --timeout "$TEST_TIMEOUT_SECONDS" \
+      --in-place
+  done
+else
+  cargo mutants \
+    --file "$MUTATION_FILE" \
+    --re "$selector" \
+    --build-timeout "$BUILD_TIMEOUT_SECONDS" \
+    --timeout "$TEST_TIMEOUT_SECONDS" \
+    --in-place \
+    "${shard_args[@]}"
+fi

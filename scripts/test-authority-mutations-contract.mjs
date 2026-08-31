@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +13,24 @@ const ci = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8')
 
 const complete = ['0/4', '1/4', '2/4', '3/4']
 const smoke = ['from_run', 'permits_projection']
+const smokeDescriptions = [
+  'replace SourceAuthority::from_run -> Self with Default::default\\(\\)',
+  'replace match guard decision_blocked with false in SourceAuthority::from_run',
+  'replace SourceAuthority::permits_projection -> bool with false',
+  'replace > with == in SourceAuthority::permits_projection',
+]
+
+function jobBlock(text, name) {
+  const lines = text.split(/\r?\n/)
+  const start = lines.findIndex((line) => line.trim() === `${name}:` && line.match(/^\s*/u)[0].length === 2)
+  assert.notEqual(start, -1, `missing job: ${name}`)
+  let end = lines.length
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const indent = lines[index].match(/^\s*/u)[0].length
+    if (lines[index].trim() && indent <= 2) { end = index; break }
+  }
+  return lines.slice(start, end).join('\n')
+}
 
 function classify(event, paths) {
   if (event !== 'pull_request') return 'full'
@@ -20,6 +38,8 @@ function classify(event, paths) {
     path === '.github/workflows/authority-mutations.yml' ||
     path === 'scripts/test-authority-mutations.sh' ||
     path === 'scripts/test-authority-mutations-contract.mjs' ||
+    path === 'cli/Cargo.toml' ||
+    path === 'cli/Cargo.lock' ||
     path.startsWith('cli/src/authority/') ||
     path.startsWith('plugin/assets/authority-conformance/') ||
     path.startsWith('assets/authority-conformance/'),
@@ -43,6 +63,8 @@ assert.equal(classify('workflow_dispatch', []), 'full')
 assert.equal(classify('pull_request', ['cli/src/main.rs']), 'skip')
 assert.equal(classify('pull_request', ['cli/src/authority/mod.rs']), 'smoke')
 assert.equal(classify('pull_request', ['scripts/test-authority-mutations.sh']), 'smoke')
+assert.equal(classify('pull_request', ['cli/Cargo.toml']), 'smoke')
+assert.equal(classify('pull_request', ['cli/Cargo.lock']), 'smoke')
 assert.equal(classify('pull_request', ['plugin/assets/authority-conformance/corpus.json']), 'smoke')
 
 for (const tuple of [
@@ -94,8 +116,9 @@ assert.match(script, /BUILD_TIMEOUT_SECONDS=120/u)
 assert.match(script, /TEST_TIMEOUT_SECONDS=240/u)
 assert.match(script, /SELECTOR='\(from_run\|permits_projection\)'/u)
 assert.match(script, /MUTATION_FILE='src\/authority\/mod\.rs'/u)
-assert.match(script, /SMOKE_SELECTOR='\^\(from_run\|permits_projection\)\$'/u)
-assert.ok(script.includes("SMOKE_SELECTORS=('from_run' 'permits_projection')"), 'smoke selectors must be declared in order')
+for (const description of smokeDescriptions) assert.ok(script.includes(`'${description}'`), `missing smoke selector: ${description}`)
+assert.doesNotMatch(script, /SMOKE_SELECTOR=/u)
+assert.match(script, /expected exactly one/u)
 assert.match(script, /--smoke/u)
 assert.match(script, /does not support sharding/u)
 assert.match(script, /awk 'NF \{ seen\[\$0\]\+\+ \}/u)
@@ -108,11 +131,20 @@ assert.doesNotMatch(script, /^\s*#\s*cargo\s+mutants/mu)
 assert.match(ci, /node scripts\/test-authority-mutations-contract\.mjs/u)
 assert.match(ci, /scripts\/test-authority-mutations\.sh/u)
 
+if (existsSync(join(root, '.github/workflows/release.yml'))) {
+  const release = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8')
+  const buildCli = jobBlock(release, 'build-cli')
+  assert.match(buildCli, /uses:\s*Swatinem\/rust-cache@v2/u)
+  assert.match(buildCli, /shared-key:\s*release-\$\{\{\s*matrix\.os\s*\}\}-\$\{\{\s*matrix\.target\s*\}\}/u)
+  assert.match(buildCli, /workspaces:\s*\|\s*\n\s*cli -> cli\/target/u)
+  assert.doesNotMatch(buildCli, /workspaces:[\s\S]{0,200}\b(?:src|source|assets|release-assets)\b/u)
+}
+
 // When the pinned tool is available, prove that the complete four-shard
 // topology is disjoint and exhaustive. The check is optional locally because
 // CI installs the pinned binary in the workflow tool job.
 try {
-  execFileSync('cargo-mutants', ['--version'], { stdio: 'ignore' })
+  execFileSync('cargo', ['mutants', '--version'], { stdio: 'ignore' })
   const list = (args) => execFileSync('bash', [join(root, 'scripts/test-authority-mutations.sh'), '--list', ...args], {
     cwd: root, env: { ...process.env, MDP_AUTHORITY_MUTATIONS_LIST_ONLY: '1' }, encoding: 'utf8',
   }).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
@@ -121,6 +153,9 @@ try {
   assert.equal(new Set(completeList).size, completeList.length, 'complete candidate list must not contain duplicates')
   assert.deepEqual(shardLists.flat().sort(), completeList.slice().sort(), 'complete shard union must equal unsharded candidates')
   assert.equal(new Set(shardLists.flat()).size, completeList.length, 'complete shards must be disjoint')
+  const smokeList = list(['--smoke'])
+  assert.equal(smokeList.length, 4, 'smoke list must contain exactly four candidates')
+  assert.deepEqual(smokeDescriptions.map((description) => smokeList.filter((candidate) => candidate.includes(description.replaceAll('\\\\', '\\'))).length), [1, 1, 1, 1], 'smoke list must contain one candidate for each declared description')
 } catch (error) {
   if (error?.code !== 'ENOENT') throw error
   console.log('cargo-mutants not installed locally; skipped list topology execution.')

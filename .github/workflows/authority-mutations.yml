@@ -55,6 +55,8 @@ jobs:
               path === '.github/workflows/authority-mutations.yml' ||
               path === 'scripts/test-authority-mutations.sh' ||
               path === 'scripts/test-authority-mutations-contract.mjs' ||
+              path === 'cli/Cargo.toml' ||
+              path === 'cli/Cargo.lock' ||
               path.startsWith('cli/src/authority/') ||
               path.startsWith('plugin/assets/authority-conformance/') ||
               path.startsWith('assets/authority-conformance/')
