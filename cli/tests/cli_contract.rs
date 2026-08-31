@@ -168,6 +168,8 @@ fn help_and_capabilities_expose_grouping_status_and_canonical_options() {
             "{command} should be listed under {heading}, not merely elsewhere in help"
         );
     }
+    assert!(text.contains("Quickstart: mdp init --dir PACK_ROOT --name NAME"));
+    assert!(text.contains("mdp check --dir PACK_ROOT --job JOB_ID"));
 
     let check_help = run(&["check", "--help"]);
     let check_text = String::from_utf8(check_help.stdout).unwrap();

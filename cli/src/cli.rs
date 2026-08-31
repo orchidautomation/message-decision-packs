@@ -812,6 +812,9 @@ pub(crate) fn grouped_root_help() -> String {
         ));
     }
     output.push_str("\nOptions:\n  --json                   Emit stable machine-readable JSON\n  --summary                Emit a concise status summary instead of the full command payload\n  -h, --help               Print help\n  -V, --version            Print version\n");
+    if let Some(after_help) = command.get_after_help() {
+        output.push_str(&format!("\n{after_help}\n"));
+    }
     output.push_str("\nUse `mdp <COMMAND> --help` for command-specific options.\n");
     output
 }
