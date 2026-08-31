@@ -119,6 +119,19 @@ fn summaries_are_concise_and_json_omits_null_objects_recursively() {
     assert_eq!(value["summary"]["valid"], true);
     assert!(value["summary"]["error_count"].is_number());
     assert!(value["summary"]["issue_count"].is_number());
+
+    let doctor = run(&[
+        "--summary",
+        "doctor",
+        "--dir",
+        "plugin/assets/templates/basic",
+    ]);
+    assert!(doctor.status.success());
+    let doctor_text = String::from_utf8(doctor.stdout).unwrap();
+    assert!(doctor_text.starts_with("doctor: ready"));
+    assert!(doctor_text.contains("error count: 0"));
+    assert!(doctor_text.contains("Next:"));
+    assert!(!doctor_text.contains("unknown"));
 }
 
 #[test]

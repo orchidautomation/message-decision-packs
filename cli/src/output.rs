@@ -849,7 +849,8 @@ fn summarize(command: &str, data: &Value) -> Value {
 }
 
 fn print_summary(command: &str, summary: &Value) -> Result<()> {
-    print_human(command, summary)
+    print_concise(command, summary);
+    Ok(())
 }
 
 fn omit_null_object_fields(value: Value) -> Value {
