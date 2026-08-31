@@ -27,8 +27,8 @@ const schema = {
   additionalProperties: false,
   required: ['contract', 'prompt_id'],
   properties: {
-    contract: { const: 'mdp.prompt-output.v0' },
-    prompt_id: { const: 'generate-outbound-copy-v1' },
+    contract: { type: 'string', const: 'mdp.prompt-output.v0' },
+    prompt_id: { type: 'string', const: 'generate-outbound-copy-v1' },
   },
 }
 const request = {
@@ -126,12 +126,39 @@ const conditionalSchema = {
 assert.deepEqual(projectOutputSchemaForOpenAI(conditionalSchema), {
   type: 'object',
   properties: {
-    status: { enum: ['ready', 'gap'] },
+    status: { type: 'string', enum: ['ready', 'gap'] },
     message: { type: 'string' },
   },
   required: ['message', 'status'],
   additionalProperties: false,
 })
+
+const inferredPrimitiveSchema = {
+  type: 'object',
+  properties: {
+    contract: { const: 'mdp.prompt-output.v0' },
+    state: { enum: ['ready', 'gap'] },
+    count: { enum: [1, 2] },
+    ratio: { enum: [0.5, 1.5] },
+    enabled: { const: true },
+  },
+}
+assert.deepEqual(projectOutputSchemaForOpenAI(inferredPrimitiveSchema), {
+  type: 'object',
+  properties: {
+    contract: { type: 'string', const: 'mdp.prompt-output.v0' },
+    state: { type: 'string', enum: ['ready', 'gap'] },
+    count: { type: 'integer', enum: [1, 2] },
+    ratio: { type: 'number', enum: [0.5, 1.5] },
+    enabled: { type: 'boolean', const: true },
+  },
+  required: ['contract', 'state', 'count', 'ratio', 'enabled'].sort(),
+  additionalProperties: false,
+})
+assert.throws(
+  () => projectOutputSchemaForOpenAI({ type: 'object', properties: { mixed: { enum: ['ready', 1] } } }),
+  /enum schema values must share a provider-compatible type/,
+)
 
 const mockResponse = {
   id: 'resp_synthetic',
