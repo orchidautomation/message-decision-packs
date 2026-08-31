@@ -3290,6 +3290,16 @@ mod tests {
         temp_pack_with_template(name, "gtm")
     }
 
+    fn temp_pack_with_legacy_proposal_normalizer(name: &str) -> PathBuf {
+        let root = temp_pack_with_template(name, "proposal");
+        std::fs::write(
+            root.join(".mdp/prompts/normalize-opportunity.yaml"),
+            include_str!("../../tests/fixtures/legacy-proposal/normalize-opportunity.yaml"),
+        )
+        .expect("legacy proposal compatibility prompt should be installed for the test");
+        root
+    }
+
     fn clay_example_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -3657,6 +3667,12 @@ mod tests {
             "segment": "public-services-review",
             "attributes": {
                 "opportunity_stage": "bid-no-bid",
+                "review_mode_observation": "bid/no-bid",
+                "buyer_context_observation": "Example Public Services Agency",
+                "requirement_observation": "Service request intake, status notifications, reporting, and training",
+                "opportunity_category": "public-services-review",
+                "proof_status": "not-required",
+                "policy_conflict_status": "none",
                 "pursuit_decision": "needs-more-info",
                 "source_safety": "synthetic"
             },
@@ -3706,7 +3722,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_proposal_source_audit_refs() {
-        let root = temp_pack_with_template("proposal-source-audit-valid", "proposal");
+        let root = temp_pack_with_legacy_proposal_normalizer("proposal-source-audit-valid");
         let output_path = write_output(
             &root,
             "normalize-output.json",
@@ -3735,6 +3751,12 @@ mod tests {
     "segment": "public-services-review",
     "attributes": {
       "opportunity_stage": "bid-no-bid",
+      "review_mode_observation": "bid/no-bid",
+      "buyer_context_observation": "Example Public Services Agency",
+      "requirement_observation": "Service request intake, status notifications, reporting, and training",
+      "opportunity_category": "public-services-review",
+      "proof_status": "not-required",
+      "policy_conflict_status": "none",
       "pursuit_decision": "needs-more-info",
       "source_safety": "synthetic"
     },
@@ -3835,7 +3857,7 @@ mod tests {
         )
         .expect("validation should return diagnostics");
 
-        assert_eq!(result["valid"], true);
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
         assert_eq!(
             result["artifacts"]["prompt_output"]["path"],
             output_path.display().to_string()
@@ -3864,7 +3886,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_proposal_source_audit_missing_ref_and_snippet_mismatch() {
-        let root = temp_pack_with_template("proposal-source-audit-invalid", "proposal");
+        let root = temp_pack_with_legacy_proposal_normalizer("proposal-source-audit-invalid");
         let output_path = write_output(
             &root,
             "normalize-output.json",
@@ -3893,6 +3915,12 @@ mod tests {
     "segment": "public-services-review",
     "attributes": {
       "opportunity_stage": "bid-no-bid",
+      "review_mode_observation": "bid/no-bid",
+      "buyer_context_observation": "Example Public Services Agency",
+      "requirement_observation": "Service request intake, status notifications, reporting, and training",
+      "opportunity_category": "public-services-review",
+      "proof_status": "not-required",
+      "policy_conflict_status": "none",
       "pursuit_decision": "needs-more-info",
       "source_safety": "synthetic"
     },
@@ -5234,7 +5262,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_matching_proposal_opportunity_alias() {
-        let root = temp_pack_with_template("proposal-opportunity-alias", "proposal");
+        let root = temp_pack_with_legacy_proposal_normalizer("proposal-opportunity-alias");
         let output = proposal_opportunity_alias_output();
         let path = write_json_output(&root, "normalize-opportunity-output.json", &output);
 
@@ -5248,7 +5276,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_mismatched_proposal_opportunity_alias() {
-        let root = temp_pack_with_template("proposal-opportunity-alias-mismatch", "proposal");
+        let root = temp_pack_with_legacy_proposal_normalizer("proposal-opportunity-alias-mismatch");
         let mut output = proposal_opportunity_alias_output();
         output["normalized_opportunity"]["company"] = Value::String("Different Agency".into());
         let path = write_json_output(&root, "normalize-opportunity-output.json", &output);

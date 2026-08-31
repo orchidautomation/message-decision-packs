@@ -1101,8 +1101,8 @@ mod tests {
                 .filter_map(|input| input["name"].as_str())
                 .collect::<BTreeSet<_>>();
             assert!(
-                input_names.contains("normalized_prospect"),
-                "{} must consume the canonical normalized_prospect output",
+                input_names.contains("normalized_input"),
+                "{} must consume the canonical neutral v3 normalized_input output",
                 job.id
             );
             assert!(
@@ -1112,8 +1112,13 @@ mod tests {
                 job.id
             );
             assert!(
+                !input_names.contains("normalized_prospect"),
+                "{} must not retain the legacy GTM-shaped normalized_prospect input",
+                job.id
+            );
+            assert!(
                 !input_names.contains("normalized_opportunity"),
-                "{} must not require the optional proposal readability alias",
+                "{} must not require the legacy proposal readability alias",
                 job.id
             );
             for host_input_name in ["prompt_receipt", "invocation_receipt_sha256"] {
@@ -1556,7 +1561,10 @@ mod tests {
                 .expect("proposal normalization prompt should parse");
         assert_eq!(normalization.format, "mdp.prompt.v1");
         assert_eq!(normalization.kind.as_deref(), Some("normalization"));
-        assert_eq!(normalization.version.as_deref(), Some("1"));
+        assert_eq!(
+            normalization.version.as_deref(),
+            Some("proposal-opportunity-context.v3")
+        );
         assert!(
             normalization
                 .inputs

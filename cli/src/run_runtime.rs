@@ -6196,7 +6196,7 @@ mod tests {
         let root = temp_path("host-envelope-transaction");
         let pack = root.join("pack");
         let routed_context = root.join("routed-context.json");
-        let normalized_prospect = root.join("normalized-prospect.json");
+        let normalized_input = root.join("normalized-input.json");
         let supplied_material = root.join("supplied-material.json");
         fs::create_dir_all(&root).unwrap();
         init_pack(&pack, "Host Envelope Pack", "proposal", true, false).unwrap();
@@ -6207,7 +6207,7 @@ mod tests {
         let routed_context_bytes =
             crate::artifact_hash::canonical_json_bytes(&brief["context"]["model_context"]).unwrap();
         fs::write(&routed_context, &routed_context_bytes).unwrap();
-        fs::write(&normalized_prospect, b"{}\n").unwrap();
+        fs::write(&normalized_input, b"{}\n").unwrap();
         fs::write(&supplied_material, b"{}\n").unwrap();
 
         let driver_sha =
@@ -6244,9 +6244,9 @@ mod tests {
                     provenance_refs: vec![],
                 },
                 LocalArtifactInput {
-                    logical_name: "normalized_prospect".into(),
-                    source_path: normalized_prospect.display().to_string(),
-                    schema_id: "mdp.synthetic-normalized-prospect.v1".into(),
+                    logical_name: "normalized-decision-input".into(),
+                    source_path: normalized_input.display().to_string(),
+                    schema_id: "mdp.synthetic-normalized-input.v1".into(),
                     media_type: "application/json".into(),
                     provenance_refs: vec![],
                 },
@@ -6342,7 +6342,7 @@ mod tests {
                     Ok(result)
                 },
             )
-            .unwrap();
+            .unwrap_or_else(|error| panic!("run should reach wrapper rejection: {error:?}"));
 
             assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
             assert!(run.join("run-bundle.json").is_file());
@@ -6892,9 +6892,44 @@ mod tests {
         let pack = root.join("pack");
         let run = root.join("published-run");
         init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        fs::write(
+            pack.join(".mdp/prompts/normalize-opportunity.yaml"),
+            include_str!("../tests/fixtures/legacy-proposal/normalize-opportunity.yaml"),
+        )
+        .unwrap();
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let output =
+        let legacy_fixture =
             repository.join("scripts/fixtures/proposal-runner/normalize-opportunity-output.json");
+        let output = root.join("legacy-normalize-opportunity-output.json");
+        let mut legacy_output: serde_json::Value =
+            serde_json::from_slice(&fs::read(&legacy_fixture).unwrap()).unwrap();
+        for normalized_key in ["normalized_prospect", "normalized_opportunity"] {
+            let attributes = legacy_output[normalized_key]["attributes"]
+                .as_object_mut()
+                .unwrap();
+            for (name, value) in [
+                ("review_mode_observation", serde_json::json!("bid/no-bid")),
+                (
+                    "buyer_context_observation",
+                    serde_json::json!("Example Public Services Agency"),
+                ),
+                (
+                    "requirement_observation",
+                    serde_json::json!(
+                        "Service request intake, status notifications, reporting, and training"
+                    ),
+                ),
+                (
+                    "opportunity_category",
+                    serde_json::json!("public-services-review"),
+                ),
+                ("proof_status", serde_json::json!("not-required")),
+                ("policy_conflict_status", serde_json::json!("none")),
+            ] {
+                attributes.insert(name.into(), value);
+            }
+        }
+        fs::write(&output, serde_json::to_vec_pretty(&legacy_output).unwrap()).unwrap();
         let source_audit = repository.join("scripts/fixtures/proposal-runner/source-audit.json");
         let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
         request.inputs.push(LocalArtifactInput {
