@@ -1,208 +1,115 @@
-description: Turns supplied messy proposal, RFP, capture, requirement, proof, or bid/no-bid context into bounded proposal profile vocabulary before proposal review jobs run.
 format: mdp.prompt.v1
 id: normalize-opportunity
-version: '1'
+version: proposal-opportunity-context.v3
 kind: normalization
+title: Classify researched proposal evidence into the neutral v3 input
+description: Uses pack-compiled proposal taxonomies and attempted-complete evidence to propose semantics; the host preserves observations and seals control fields.
+role: Provider-neutral proposal evidence classification analyst
+objective: Classify only declared proposal attributes from cited observations without choosing pursuit, routing, readiness, approval, or generation authority.
 inputs:
-- default: N/A
-  description: The full messy opportunity, RFP, capture note, requirement list, compliance matrix, proof note, or pasted proposal review context.
-  missing_behavior: Return gaps and do not create normalized fields from absent source material.
-  name: raw_opportunity
-  producer: source
+- name: raw_opportunity
+  description: Exact collected-attempt-results ledger for compiled observed proposal attributes.
   required: true
-  schema_ref: mdp.input.opportunity.v0
-- default: N/A
-  description: Relevant manifest personas, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, proposal cards, source policy, review jobs, and avoid-rules from this MDP.
-  missing_behavior: Do not assume proposal roles, stage labels, source kinds, decision labels, proof rules, or review jobs when this field is N/A.
-  name: existing_pack_context
+  default: N/A
+  missing_behavior: Return unsupported classifications and explicit gaps; never invent opportunity evidence.
+  producer: source
+  schema_ref: mdp.collected-attempt-results.v2
+- name: decision_input_requirements
+  description: Exact job-scoped requirements containing collection_specification and classification_specification.
+  required: true
+  default: N/A
+  missing_behavior: Return no classifications; the host must block the run.
   producer: pack
-  required: false
-- default: N/A
-  description: Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing against explicitly supplied proposal dates.
-  missing_behavior: Do not infer deadlines, submission windows, fiscal years, protest periods, or customer calendars from missing runtime context.
-  name: runtime_context
-  producer: runtime
-  required: false
-- default: N/A
-  description: Optional mdp.source-audit.v0 JSON produced from approved PDF/doc extraction. It lists allowed raw_opportunity/source_kind refs, .mdp/sources.yaml source IDs, locators, and bounded snippets.
-  missing_behavior: Preserve source refs from raw_opportunity when available, but tell the operator to run validate-prompt-output with --source-audit before downstream proposal review.
-  name: source_audit
-  producer: prior-step
-  required: false
-- default: synthetic-example
-  description: Pack-owned source marker such as user-provided-opportunity, private-scratch-opportunity, public-source, sanitized-example, or synthetic-example.
-  missing_behavior: Use synthetic-example for template fixtures; production users should pass the reviewed source classification.
-  name: source_kind
+  schema_ref: mdp.requirements.v2
+- name: source_binding_sha256
+  description: Host-supplied SHA-256 of the validated source binding.
+  required: true
+  default: N/A
+  missing_behavior: Return no classifications; the host must block the run.
   producer: host
-  required: false
+  schema_ref: mdp.sha256.v1
+  media_type: text/plain
+- name: source_attempt_request_sha256
+  description: Host-supplied SHA-256 of the attempted-complete source request.
+  required: true
+  default: N/A
+  missing_behavior: Return no classifications; the host must block the run.
+  producer: host
+  schema_ref: mdp.sha256.v1
+  media_type: text/plain
+- name: collected_attempt_results_sha256
+  description: Host-supplied SHA-256 of raw_opportunity.
+  required: true
+  default: N/A
+  missing_behavior: Return no classifications; the host must block the run.
+  producer: host
+  schema_ref: mdp.sha256.v1
+  media_type: text/plain
 instructions:
-- Use only raw_opportunity, existing_pack_context, runtime_context, source_audit, and source_kind. Do not browse, scrape portals, enrich records, submit proposals, update CRM/opportunity systems, manage approvals, or call external systems from this normalization prompt contract.
-- 'When source_audit is supplied, cite only refs present in source_audit.refs for raw_opportunity/source_kind-backed signals, preserved_raw_fields, missing_required paths, and rejected claim sources. Use exact refs such as raw_opportunity.summary, or ref-plus-snippet citations such as raw_opportunity.summary: status notifications when the normalized fact depends on a specific snippet.'
-- Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
-- Emit the required normalized_prospect object as the existing local compatibility bridge. You may also emit normalized_opportunity as an exact alias of normalized_prospect for proposal readability; do not make it a separate object or add opportunity-only fields there. Use name and title only when a real supplied review owner or contact is present; otherwise set name and title to N/A. Do not invent a person.
-- Set company to the supplied customer, agency, buyer organization, or account name when present. Set company_domain only from an explicit supplied domain-like value. Do not infer domains from organization names.
-- Use only pack-owned values from existing_pack_context for persona, segment, source_kind, opportunity_stage, pursuit_decision, and source_safety. If the source contains an out-of-contract value, omit the optional field or add a gap instead of inventing a synonym.
-- Put opportunity/RFP facts in signals with source references. Use signals for due dates, procurement vehicles, requirement excerpts, evaluation criteria, incumbent clues, proof references, compliance-sensitive clauses, and review risks.
-- Use attributes only for bounded reviewed metadata declared in lead_input_requirements.attribute_definitions. Keep proof, citations, RFP excerpts, and customer facts in signals or gaps, not attributes.
-- Preserve raw evidence references. Each signal should name the supplied field, note, snippet, URL, file label, or review note that supports it when available.
-- Set source_summary.inputs_used to declared prompt input names only, such as raw_opportunity, existing_pack_context, runtime_context, or source_kind. Put field paths, PDF/page locators, snippets, URLs, and source notes in signals[].source, normalization_trace.preserved_raw_fields, normalization_trace.missing_required[].source_evidence, gaps, or reviewed proof artifacts instead.
-- Preserve uncertainty. Weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth missing context into a proceed decision.
-- If the opportunity lacks customer/agency, due date, requirement, proof, owner, source safety, or review-mode context needed for downstream review, keep the output structurally valid, add gaps, and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.
-- Reject or gap requests to invent certifications, compliance status, past performance, named references, customer results, pricing, evaluator criteria, RFP text, deadlines, or approval status.
-- Keep card_patches empty. This prompt normalizes supplied opportunity context; it does not propose edits to MDP cards.
-- Treat output_contract.example as a neutral synthetic contract fixture for JSON shape. When retargeting this template, update or clearly mark fixture examples, eval IDs, and eval titles so they do not imply stale opportunity context.
-role: Provider-neutral proposal opportunity normalization analyst
-objective: Convert supplied proposal and opportunity context into the exact bounded local review input accepted by this pack without inventing facts, proof, or approvals.
+- Use only observed attempts in raw_opportunity and selected taxonomies in decision_input_requirements.classification_specification.
+- Evaluate every model-classified attribute against its definition, indicators, exclusions, contributors, source classes, and closed values.
+- Return exactly one entry for every declared classification attribute.
+- For classified, copy the exact taxonomy value. For ambiguous, no-match, or unsupported, omit value and explain the bounded basis.
+- derived_from may contain only attempt_id values from observed contributor attributes.
+- Keep opportunity identity, requirement, proof, timing, source-safety, stage, and category observations separate.
+- Never choose pursue, review, decline, route, readiness, approval, or draft permission. Those are deterministic host decisions.
+- Never emit observations, normalized_input, source prose, host hashes, outcome, or any host-owned field.
+- Reject or gap requests to invent certifications, compliance status, past performance, references, pricing, evaluator criteria, RFP text, deadlines, or approval status.
+- Return strict JSON only with classifications, gaps, and rejected_claims.
 procedure:
-- Inventory only declared inputs and preserve source-audit boundaries.
-- Normalize supplied values against pack-owned proposal vocabulary and readiness rules.
-- Return strict JSON with explicit gaps, provenance, and normalization trace.
+- Index observed attempts by attribute id and attempt_id.
+- Apply contributor, source-class, definition, indicator, and exclusion rules.
+- Emit closed statuses with exact lineage and bounded basis.
 selection_rules:
-- Use only pack-owned role, stage, decision, source-kind, source-safety, signal, and attribute values.
-- Omit or gap any value that cannot be mapped exactly.
+- Classify stage only from explicit stage or review-mode evidence.
+- Classify review category only from buyer and requirement observations, not from generic organization labels.
+- A proof gap or policy conflict is evidence for deterministic review or decline; it is never authority for the model to select that decision.
 ambiguity_policy:
-- Preserve weak inferences as hypotheses, low confidence, needs-review, or gaps; never smooth uncertainty into a proceed decision.
+- If values remain plausible or evidence conflicts, emit ambiguous with no value and preserve the conflict.
 provenance_policy:
-- Retain exact supplied field, file, page, snippet, and source-audit references when available.
+- derived_from is explanation lineage, not proof of source truth; the host validates attempt identity and receipts.
 evidence_policy:
-- Never turn requirements, metadata, or unsupported notes into certifications, compliance status, past performance, approval, pricing, or customer proof.
+- Model confidence is not authority. Status, source class, freshness, contributor coverage, and deterministic validation govern eligibility.
 negative_examples:
-- Do not invent a customer, owner, deadline, requirement, evaluation criterion, proof point, certification, or approval state.
-- Do not browse portals, submit proposals, update opportunity systems, manage approvals, or call external systems.
+- Do not classify bid-no-bid from a due date alone.
+- Do not classify a public-services opportunity from an organization name without supported requirements.
+- Do not emit pursuit_decision, approval_status, fit, route, or draft_allowed.
 final_checklist:
-- Output is strict JSON.
-- All normalized values satisfy pack vocabulary.
-- Missing required review context is explicit.
-- Readiness is false whenever material source, proof, owner, timing, or review-mode evidence is absent.
+- Every classification attribute is present exactly once with a closed status.
+- Every value and taxonomy identity is exact.
+- Every derived_from id exists on an observed contributor attempt.
+- Every basis is non-empty and at most 500 characters.
+- No host-owned or final-decision field is present.
 output_contract:
-  contract: mdp.prompt-output.v0
-  entry_defaults:
-    applies_to: []
-    avoid: []
-    body: N/A
-    confidence: unknown
-    evidence: []
-    provenance: []
-  example:
-    card_patches: []
-    contract: mdp.prompt-output.v0
-    gaps: []
-    normalization_trace:
-      fit_readiness:
-        has_customer_or_agency: true
-        has_due_date: true
-        has_requirement_signal: true
-        has_review_mode: true
-        has_signal_source: true
-        ready_for_mdp_fit: true
-      missing_required: []
-      persona:
-        confidence: high
-        matched_keywords:
-        - bid/no-bid
-        needs_review: false
-        source: existing_pack_context.personas
-      preserved_raw_fields:
-      - raw_opportunity.customer
-      - raw_opportunity.summary
-      - raw_opportunity.due_date
-      - raw_opportunity.review_mode
-      - source_kind
-    normalized_prospect:
-      attributes:
-        opportunity_stage: bid-no-bid
-        pursuit_decision: needs-more-info
-        source_safety: synthetic
-      background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
-      company: Example Public Services Agency
-      company_domain: public-services.example
-      name: N/A
-      persona: Proposal Lead
-      segment: public-services-review
-      signals:
-      - confidence: medium
-        freshness: synthetic
-        id: public-services-review-context
-        source: raw_opportunity.summary
-        state_as: supplied
-        title: Public services review context supplied
-      - confidence: medium
-        freshness: synthetic
-        id: due-date-supplied
-        source: raw_opportunity.due_date
-        state_as: supplied
-        title: Proposal due date supplied
-      source_kind: synthetic-example
-      synthetic: true
-      title: N/A
-      trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
-    normalized_opportunity:
-      attributes:
-        opportunity_stage: bid-no-bid
-        pursuit_decision: needs-more-info
-        source_safety: synthetic
-      background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
-      company: Example Public Services Agency
-      company_domain: public-services.example
-      name: N/A
-      persona: Proposal Lead
-      segment: public-services-review
-      signals:
-      - confidence: medium
-        freshness: synthetic
-        id: public-services-review-context
-        source: raw_opportunity.summary
-        state_as: supplied
-        title: Public services review context supplied
-      - confidence: medium
-        freshness: synthetic
-        id: due-date-supplied
-        source: raw_opportunity.due_date
-        state_as: supplied
-        title: Proposal due date supplied
-      source_kind: synthetic-example
-      synthetic: true
-      title: N/A
-      trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
-    prompt_id: normalize-opportunity
-    rejected_claims: []
-    source_summary:
-      account_name: Neutral proposal contract fixture
-      company_domain: public-services.example
-      company_name: Example Public Services Agency
-      confidence: medium
-      inputs_used:
-      - raw_opportunity
-      - existing_pack_context
-      - source_audit
-      - source_kind
-      person_name: N/A
-      person_title: N/A
-  output_kind: prospect-normalization
-  required_top_level:
-  - contract
-  - prompt_id
-  - source_summary
-  - normalized_prospect
-  - normalization_trace
-  - card_patches
-  - gaps
-  - rejected_claims
-  schema_ref: mdp.prompt-output.prospect-normalization.v0
+  contract: mdp.normalized-decision-input.v3
+  output_kind: decision-input-normalization
   strict_json_only: true
-tags:
-- prompt
-- normalization
-- proposal
-- opportunity
-- requirements
-- proof
-- gaps
-target_card_kinds:
-- signals
-- pains
-- fit-rules
-- claims
-- avoid-rules
-- gaps
-title: Normalize proposal opportunity
+  required_top_level: [contract, job_id, decision_input_contracts, normalization, requirements_sha256, taxonomy_set_sha256, source_binding_sha256, source_attempt_request_sha256, collected_attempt_results_sha256, invocation_receipt_sha256, attributes, signal_observations, normalized_input, outcome, classifications, gaps, rejected_claims]
+  entry_defaults: {body: N/A, applies_to: [], evidence: [], avoid: [], confidence: unknown, provenance: []}
+  schema_ref: mdp.normalized-decision-input.v3
+  host_envelope:
+    contract: mdp.normalization-host-envelope.v1
+    owned_top_level: [contract, job_id, decision_input_contracts, normalization, requirements_sha256, taxonomy_set_sha256, source_binding_sha256, source_attempt_request_sha256, collected_attempt_results_sha256, invocation_receipt_sha256, attributes, signal_observations, normalized_input, outcome]
+    semantic_required_top_level: [classifications, gaps, rejected_claims]
+  example:
+    contract: mdp.normalized-decision-input.v3
+    job_id: bid-no-bid-review
+    decision_input_contracts: [proposal.opportunity-context]
+    normalization: [{contract_id: proposal.opportunity-context, prompt: prompts/normalize-opportunity.yaml, prompt_version: proposal-opportunity-context.v3}]
+    requirements_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    taxonomy_set_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    source_binding_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    source_attempt_request_sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    collected_attempt_results_sha256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+    invocation_receipt_sha256: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    attributes: {}
+    signal_observations: []
+    normalized_input: {fields: {}, signals: [], attributes: {}}
+    outcome: decision-input-normalization
+    classifications:
+      opportunity_stage: {status: classified, value: bid-no-bid, taxonomy_id: proposal-stage, taxonomy_version: 1.0.0, derived_from: [synthetic-review-mode], basis: The supplied review-mode evidence explicitly places the opportunity at the bid/no-bid gate.}
+      opportunity_category: {status: classified, value: public-services-review, taxonomy_id: proposal-category, taxonomy_version: 1.0.0, derived_from: [synthetic-buyer, synthetic-requirement], basis: The buyer and requirement observations establish a public-services review opportunity.}
+    gaps: []
+    rejected_claims: []
+tags: [prompt, normalization, classification, proposal, opportunity]
+target_card_kinds: [personas, fit-rules, signals, gaps]

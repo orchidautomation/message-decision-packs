@@ -1,0 +1,40 @@
+{
+  "contract": "mdp.classification-scenarios.v3",
+  "decision_input_contract": "proposal.opportunity-context@3.0.0",
+  "synthetic": true,
+  "scenarios": [
+    {
+      "id": "bid-no-bid-public-services",
+      "observed": {
+        "review_mode_observation": "The supplied review mode is a formal bid/no-bid gate.",
+        "buyer_context_observation": "The buyer is a public-services agency.",
+        "requirement_observation": "The supplied requirement covers governed service intake and status workflows."
+      },
+      "expected": {
+        "opportunity_stage": {"status": "classified", "value": "bid-no-bid", "derived_from_count": 1},
+        "opportunity_category": {"status": "classified", "value": "public-services-review", "derived_from_count": 2},
+        "pursuit_decision_is_model_owned": false
+      }
+    },
+    {
+      "id": "ambiguous-review-mode",
+      "observed": {"review_mode_observation": "The opportunity needs review; no formal stage is identified."},
+      "expected": {"opportunity_stage": {"status": "ambiguous", "value": null}}
+    },
+    {
+      "id": "missing-requirement",
+      "observed": {"buyer_context_observation": "The buyer is a municipal organization."},
+      "expected": {"opportunity_category": {"status": "unsupported", "value": null}, "route": "blocked"}
+    },
+    {
+      "id": "policy-conflict-deterministic-decline",
+      "observed": {"policy_conflict_observation": "The request requires bypassing an explicit safety policy."},
+      "expected": {"deterministic_pursuit_decision": "decline", "model_may_choose_decision": false}
+    },
+    {
+      "id": "proof-gap-deterministic-review",
+      "observed": {"proof_observation": "A required proof point has no approved supporting evidence."},
+      "expected": {"deterministic_pursuit_decision": "review", "model_may_choose_decision": false}
+    }
+  ]
+}

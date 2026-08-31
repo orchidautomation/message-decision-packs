@@ -85,24 +85,40 @@ pub(crate) fn render_pack_readme(
         );
     }
 
-    section(&mut out, "Decision Flow");
-    for step in [
-        "Select one exact canonical job.",
-        "Inspect its resolved product foundation and diagnostics.",
-        "Load only the referenced cards, entries, contracts, sources, and gaps.",
-        "Use detached prospect input only when the selected job has no direct or transitive Decision Input Contract; governed jobs require the exact normalized envelope and lineage artifacts.",
-        "Treat raw prompt output as untrusted. Only a successful validation receipt bound to the exact pack, prompt, job when applicable, validator inputs, and output bytes may provide prompt-output decision-trace authority.",
-        "Stop on blocked authority; never fill a gap from this README.",
-        "Apply the job output and review boundaries before using the result.",
-    ] {
-        bullet(&mut out, step);
-    }
-
-    section(&mut out, "Boundaries");
     let proposal = manifest
         .profile
         .as_ref()
         .is_some_and(|profile| profile.id == "proposal");
+    section(&mut out, "Decision Flow");
+    let decision_flow = if proposal {
+        vec![
+            "Select one exact canonical job.",
+            "Inspect its resolved product foundation and diagnostics.",
+            "Load only the referenced cards, entries, contracts, sources, and gaps.",
+            "Compile the selected job's provider-neutral collection specification and proposal taxonomies with `mdp requirements`.",
+            "Let the host collect attempted-complete buyer, requirement, timing, proof, policy, and source-safety evidence without pre-assigning proposal classifications.",
+            "Treat model semantics as untrusted: validate closed values and `derived_from` attempt IDs, then let the host seal the neutral v3 envelope.",
+            "Apply deterministic pursue/review/decline and routing rules after normalization. The model cannot grant approval or generation authority.",
+            "Keep `normalized_prospect`, `normalized_opportunity`, and `existing_pack_context` confined to explicitly labeled legacy readers; new proposal producers never emit them.",
+            "Stop on blocked authority; never fill a gap from this README.",
+            "Apply the job output and review boundaries before using the result.",
+        ]
+    } else {
+        vec![
+            "Select one exact canonical job.",
+            "Inspect its resolved product foundation and diagnostics.",
+            "Load only the referenced cards, entries, contracts, sources, and gaps.",
+            "Use detached prospect input only when the selected job has no direct or transitive Decision Input Contract; governed jobs require the exact normalized envelope and lineage artifacts.",
+            "Treat raw prompt output as untrusted. Only a successful validation receipt bound to the exact pack, prompt, job when applicable, validator inputs, and output bytes may provide prompt-output decision-trace authority.",
+            "Stop on blocked authority; never fill a gap from this README.",
+            "Apply the job output and review boundaries before using the result.",
+        ]
+    };
+    for step in decision_flow {
+        bullet(&mut out, step);
+    }
+
+    section(&mut out, "Boundaries");
     let mut boundary_ids = BTreeSet::new();
     for card in cards.iter().filter(|card| {
         matches!(

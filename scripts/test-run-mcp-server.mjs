@@ -1089,7 +1089,13 @@ sys.stdout.write(json.dumps({
       pack: proposalPack,
       job: 'bid-no-bid-review',
       operation: 'model:bid-no-bid-review/normalization',
-      inputs: [`raw_opportunity=${rawOpportunity}`],
+      inputs: [
+        `raw_opportunity=${rawOpportunity}`,
+        `decision_input_requirements=${requirements}`,
+        `source_binding_sha256=${sourceBindingSha}`,
+        `source_attempt_request_sha256=${sourceAttemptSha}`,
+        `collected_attempt_results_sha256=${collectedResultsSha}`,
+      ],
     },
   ].map((profile) => ({
     ...profile,

@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 const BASIC_DIGEST: &str = "4abebfbf78dfce74312f7a727e6b31466ffd2eefffe56237e5c52f9b1b9b922f";
-const PROPOSAL_DIGEST: &str = "2bcdaeefe2334215cde0e68aba650abd1d69806825feadfadde3c1333b9bfad9";
+const PROPOSAL_DIGEST: &str = "66f893bdb609f2216da445c80b0b83389498f976127336a7d08a9fb893470583";
 const FORBIDDEN: &[&str] = &[
     "prospect",
     "lead",

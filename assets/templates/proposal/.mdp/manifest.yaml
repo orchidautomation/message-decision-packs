@@ -195,6 +195,7 @@ lead_input_requirements:
   - company
   - company_domain
   - trigger
+  - background
   - segment
   - signals
   - synthetic
@@ -202,6 +203,13 @@ lead_input_requirements:
   - source
   required_attributes:
   - source_safety
+  - review_mode_observation
+  - opportunity_stage
+  - buyer_context_observation
+  - requirement_observation
+  - opportunity_category
+  - proof_status
+  - policy_conflict_status
   value_contracts:
     segment:
       type: string
@@ -228,6 +236,41 @@ lead_input_requirements:
       - proof-review
       - red-team-review
       description: Reviewed proposal stage label emitted by normalize-opportunity.
+    opportunity_category:
+      type: string
+      enum:
+      - municipal-modernization
+      - public-services-review
+      description: Pack-owned review category classified from separate buyer and requirement observations.
+    review_mode_observation:
+      type: string
+      description: Bounded observed stage or review-mode evidence; not a pack-owned classification.
+    buyer_context_observation:
+      type: string
+      description: Bounded observed buyer or agency context used for proposal-category classification.
+    requirement_observation:
+      type: string
+      description: Bounded observed requirement used for proposal-category classification and deterministic review.
+    proof_observation:
+      type: string
+      description: Optional bounded approved proof, proof gap, or unsupported proof request.
+    proof_status:
+      type: string
+      enum:
+      - approved
+      - gap
+      - unsupported
+      - not-required
+      description: Reviewed direct proof state consumed by deterministic pursuit policy.
+    policy_conflict_observation:
+      type: string
+      description: Optional bounded policy, compliance, privacy, or approval conflict used by deterministic policy.
+    policy_conflict_status:
+      type: string
+      enum:
+      - none
+      - present
+      description: Reviewed direct policy-conflict state consumed by deterministic pursuit policy.
     pursuit_decision:
       type: string
       enum:
@@ -235,7 +278,7 @@ lead_input_requirements:
       - pause
       - decline
       - needs-more-info
-      description: Review-support decision label, not final approval.
+      description: Legacy-reader compatibility only. New v3 producers never emit this model-owned; deterministic proposal policy owns the pursuit decision.
     source_safety:
       type: string
       enum:
@@ -246,6 +289,259 @@ lead_input_requirements:
       - user-approved-local
       description: Source handling classification for proposal context.
   allow_undeclared_attributes: false
+classification_taxonomies:
+- id: proposal-stage
+  version: 1.0.0
+  output_attribute: opportunity_stage
+  contributor_attribute_ids:
+  - review_mode_observation
+  source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+  minimum_evidence: {observed_contributors: 1}
+  basis_max_chars: 500
+  ambiguity_policy: human-review
+  no_match_policy: gap
+  conflict_policy: human-review
+  values:
+  - value: early-review
+    definition: The opportunity is in initial qualification before a formal bid/no-bid or specialist review gate.
+    positive_indicators: [The supplied review mode explicitly describes intake, discovery, qualification, or early review.]
+    exclusions: [A formal bid/no-bid, compliance, proof, or red-team review is already underway.]
+  - value: bid-no-bid
+    definition: The opportunity is at a formal gate where deterministic policy must decide pursue, review, or decline.
+    positive_indicators: [The supplied review mode explicitly names bid/no-bid, pursuit review, or an equivalent formal gate.]
+    exclusions: [A due date alone without a stated review gate.]
+  - value: compliance-review
+    definition: The current review is focused on requirements, compliance-sensitive boundaries, or mandatory response obligations.
+    positive_indicators: [The supplied review mode explicitly names compliance or requirements review.]
+    exclusions: [Generic legal or procurement language without an active compliance-review gate.]
+  - value: proof-review
+    definition: The current review is focused on proof, claims, references, win themes, or evidence sufficiency.
+    positive_indicators: [The supplied review mode explicitly names proof, claim, evidence, or win-theme review.]
+    exclusions: [A generic request for proposal quality review.]
+  - value: red-team-review
+    definition: The opportunity is at an adversarial red-team or final gap-review stage.
+    positive_indicators: [The supplied review mode explicitly names red-team, final challenge, or adversarial gap review.]
+    exclusions: [Early drafting or informal peer review.]
+- id: proposal-category
+  version: 1.0.0
+  output_attribute: opportunity_category
+  contributor_attribute_ids:
+  - buyer_context_observation
+  - requirement_observation
+  source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+  minimum_evidence: {observed_contributors: 2}
+  basis_max_chars: 500
+  ambiguity_policy: human-review
+  no_match_policy: gap
+  conflict_policy: human-review
+  values:
+  - value: municipal-modernization
+    definition: A municipal buyer is seeking modernization of an existing public-facing or internal service workflow.
+    positive_indicators: [The buyer observation establishes a municipal organization., The requirement observation establishes a modernization initiative.]
+    exclusions: [A generic technology purchase without a supported modernization requirement.]
+  - value: public-services-review
+    definition: A public-services buyer has supplied requirements that require governed proposal review.
+    positive_indicators: [The buyer observation establishes a public-services organization., The requirement observation establishes a bounded service, intake, integration, training, or review need.]
+    exclusions: [An organization name alone without a supported requirement., A private commercial opportunity without public-services context.]
+decision_input_contracts:
+- id: proposal.opportunity-context
+  version: 3.0.0
+  description: Bounded opportunity, requirement, proof, timing, and policy evidence required before v3 proposal classification and deterministic pursuit review.
+  normalization:
+    prompt: prompts/normalize-opportunity.yaml
+    prompt_version: proposal-opportunity-context.v3
+    normalized_schema_ref: mdp.normalized-decision-input.v3
+  source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+  attributes:
+  - id: buyer_name
+    processing: observed
+    question: What is the reviewed customer, agency, or buyer organization name?
+    output_path: company
+    value: {type: string}
+    requirement: required
+    decision_effects: [readiness, fit, routing, brief, gaps, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: opportunity_summary
+    processing: observed
+    question: What bounded supplied opportunity summary is supported?
+    output_path: background
+    value: {type: string}
+    requirement: required
+    decision_effects: [readiness, fit, routing, brief, gaps, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: due_date
+    processing: observed
+    question: What explicit submission or decision date was supplied?
+    output_path: trigger
+    value: {type: string}
+    requirement: required
+    decision_effects: [readiness, routing, brief, gaps, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: review_mode_observation
+    processing: observed
+    question: What explicit proposal review stage or mode is supported by the supplied evidence?
+    description: Return the observed review mode, not a pack-owned stage enum.
+    output_path: attributes.review_mode_observation
+    value: {type: string}
+    requirement: required
+    decision_effects: [readiness, routing, gaps, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: opportunity_stage
+    processing: model-classified
+    classification_taxonomy: {id: proposal-stage, version: 1.0.0}
+    question: Which pack-owned proposal stage is supported by the reviewed stage evidence?
+    output_path: attributes.opportunity_stage
+    value: {type: string, enum: [early-review, bid-no-bid, compliance-review, proof-review, red-team-review]}
+    requirement: required
+    decision_effects: [readiness, routing, gaps, human-review, no-draft]
+    source_classes: []
+    provenance: {required: false, required_fields: []}
+    confidence: {required: false, minimum: 0}
+    freshness: {required: false, max_age_days: 0, allow_unknown: true}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: buyer_context_observation
+    processing: observed
+    question: What bounded source-backed buyer or agency context is supported?
+    output_path: attributes.buyer_context_observation
+    value: {type: string}
+    requirement: required
+    decision_effects: [readiness, fit, routing, brief, gaps, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: requirement_observation
+    processing: observed
+    question: What bounded source-backed requirement is supported?
+    output_path: attributes.requirement_observation
+    value: {type: string}
+    requirement: required
+    decision_effects: [readiness, fit, routing, brief, gaps, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: opportunity_category
+    processing: model-classified
+    classification_taxonomy: {id: proposal-category, version: 1.0.0}
+    question: Which pack-owned review category is supported by the buyer and requirement evidence?
+    output_path: attributes.opportunity_category
+    value: {type: string, enum: [municipal-modernization, public-services-review]}
+    requirement: required
+    decision_effects: [readiness, fit, routing, brief, gaps, human-review, no-draft]
+    source_classes: []
+    provenance: {required: false, required_fields: []}
+    confidence: {required: false, minimum: 0}
+    freshness: {required: false, max_age_days: 0, allow_unknown: true}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: proof_observation
+    processing: observed
+    question: What approved proof, proof gap, or unsupported proof request is explicitly supported?
+    output_path: attributes.proof_observation
+    value: {type: string}
+    requirement: optional
+    decision_effects: [fit, routing, brief, gaps, human-review, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: proof_status
+    processing: observed
+    question: What reviewed direct proof state applies to the required claims for this opportunity?
+    output_path: attributes.proof_status
+    value: {type: string, enum: [approved, gap, unsupported, not-required]}
+    requirement: required
+    decision_effects: [readiness, fit, routing, brief, gaps, human-review, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: policy_conflict_observation
+    processing: observed
+    question: What explicit policy, compliance, privacy, or approval conflict is supported?
+    output_path: attributes.policy_conflict_observation
+    value: {type: string}
+    requirement: optional
+    decision_effects: [disqualification, routing, gaps, human-review, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, public_web, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: restricted
+    status_behavior: {}
+  - id: policy_conflict_status
+    processing: observed
+    question: Does reviewed evidence establish an explicit policy, compliance, privacy, or approval conflict?
+    output_path: attributes.policy_conflict_status
+    value: {type: string, enum: [none, present]}
+    requirement: hard-gate
+    decision_effects: [readiness, disqualification, routing, gaps, human-review, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: restricted
+    status_behavior: {observed: evaluate, not_found: block, not_applicable: block, blocked: human-review, error: human-review}
+  - id: source_safety
+    processing: observed
+    question: What reviewed source-handling classification applies to this opportunity evidence?
+    output_path: attributes.source_safety
+    value: {type: string, enum: [synthetic, sanitized, private-scratch, public-source, user-approved-local]}
+    requirement: hard-gate
+    decision_effects: [readiness, disqualification, routing, gaps, human-review, no-draft]
+    source_classes: [user_provided, customer_system, reviewed_internal, synthetic_fixture]
+    provenance: {required: true, required_fields: [attempt_id, source_class, source_locator, observed_at]}
+    confidence: {required: true, minimum: 80}
+    freshness: {required: true, max_age_days: 365, allow_unknown: false}
+    sensitivity: restricted
+    status_behavior: {observed: evaluate, not_found: block, not_applicable: block, blocked: human-review, error: human-review}
+  signal_projections:
+  - id: opportunity-requirement
+    kind: requirement
+    roles: [fit]
+    contributor_attribute_ids: [requirement_observation]
+    value: {type: string}
+    cardinality: {min: 1, max: 16}
+    conflict_policy: require-agreement
+    decision_effects: [readiness, fit, routing, brief, gaps, no-draft]
+  - id: proposal-policy-conflict
+    kind: policy_conflict
+    roles: [disqualifier]
+    contributor_attribute_ids: [policy_conflict_observation]
+    value: {type: string}
+    cardinality: {min: 0, max: 8}
+    conflict_policy: any-disqualifies
+    decision_effects: [disqualification, human-review, no-draft]
 required_primitives:
 - actors
 - decision-criteria
@@ -302,27 +598,20 @@ primitive_map:
     - gaps
     evals:
     - proposal-gaps
-    - fit-insufficient-context
   evals:
     evals:
     - bid-no-bid-route
     - compliance-route
     - compliance-unsupported-claim
-    - fit-insufficient-context
     - fit-policy-bypass-disqualified
     - invented-proof-guardrail
-    - normalize-opportunity-insufficient-context
-    - normalize-opportunity-missing-required-attribute
-    - normalize-opportunity-invalid-source-kind
-    - normalize-opportunity-missing-required-signal
-    - normalize-opportunity-output
-    - normalize-opportunity-source-audit-mismatch
+    - decision-input-contract
     - proof-review-route
     - proposal-gaps
     - red-team-route
 input_contracts:
 - id: opportunity
-  description: Profile-owned opportunity context contract for supplied proposal, requirement, proof, and risk facts.
+  description: Profile-owned opportunity adapter. New producers use the neutral proposal.opportunity-context v3 decision-input contract; legacy prompt-output aliases remain read-only compatibility surfaces.
   schema_ref: mdp.input.opportunity.v0
   prompt: prompts/normalize-opportunity.yaml
   normalizes:
@@ -330,6 +619,8 @@ input_contracts:
   - requirements
   - proof
   - risk
+  decision_input_contracts:
+  - proposal.opportunity-context
 jobs:
 - id: bid-no-bid-review
   skill_id: mdp-proposal-review
@@ -344,6 +635,8 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  decision_input_contracts:
+  - proposal.opportunity-context
   product_foundation:
     required:
     - product-identity
@@ -375,6 +668,8 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  decision_input_contracts:
+  - proposal.opportunity-context
   product_foundation:
     required:
     - product-identity
@@ -407,6 +702,8 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  decision_input_contracts:
+  - proposal.opportunity-context
   product_foundation:
     required:
     - product-identity
@@ -441,6 +738,8 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  decision_input_contracts:
+  - proposal.opportunity-context
   product_foundation:
     required:
     - product-identity

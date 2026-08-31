@@ -283,6 +283,12 @@ pub(crate) fn v3_sealed_envelope_schema() -> Value {
         "type": "object",
         "additionalProperties": { "type": "object" }
     });
+    let projected_attributes = json!({
+        "type": "object",
+        "additionalProperties": {
+            "type": ["string", "number", "integer", "boolean", "array"]
+        }
+    });
     let normalized_input = json!({
         "type": "object",
         "additionalProperties": false,
@@ -293,7 +299,7 @@ pub(crate) fn v3_sealed_envelope_schema() -> Value {
                 "type": "array",
                 "items": { "type": "object" }
             },
-            "attributes": attributes.clone()
+            "attributes": projected_attributes
         }
     });
     json!({

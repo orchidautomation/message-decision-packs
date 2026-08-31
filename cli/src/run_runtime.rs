@@ -52,6 +52,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PROPOSAL_PROFILE: &str = "proposal";
 const VALIDATE_EXISTING_OUTPUT: &str = "validate-existing-output";
+const REVIEW: &str = "review";
 const GTM_PROFILE: &str = "gtm";
 const QUALIFY: &str = "qualify";
 const MAX_PACK_FILES: usize = 10_000;
@@ -2114,9 +2115,19 @@ where
         } else {
             (TerminalState::NoDraftOutputInvalid, None)
         }
-    } else if request.profile == GTM_PROFILE && request.operation == QUALIFY {
-        crate::decision_input::select_adapter(&manifest, &["prospect"])
-            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-ingress-invalid"))?;
+    } else if (request.profile == GTM_PROFILE && request.operation == QUALIFY)
+        || (request.profile == PROPOSAL_PROFILE && request.operation == REVIEW)
+    {
+        let proposal_v3 = request.profile == PROPOSAL_PROFILE;
+        crate::decision_input::select_adapter(
+            &manifest,
+            &[if proposal_v3 {
+                "opportunity"
+            } else {
+                "prospect"
+            }],
+        )
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-ingress-invalid"))?;
         let normalized = required_input(&staged, "normalized-decision-input")?;
         if normalized.authority.media_type != "application/json"
             || !matches!(
@@ -2129,6 +2140,12 @@ where
             return Err(anyhow!("declared input schema or media type mismatch"));
         }
         let is_v3 = normalized.authority.schema_id == NORMALIZED_DECISION_INPUT_CONTRACT_V3;
+        if proposal_v3 && !is_v3 {
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "proposal-review-requires-v3",
+            ));
+        }
         let signal_aware = matches!(
             normalized.authority.schema_id.as_str(),
             NORMALIZED_DECISION_INPUT_CONTRACT_V2 | NORMALIZED_DECISION_INPUT_CONTRACT_V3
@@ -2243,16 +2260,30 @@ where
                 crate::decision_input::from_v3_normalized(envelope).map_err(|_| {
                     run_failure(RunFailureKind::PolicyBlocked, "v3-neutral-input-invalid")
                 })?;
-            let prospect = decision_input.to_gtm_prospect().map_err(|_| {
-                run_failure(RunFailureKind::PolicyBlocked, "v3-gtm-projection-invalid")
-            })?;
             let classifications_ready = normalized_value["classifications"]
                 .as_object()
                 .is_some_and(|values| {
                     !values.is_empty()
                         && values.values().all(|value| value["status"] == "classified")
                 });
-            if !classifications_ready {
+            if proposal_v3 {
+                let (decision, reason_codes) =
+                    deterministic_proposal_pursuit(&decision_input, classifications_ready);
+                validation = Some(
+                    json!({"contract": NORMALIZED_DECISION_INPUT_CONTRACT_V3, "valid": true, "ready": decision == "pursue"}),
+                );
+                (
+                    TerminalState::Success,
+                    Some(proposal_v3_success_artifacts(
+                        request,
+                        &bundle,
+                        &bundle_sha256,
+                        &normalized_value,
+                        decision,
+                        reason_codes,
+                    )?),
+                )
+            } else if !classifications_ready {
                 validation = Some(
                     json!({"contract": NORMALIZED_DECISION_INPUT_CONTRACT_V3, "valid": true, "ready": false}),
                 );
@@ -2261,6 +2292,9 @@ where
                 validation = Some(
                     json!({"contract": NORMALIZED_DECISION_INPUT_CONTRACT_V3, "valid": true, "ready": true}),
                 );
+                let prospect = decision_input.to_gtm_prospect().map_err(|_| {
+                    run_failure(RunFailureKind::PolicyBlocked, "v3-gtm-projection-invalid")
+                })?;
                 let fit_result = fit_prospect_with_governed_authority(
                     &staged_pack,
                     prospect,
@@ -4399,6 +4433,101 @@ fn merge_projected_schemas(
     )]))
 }
 
+fn deterministic_proposal_pursuit(
+    input: &crate::decision_input::DecisionInput,
+    classifications_ready: bool,
+) -> (&'static str, Vec<String>) {
+    let attribute = |name: &str| {
+        input
+            .attributes()
+            .get(name)
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+    };
+    if attribute("policy_conflict_status") == Some("present") {
+        return ("decline", vec!["policy-conflict".into()]);
+    }
+    let required_fields_ready = ["company", "background", "trigger"].iter().all(|name| {
+        input
+            .field(name)
+            .and_then(Value::as_str)
+            .is_some_and(|v| !v.trim().is_empty())
+    });
+    let required_attributes_ready = [
+        "opportunity_stage",
+        "opportunity_category",
+        "source_safety",
+        "proof_status",
+        "policy_conflict_status",
+    ]
+    .iter()
+    .all(|name| attribute(name).is_some());
+    if !classifications_ready || !required_fields_ready || !required_attributes_ready {
+        return ("review", vec!["insufficient-context".into()]);
+    }
+    match attribute("proof_status") {
+        Some("approved" | "not-required") => ("pursue", vec!["evidence-ready".into()]),
+        Some("gap") => ("review", vec!["proof-gap".into()]),
+        Some("unsupported") => ("review", vec!["unsupported-proof".into()]),
+        _ => ("review", vec!["proof-status-missing".into()]),
+    }
+}
+
+fn proposal_v3_success_artifacts(
+    request: &RunRequestV1,
+    bundle: &RunBundleV1,
+    bundle_sha256: &str,
+    normalized: &Value,
+    pursuit_decision: &str,
+    reason_codes: Vec<String>,
+) -> Result<SuccessArtifacts> {
+    let generation_allowed = pursuit_decision == "pursue";
+    let output = json!({
+        "contract": "mdp.proposal-pursuit.v1",
+        "execution_id": request.execution_id,
+        "decision": pursuit_decision,
+        "reason_codes": reason_codes,
+        "generation_allowed": generation_allowed,
+        "normalization": {
+            "contract": NORMALIZED_DECISION_INPUT_CONTRACT_V3,
+            "requirements_sha256": normalized["requirements_sha256"],
+            "taxonomy_set_sha256": normalized["taxonomy_set_sha256"],
+            "classifications": normalized["classifications"]
+        }
+    });
+    let compiled_context = json!({
+        "contract": "mdp.compiled-run-context.v1",
+        "execution_id": request.execution_id,
+        "profile": request.profile,
+        "operation": request.operation,
+        "bundle_sha256": bundle_sha256,
+        "pack_portable_digest": bundle.pack.portable_digest,
+        "requirements_sha256": normalized["requirements_sha256"],
+        "taxonomy_set_sha256": normalized["taxonomy_set_sha256"],
+        "pursuit": {
+            "decision": pursuit_decision,
+            "generation_allowed": generation_allowed,
+            "reason_codes": output["reason_codes"]
+        }
+    });
+    let mut output_bytes = serde_json::to_vec_pretty(&output)?;
+    output_bytes.push(b'\n');
+    let mut decision = DecisionAuthority {
+        schema_id: "mdp.proposal-pursuit-decision.v1".into(),
+        decision: pursuit_decision.into(),
+        reason_codes,
+        sha256: String::new(),
+    };
+    decision.sha256 =
+        canonical_json_sha256_for_domain(&decision.schema_id, &serde_json::to_value(&decision)?)?;
+    Ok(SuccessArtifacts {
+        output_bytes,
+        output_schema_id: "mdp.proposal-pursuit.v1".into(),
+        compiled_context,
+        decision,
+    })
+}
+
 fn gtm_success_artifacts(
     request: &RunRequestV1,
     bundle: &RunBundleV1,
@@ -5198,9 +5327,10 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        RunDeadline, RunFailure, RunFailureKind, execute_generative_step, execute_run_inner,
-        execute_run_inner_with_driver, governed_normalization_outcome, gtm_lineage_schema_ids,
-        gtm_success_artifacts, host_wrap_governed_output, host_wrap_v3_normalization_output,
+        RunDeadline, RunFailure, RunFailureKind, deterministic_proposal_pursuit,
+        execute_generative_step, execute_run_inner, execute_run_inner_with_driver,
+        governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
+        host_wrap_governed_output, host_wrap_v3_normalization_output,
         project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
         provider_schema_source_for_contract, routed_context_shape_diagnostic,
         routed_context_validation_diagnostic, seal_driver_request, seal_driver_result,
@@ -5215,9 +5345,61 @@ mod tests {
         EvidenceProvenance, ExecutionPolicy, JobIdentity, LocalArtifactInput, ModelIdentity,
         PackAuthority, RunBundleV1, RunMode, RunRequestV1, TerminalState,
     };
+    use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn proposal_input(
+        proof_status: &str,
+        policy_conflict_status: &str,
+    ) -> crate::decision_input::DecisionInput {
+        crate::decision_input::DecisionInput::new(
+            BTreeMap::from([
+                ("company".into(), serde_json::json!("Synthetic Agency")),
+                (
+                    "background".into(),
+                    serde_json::json!("Bounded opportunity"),
+                ),
+                ("trigger".into(), serde_json::json!("2030-01-01")),
+            ]),
+            vec![],
+            BTreeMap::from([
+                ("opportunity_stage".into(), serde_json::json!("bid-no-bid")),
+                (
+                    "opportunity_category".into(),
+                    serde_json::json!("public-services-review"),
+                ),
+                ("source_safety".into(), serde_json::json!("synthetic")),
+                ("proof_status".into(), serde_json::json!(proof_status)),
+                (
+                    "policy_conflict_status".into(),
+                    serde_json::json!(policy_conflict_status),
+                ),
+            ]),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn proposal_pursuit_is_deterministic_and_model_cannot_select_it() {
+        assert_eq!(
+            deterministic_proposal_pursuit(&proposal_input("approved", "none"), true).0,
+            "pursue"
+        );
+        assert_eq!(
+            deterministic_proposal_pursuit(&proposal_input("gap", "none"), true).0,
+            "review"
+        );
+        assert_eq!(
+            deterministic_proposal_pursuit(&proposal_input("approved", "present"), true).0,
+            "decline"
+        );
+        assert_eq!(
+            deterministic_proposal_pursuit(&proposal_input("approved", "none"), false).0,
+            "review"
+        );
+    }
 
     #[test]
     fn deadline_plan_exposes_one_effective_bound_and_outer_warning() {
@@ -6014,7 +6196,7 @@ mod tests {
         let root = temp_path("host-envelope-transaction");
         let pack = root.join("pack");
         let routed_context = root.join("routed-context.json");
-        let normalized_prospect = root.join("normalized-prospect.json");
+        let normalized_input = root.join("normalized-input.json");
         let supplied_material = root.join("supplied-material.json");
         fs::create_dir_all(&root).unwrap();
         init_pack(&pack, "Host Envelope Pack", "proposal", true, false).unwrap();
@@ -6025,7 +6207,7 @@ mod tests {
         let routed_context_bytes =
             crate::artifact_hash::canonical_json_bytes(&brief["context"]["model_context"]).unwrap();
         fs::write(&routed_context, &routed_context_bytes).unwrap();
-        fs::write(&normalized_prospect, b"{}\n").unwrap();
+        fs::write(&normalized_input, b"{}\n").unwrap();
         fs::write(&supplied_material, b"{}\n").unwrap();
 
         let driver_sha =
@@ -6062,9 +6244,9 @@ mod tests {
                     provenance_refs: vec![],
                 },
                 LocalArtifactInput {
-                    logical_name: "normalized_prospect".into(),
-                    source_path: normalized_prospect.display().to_string(),
-                    schema_id: "mdp.synthetic-normalized-prospect.v1".into(),
+                    logical_name: "normalized-decision-input".into(),
+                    source_path: normalized_input.display().to_string(),
+                    schema_id: "mdp.synthetic-normalized-input.v1".into(),
                     media_type: "application/json".into(),
                     provenance_refs: vec![],
                 },
@@ -6160,7 +6342,7 @@ mod tests {
                     Ok(result)
                 },
             )
-            .unwrap();
+            .unwrap_or_else(|error| panic!("run should reach wrapper rejection: {error:?}"));
 
             assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
             assert!(run.join("run-bundle.json").is_file());
@@ -6710,9 +6892,44 @@ mod tests {
         let pack = root.join("pack");
         let run = root.join("published-run");
         init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        fs::write(
+            pack.join(".mdp/prompts/normalize-opportunity.yaml"),
+            include_str!("../tests/fixtures/legacy-proposal/normalize-opportunity.yaml"),
+        )
+        .unwrap();
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let output =
+        let legacy_fixture =
             repository.join("scripts/fixtures/proposal-runner/normalize-opportunity-output.json");
+        let output = root.join("legacy-normalize-opportunity-output.json");
+        let mut legacy_output: serde_json::Value =
+            serde_json::from_slice(&fs::read(&legacy_fixture).unwrap()).unwrap();
+        for normalized_key in ["normalized_prospect", "normalized_opportunity"] {
+            let attributes = legacy_output[normalized_key]["attributes"]
+                .as_object_mut()
+                .unwrap();
+            for (name, value) in [
+                ("review_mode_observation", serde_json::json!("bid/no-bid")),
+                (
+                    "buyer_context_observation",
+                    serde_json::json!("Example Public Services Agency"),
+                ),
+                (
+                    "requirement_observation",
+                    serde_json::json!(
+                        "Service request intake, status notifications, reporting, and training"
+                    ),
+                ),
+                (
+                    "opportunity_category",
+                    serde_json::json!("public-services-review"),
+                ),
+                ("proof_status", serde_json::json!("not-required")),
+                ("policy_conflict_status", serde_json::json!("none")),
+            ] {
+                attributes.insert(name.into(), value);
+            }
+        }
+        fs::write(&output, serde_json::to_vec_pretty(&legacy_output).unwrap()).unwrap();
         let source_audit = repository.join("scripts/fixtures/proposal-runner/source-audit.json");
         let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
         request.inputs.push(LocalArtifactInput {
@@ -7210,6 +7427,142 @@ mod tests {
             driver: None,
             model: None,
         }
+    }
+
+    #[test]
+    fn proposal_v3_run_normalizes_then_applies_deterministic_pursuit_policy() {
+        let root = temp_path("proposal-v3-run");
+        let inputs = root.join("inputs");
+        let run = root.join("run");
+        fs::create_dir_all(&inputs).unwrap();
+        let pack =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/proposal");
+        let compiled = crate::commands::requirements::requirements(&pack, "bid-no-bid-review")
+            .expect("proposal v3 requirements compile");
+        let source_binding = inputs.join("source-binding.json");
+        let source_request = inputs.join("source-request.json");
+        let collected = inputs.join("collected.json");
+        fs::write(&source_binding, b"{}\n").unwrap();
+        fs::write(&source_request, b"{}\n").unwrap();
+        let attempts = serde_json::json!({"attempt_results": [
+            {"attempt_id":"buyer","attribute_id":"buyer_context_observation","status":"observed","value":"Public-services agency","source_class":"synthetic_fixture","source_locator":"fixture:buyer"},
+            {"attempt_id":"requirement","attribute_id":"requirement_observation","status":"observed","value":"Governed service intake","source_class":"synthetic_fixture","source_locator":"fixture:requirement"},
+            {"attempt_id":"stage","attribute_id":"review_mode_observation","status":"observed","value":"Formal bid/no-bid gate","source_class":"synthetic_fixture","source_locator":"fixture:stage"}
+        ]});
+        fs::write(&collected, serde_json::to_vec_pretty(&attempts).unwrap()).unwrap();
+        let file_hash = |path: &Path| crate::artifact_hash::sha256_hex(&fs::read(path).unwrap());
+        let normalized = inputs.join("normalized.json");
+        let envelope = serde_json::json!({
+            "contract": "mdp.normalized-decision-input.v3",
+            "job_id": "bid-no-bid-review",
+            "decision_input_contracts": ["proposal.opportunity-context"],
+            "normalization": [{"contract_id":"proposal.opportunity-context","prompt":"prompts/normalize-opportunity.yaml","prompt_version":"proposal-opportunity-context.v3"}],
+            "requirements_sha256": compiled["requirements_sha256"],
+            "taxonomy_set_sha256": compiled["taxonomy_set_sha256"],
+            "source_binding_sha256": file_hash(&source_binding),
+            "source_attempt_request_sha256": file_hash(&source_request),
+            "collected_attempt_results_sha256": file_hash(&collected),
+            "invocation_receipt_sha256": "f".repeat(64),
+            "attributes": {},
+            "signal_observations": [],
+            "normalized_input": {
+                "fields": {"company":"Synthetic Agency","background":"Bounded opportunity","trigger":"2030-01-01"},
+                "signals": [],
+                "attributes": {
+                    "opportunity_stage":"bid-no-bid",
+                    "opportunity_category":"public-services-review",
+                    "source_safety":"synthetic",
+                    "proof_status":"approved",
+                    "policy_conflict_status":"none"
+                }
+            },
+            "outcome": "decision-input-normalization",
+            "classifications": {
+                "opportunity_stage": {"status":"classified","value":"bid-no-bid","taxonomy_id":"proposal-stage","taxonomy_version":"1.0.0","derived_from":["stage"],"basis":"The observed review mode explicitly identifies the formal bid/no-bid gate."},
+                "opportunity_category": {"status":"classified","value":"public-services-review","taxonomy_id":"proposal-category","taxonomy_version":"1.0.0","derived_from":["buyer","requirement"],"basis":"Separate buyer and requirement observations establish a public-services review."}
+            },
+            "gaps": [],
+            "rejected_claims": []
+        });
+        if let Err(issues) =
+            crate::commands::v3_normalization::validate_v3_sealed_envelope(&envelope)
+        {
+            panic!("proposal v3 fixture envelope invalid: {issues:?}");
+        }
+        fs::write(&normalized, serde_json::to_vec_pretty(&envelope).unwrap()).unwrap();
+        let input = |logical_name: &str, path: &Path, schema_id: &str, media_type: &str| {
+            LocalArtifactInput {
+                logical_name: logical_name.into(),
+                source_path: path.display().to_string(),
+                schema_id: schema_id.into(),
+                media_type: media_type.into(),
+                provenance_refs: vec![],
+            }
+        };
+        let request = RunRequestV1 {
+            contract: "mdp.run-request.v1".into(),
+            execution_id: "proposal-v3-review".into(),
+            created_at: "2026-08-31T00:00:00Z".into(),
+            profile: "proposal".into(),
+            operation: "review".into(),
+            mode: RunMode::Deterministic,
+            job_identity: None,
+            pack_dir: pack.display().to_string(),
+            pack_release_id: "proposal-v3-test".into(),
+            prompt: None,
+            inputs: vec![
+                input(
+                    "normalized-decision-input",
+                    &normalized,
+                    "mdp.normalized-decision-input.v3",
+                    "application/json",
+                ),
+                input(
+                    "source-binding",
+                    &source_binding,
+                    "mdp.source-binding.v2",
+                    "application/json",
+                ),
+                input(
+                    "source-attempt-request",
+                    &source_request,
+                    "mdp.source-attempt-request.v2",
+                    "application/json",
+                ),
+                input(
+                    "collected-attempt-results",
+                    &collected,
+                    "mdp.collected-attempt-results.v2",
+                    "application/json",
+                ),
+                input(
+                    "bound-prompt",
+                    &pack.join(".mdp/prompts/normalize-opportunity.yaml"),
+                    "mdp.prompt.v0",
+                    "application/yaml",
+                ),
+            ],
+            execution_policy: ExecutionPolicy {
+                environment_allowlist: vec![],
+                filesystem_mode: "private-staging".into(),
+                tool_mode: "none".into(),
+                network_mode: "none".into(),
+                authorized_endpoints: vec![],
+                max_input_bytes: 1_048_576,
+                max_output_bytes: 1_048_576,
+                timeout_ms: 30_000,
+                retention_policy: "receipt-only".into(),
+            },
+            driver: None,
+            model: None,
+        };
+        let result = execute_run_inner(&request, &run, || Ok(())).expect("proposal v3 run");
+        assert_eq!(result.terminal_state, TerminalState::Success);
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
+        assert_eq!(receipt["decision"]["decision"], "pursue");
+        assert!(run.join("artifacts/output.json").is_file());
+        let _ = fs::remove_dir_all(root);
     }
 
     fn gtm_artifacts_for_fit_status(status: &str) -> super::SuccessArtifacts {
