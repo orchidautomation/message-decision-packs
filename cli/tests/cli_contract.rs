@@ -135,6 +135,7 @@ fn help_and_capabilities_expose_grouping_status_and_canonical_options() {
     let help = run(&["--help"]);
     assert!(help.status.success());
     let text = String::from_utf8(help.stdout).unwrap();
+    assert!(!text.contains("__secure-install"));
     let sections = [
         ("Start:", "init"),
         ("Inspect:", "status"),

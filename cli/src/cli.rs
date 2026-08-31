@@ -776,7 +776,10 @@ pub(crate) fn grouped_root_help() -> String {
             ][..],
         ),
     ];
-    let subcommands = command.get_subcommands().collect::<Vec<_>>();
+    let subcommands = command
+        .get_subcommands()
+        .filter(|subcommand| !subcommand.is_hide_set())
+        .collect::<Vec<_>>();
     for (heading, names) in groups {
         output.push_str(&format!("\n{heading}:\n"));
         for subcommand in subcommands
