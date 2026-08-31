@@ -108,12 +108,28 @@ The repository is source-available under the Elastic License 2.0. That supports 
 
 Pluxx is what makes the agent layer portable.
 
-This repo uses `pluxx.config.ts` to build and distribute agent bundles for:
+This repo uses `pluxx.config.ts` as one maintained distribution source. In the
+prepared, unpublished MDP `0.1.96` tree, Pluxx emits:
+
+- one Agent Plugins v1 portable package containing exactly the five MDP skills;
+- no portable MCP declaration, hooks, scripts, assets, commands, or agents; and
+- native bundles for:
 
 - Claude Code
 - Cursor
 - Codex
 - OpenCode
+
+The native bundles remain because proven host-specific hooks, runtime files,
+commands, MCP wiring, registration, and verification are not part of the
+portable floor. The generated portable `plugin.json` is an output, not a new
+canonical authored source.
+
+Portable format validation is not the same as host discovery. Cursor documents
+a local plugin path, but real Cursor discovery was not proven in the current
+environment. No documented Codex root Agent Plugins import path was
+established, so MDP refuses to guess one and preserves the native Codex path.
+Public Pluxx `0.1.42` and MDP `0.1.96` remain release gates.
 
 Learn more about Pluxx at [pluxx.dev](https://pluxx.dev) or the [orchidautomation/pluxx](https://github.com/orchidautomation/pluxx) GitHub repo.
 
@@ -143,7 +159,11 @@ mdp eval
 
 `fit` owns pack-declared `qualification_gates`, including public-person resolution and source-backed fit/why-now signal coverage. `check-claims` owns draft-text guardrails such as avoid literals, unsupported claims, word counts, subject limits, max questions, exact paragraphs, and forbidden links/html/tracking. Global output-rule entries always apply; routed entry checks such as channel-policy `exact_paragraphs` require `--persona` and `--job`, plus `--scope` for portfolio-sensitive packs. `verify-output` owns structured `mdp.proof-output.v0` validation, including pack-owned `constraints.proof_output` for required segment kinds, minimum segment counts, source refs on claim segments, and connective word limits. `author-proof-output` is only a drafting helper: it compiles `mdp.proof-output-draft.v0` ordered segments into verified proof-output JSON and does not replace source review or `verify-output`. Arbitrary prose remains Layer 1 guidance unless it is mapped to a supported structured Layer 2 constraint. See [Portfolio-Aware GTM Scope](portfolio-scope.md) for scoped routing, fit, brief, and claim-check behavior.
 
-Pluxx translates the agent-facing skills and plugin package into the host-specific shapes people actually use. The goal is not fake parity across every host. The goal is to preserve the same intent and expose the best honest equivalent in each agent environment.
+Pluxx translates the agent-facing skills and plugin package into a portable
+skills floor plus the host-specific shapes people actually use. The goal is not
+fake parity across every host. The goal is to preserve the same intent and
+expose the best honest equivalent in each agent environment, with portable and
+native proof reported separately.
 
 The honest framing is:
 

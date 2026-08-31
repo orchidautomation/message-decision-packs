@@ -15,6 +15,20 @@ The agent edits files explicitly and reruns validation.
 
 The Pluxx source config packages this behavior as bundled command hooks for supported targets. Codex and Claude Code receive native `hooks/hooks.json` files in the generated plugin bundle. Codex also receives `.codex/hooks.generated.json` as a debugging companion because runtime firing still depends on host flags, enabled plugin state, review, trust, and current host behavior.
 
+## Portable package boundary
+
+The Agent Plugins v1 artifact prepared for MDP `0.1.96` is a portable skills
+floor, not a hook overlay. It contains exactly five skills and no hooks,
+scripts, assets, native commands, or portable MCP declaration. Hook behavior
+described below belongs only to the Pluxx-generated native bundles and must be
+proved per host. Copying or validating the portable package does not prove a
+client discovered it and does not prove native hooks fired.
+
+Do not place `hooks/` in the portable artifact or claim an Agent Plugins client
+extension. That boundary changes only after a separately reviewed first-party
+extension contract and installed behavior prove it. Pluxx remains the authored
+distribution layer for both the portable floor and native outputs.
+
 Do not hook automatic full brief generation as the default. Briefs depend on the user's actual intent, prospect privacy, ignored scratch paths, and whether the fit gate passes. Agents should call `mdp fit`, `mdp brief --context`, and `mdp check-claims` deliberately.
 
 ## Codex
@@ -73,10 +87,12 @@ If a host cannot resolve a reliable session identity, the script degrades
 to emitting the full activation body on every call. We never suppress
 context across sessions without a reliable identity.
 
-### Host evidence table
+### Native host evidence table
 
 Installed behavioral proof or an explicit reliable-session-identity
-degradation must be present for each supported native host. As of MDP-281:
+degradation must be present for each supported native host. The `0.1.42` rows
+below describe prepared source evidence and remain gated on public Pluxx and
+MDP releases:
 
 | Host          | Session identity source           | Compact path evidence                                            |
 | ------------- | --------------------------------- | ---------------------------------------------------------------- |
