@@ -8,6 +8,8 @@ use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inp
 use crate::commands::routing::{fit_for_job, fit_normalized};
 #[cfg(unix)]
 use crate::commands::secure_install;
+#[cfg(unix)]
+use crate::commands::secure_run_request_file;
 use crate::commands::{
     AssembleConformancePaths, BehavioralEvidencePaths, RunReceiptOptions, TargetInitOptions,
     apply_pack_change_set, assemble_conformance, author_proof_output_file, capabilities,
@@ -328,6 +330,28 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 expected_file_ino,
                 receipt_fd,
                 to_name.as_deref(),
+            )?,
+        ),
+        #[cfg(unix)]
+        Commands::SecureRun {
+            request,
+            output_leaf,
+            display_output_dir,
+            dir_fd,
+            expected_dev,
+            expected_ino,
+            transport_timeout_ms,
+        } => print_run_execution(
+            json_mode,
+            summary_mode,
+            secure_run_request_file(
+                &request,
+                &output_leaf,
+                &display_output_dir,
+                dir_fd,
+                expected_dev,
+                expected_ino,
+                transport_timeout_ms,
             )?,
         ),
         Commands::RebindSyntheticChain {

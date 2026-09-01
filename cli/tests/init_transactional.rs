@@ -81,6 +81,36 @@ fn run_init_with_fault(
     )
 }
 
+fn run_init_from(
+    current_dir: &Path,
+    dir: &Path,
+    template: &str,
+    fault: Option<&str>,
+) -> (bool, String, String) {
+    let mut command = Command::new(binary());
+    command
+        .current_dir(current_dir)
+        .arg("--json")
+        .arg("init")
+        .arg("--template")
+        .arg(template)
+        .arg("--dir")
+        .arg(dir);
+    if let Some(fault) = fault {
+        command.env("MDP_TEST_INIT_FAULT", fault);
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = command.output().expect("init should run");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 /// Extract the inner `data` value from the CLI's top-level JSON
 /// envelope. The CLI wraps every command response in
 /// `{"command": ..., "data": ..., "ok": ...}`.
@@ -129,14 +159,27 @@ fn assert_published_tree(root: &Path) {
 }
 
 fn assert_publication_paths_clean(publication: &Value) {
+    let current_dir = std::env::current_dir().expect("test runner current directory should exist");
+    assert_publication_paths_clean_from(publication, &current_dir);
+}
+
+fn assert_publication_paths_clean_from(publication: &Value, current_dir: &Path) {
     for key in ["staging_root", "backup_root"] {
-        if let Some(value) = publication.get(key).and_then(Value::as_str) {
-            let path = Path::new(value);
-            assert!(
-                !path.exists(),
-                "publication path {key}={value} should be removed after success"
-            );
-        }
+        let value = publication
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("publication should report {key}"));
+        let reported = Path::new(value);
+        let resolved = if reported.is_absolute() {
+            reported.to_path_buf()
+        } else {
+            current_dir.join(reported)
+        };
+        assert!(
+            !resolved.exists(),
+            "publication path {key}={value} (resolved as {}) should be removed after success",
+            resolved.display()
+        );
     }
 }
 
@@ -171,6 +214,95 @@ fn absent_root_publishes_atomically_and_reports_published() {
     assert_published_tree(&root);
     assert_publication_paths_clean(&publication);
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn single_component_relative_root_publishes_from_current_directory() {
+    let current_dir = temp_root("relative-current-dir");
+    fs::create_dir_all(&current_dir).expect("temporary current directory should be creatable");
+
+    let (ok, stdout, stderr) = run_init_from(&current_dir, Path::new("pack"), "gtm", None);
+    assert!(
+        ok,
+        "relative init should succeed: stdout={stdout} stderr={stderr}"
+    );
+    let payload = data_envelope(&stdout);
+    assert_eq!(payload["publication"]["mode"], "atomic-directory-rename");
+    assert_published_tree(&current_dir.join("pack"));
+    assert_publication_paths_clean_from(&payload["publication"], &current_dir);
+
+    let _ = fs::remove_dir_all(&current_dir);
+}
+
+#[test]
+fn mid_stage_failure_removes_nonce_owned_partial_tree() {
+    let current_dir = temp_root("mid-stage-cleanup");
+    fs::create_dir_all(&current_dir).expect("temporary current directory should be creatable");
+
+    let (ok, stdout, stderr) = run_init_from(
+        &current_dir,
+        Path::new("pack"),
+        "gtm",
+        Some("staging-after-first-artifact"),
+    );
+    assert!(!ok, "injected staging failure must fail");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("staging failed after the first artifact"),
+        "{combined}"
+    );
+    assert!(
+        !current_dir.join("pack").exists(),
+        "failed staging must not publish the destination"
+    );
+    let residue = fs::read_dir(&current_dir)
+        .expect("temporary current directory should remain readable")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".mdp.init.staging."))
+        .collect::<Vec<_>>();
+    assert!(
+        residue.is_empty(),
+        "partial staging residue remained: {residue:?}"
+    );
+
+    let _ = fs::remove_dir_all(&current_dir);
+}
+
+#[test]
+fn mid_stage_cleanup_failure_is_reported_and_never_publishes() {
+    let current_dir = temp_root("mid-stage-cleanup-failure");
+    fs::create_dir_all(&current_dir).expect("temporary current directory should be creatable");
+
+    let (ok, stdout, stderr) = run_init_from(
+        &current_dir,
+        Path::new("pack"),
+        "gtm",
+        Some("staging-after-first-artifact,staging-cleanup"),
+    );
+    assert!(!ok, "a staging cleanup failure must fail closed");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("transaction cleanup failed"),
+        "{combined}"
+    );
+    assert!(combined.contains("staging cleanup failed"), "{combined}");
+    assert!(
+        !current_dir.join("pack").exists(),
+        "cleanup failure must never be reported as publication success"
+    );
+    assert!(
+        fs::read_dir(&current_dir)
+            .expect("temporary current directory should remain readable")
+            .filter_map(Result::ok)
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".mdp.init.staging.")),
+        "the simulated cleanup failure should retain evidence for recovery"
+    );
+
+    let _ = fs::remove_dir_all(&current_dir);
 }
 
 #[test]
@@ -373,7 +505,14 @@ fn dry_run_does_not_touch_destination_or_create_staging() {
     assert_eq!(publication["mode"], "atomic-directory-rename");
     assert_eq!(publication["atomic"], true);
     assert!(!root.exists(), "dry run must not create the destination");
-    assert_publication_paths_clean(&publication);
+    assert!(
+        publication.get("staging_root").is_none(),
+        "dry run must not report a staging path"
+    );
+    assert!(
+        publication.get("backup_root").is_none(),
+        "dry run must not report a backup path"
+    );
     let _ = fs::remove_dir_all(&root);
 }
 

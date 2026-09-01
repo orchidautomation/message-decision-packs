@@ -105,6 +105,13 @@ fi
 exit 0
 EOF
 chmod +x "$fake_bin/claude"
+for detected_host_cli in cursor opencode; do
+  cat > "$fake_bin/$detected_host_cli" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "$fake_bin/$detected_host_cli"
+done
 # shellcheck disable=SC2206
 install_args=(${MDP_RELEASE_INSTALL_ARGS:---agents -y})
 

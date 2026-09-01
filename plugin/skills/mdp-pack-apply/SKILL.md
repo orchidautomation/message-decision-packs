@@ -2,7 +2,7 @@
 name: mdp-pack-apply
 description: Apply an existing Message Decision Pack to supplied inputs for the exact profile job selected by the local mdp CLI. Do not edit the pack, collect missing data, perform downstream actions, or infer a job from vertical terminology.
 metadata:
-  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
+  compatibility: Requires the mdp CLI on PATH. Node.js 18+ is also required for generative direct-CLI runs and native plugin helpers; non-generative CLI paths do not require Node.js. A portable skill install does not imply PLUGIN_ROOT or MCP support.
 ---
 
 # MDP Pack Apply

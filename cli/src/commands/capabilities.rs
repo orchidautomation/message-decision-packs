@@ -653,15 +653,9 @@ fn argument_contract(command: &Command, argument: &Arg, path: &[String]) -> Valu
         })
         .collect::<Vec<_>>();
     let conflicts = command
-        .get_arg_conflicts_with(argument)
-        .into_iter()
-        .map(|conflict| {
-            conflict
-                .get_long()
-                .map(|name| format!("--{name}"))
-                .or_else(|| conflict.get_short().map(|name| format!("-{name}")))
-                .unwrap_or_else(|| conflict.get_id().to_string())
-        })
+        .get_arguments()
+        .filter(|candidate| arguments_conflict(command, argument, candidate))
+        .map(canonical_argument)
         .collect::<Vec<_>>();
     let human_only = matches!(
         argument.get_action(),
@@ -695,6 +689,30 @@ fn argument_contract(command: &Command, argument: &Arg, path: &[String]) -> Valu
         "classification": if human_only { "human-only" } else { "agent-callable" },
         "human_only_reason": human_only.then_some("Clap display action; it does not execute a product command")
     })
+}
+
+/// Clap accepts conflict declarations from either side of an argument pair,
+/// but its reflection API returns only the edges declared by the inspected
+/// argument. Capability consumers need the effective, symmetric relation that
+/// the parser enforces, so close every reflected pair in both directions.
+fn arguments_conflict(command: &Command, left: &Arg, right: &Arg) -> bool {
+    left.get_id() != right.get_id()
+        && (command
+            .get_arg_conflicts_with(left)
+            .iter()
+            .any(|candidate| candidate.get_id() == right.get_id())
+            || command
+                .get_arg_conflicts_with(right)
+                .iter()
+                .any(|candidate| candidate.get_id() == left.get_id()))
+}
+
+fn canonical_argument(argument: &Arg) -> String {
+    argument
+        .get_long()
+        .map(|name| format!("--{name}"))
+        .or_else(|| argument.get_short().map(|name| format!("-{name}")))
+        .unwrap_or_else(|| argument.get_id().to_string())
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1293,6 +1311,14 @@ mod tests {
             projected_argument(trace, "--receipt")["requires_when_present"],
             json!(["--bundle"])
         );
+        assert_eq!(
+            projected_argument(trace, "--bundle")["conflicts_with"],
+            json!(["--file"])
+        );
+        assert_eq!(
+            projected_argument(trace, "--artifact-root")["conflicts_with"],
+            json!(["--dir", "--prompt-output", "--validation-input"])
+        );
 
         let fit = projected_command(commands, &["fit"]);
         assert_eq!(
@@ -1340,6 +1366,82 @@ mod tests {
             projected_command(commands, &["capabilities"])["subcommand_required"],
             false
         );
+    }
+
+    #[test]
+    fn projected_conflicts_match_the_stable_cli_contract() {
+        let result = capabilities();
+        let projected = result["cli"]["commands"].as_array().unwrap();
+        let actual = projected
+            .iter()
+            .filter_map(|command| {
+                let arguments = command["arguments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|argument| {
+                        argument["conflicts_with"]
+                            .as_array()
+                            .is_some_and(|conflicts| !conflicts.is_empty())
+                    })
+                    .map(|argument| {
+                        json!({
+                            "canonical": argument["canonical"],
+                            "conflicts_with": argument["conflicts_with"],
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                (!arguments.is_empty()).then(|| {
+                    json!({
+                        "path": command["path"],
+                        "arguments": arguments,
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
+        // This is an intentionally explicit contract fixture, not another
+        // implementation of the projection algorithm. Any parser change that
+        // adds or removes an effective conflict must update this list after
+        // its user-facing behavior has been reviewed.
+        let expected = vec![
+            json!({
+                "path": ["rebind-synthetic-chain"],
+                "arguments": [
+                    {"canonical": "--dry-run", "conflicts_with": ["--apply", "--force"]},
+                    {"canonical": "--apply", "conflicts_with": ["--dry-run"]},
+                    {"canonical": "--force", "conflicts_with": ["--dry-run"]},
+                ],
+            }),
+            json!({
+                "path": ["trace"],
+                "arguments": [
+                    {"canonical": "--file", "conflicts_with": ["--bundle", "--receipt"]},
+                    {"canonical": "--dir", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--prompt-output", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--validation-input", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--bundle", "conflicts_with": ["--file"]},
+                    {"canonical": "--receipt", "conflicts_with": ["--file"]},
+                    {"canonical": "--artifact-root", "conflicts_with": ["--dir", "--prompt-output", "--validation-input"]},
+                ],
+            }),
+            json!({
+                "path": ["fit"],
+                "arguments": [
+                    {"canonical": "--prospect", "conflicts_with": ["--normalized-input"]},
+                    {"canonical": "--normalized-input", "conflicts_with": ["--prospect"]},
+                ],
+            }),
+            json!({
+                "path": ["brief"],
+                "arguments": [
+                    {"canonical": "--prospect", "conflicts_with": ["--normalized-input"]},
+                    {"canonical": "--normalized-input", "conflicts_with": ["--prospect"]},
+                ],
+            }),
+        ];
+
+        assert_eq!(actual, expected);
     }
 
     #[test]

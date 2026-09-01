@@ -16,6 +16,7 @@ Options:
   --codex               Install only the Codex plugin bundle.
   --opencode            Install only the OpenCode plugin bundle.
   --agent-plugins       Install only the strict Agent Plugins portable core.
+  --force-cli           Reinstall the CLI even when the selected version is present.
   -y, --yes             Noninteractive mode where supported by downstream installers.
   --repo OWNER/REPO     Override the GitHub repository.
   --version VERSION     Install a specific release version or tag.
@@ -28,6 +29,7 @@ Environment:
   MDP_RELEASE_BASE_URL  Release asset base URL override.
   MDP_INSTALL_DIR       Directory where the mdp CLI should be installed by plugin bootstrap.
   MDP_SKIP_CLI_UPDATE   Set automatically after --agents installs the CLI once.
+  MDP_FORCE_CLI_UPDATE  Set to 1 to force a CLI repair/reinstall.
   MDP_AGENT_PLUGINS_INSTALL_DIR
                         Explicit client-managed import directory for the portable
                         core. Required for --agent-plugins. When set, --agents
@@ -50,6 +52,7 @@ version="${MDP_VERSION:-latest}"
 base_url="${MDP_RELEASE_BASE_URL:-}"
 yes=0
 agents=0
+force_cli="${MDP_FORCE_CLI_UPDATE:-0}"
 targets=()
 
 while [ "$#" -gt 0 ]; do
@@ -68,6 +71,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     -y|--yes)
       yes=1
+      shift
+      ;;
+    --force-cli)
+      force_cli=1
       shift
       ;;
     --repo)
@@ -127,9 +134,6 @@ if [ "$agents" = "1" ]; then
   targets=(cli claude-code cursor codex opencode)
   if [ -n "${MDP_AGENT_PLUGINS_INSTALL_DIR:-}" ]; then
     targets+=(agent-plugins)
-  else
-    echo "Portable Agent Plugins import not auto-routed: set MDP_AGENT_PLUGINS_INSTALL_DIR to an explicit compatible-client path." >&2
-    echo "Native Claude Code, Cursor, Codex, and OpenCode installation will continue unchanged." >&2
   fi
 elif [ "${#targets[@]}" -eq 0 ]; then
   targets=(codex)
@@ -263,6 +267,7 @@ if [ "$yes" = "1" ]; then
   export PLUXX_CODEX_ENABLE_PLUGIN_HOOKS="${PLUXX_CODEX_ENABLE_PLUGIN_HOOKS:-1}"
 fi
 export MDP_VERSION="$version"
+export MDP_FORCE_CLI_UPDATE="$force_cli"
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -270,35 +275,115 @@ cleanup() {
 }
 trap cleanup EXIT
 
-run_installer() {
-  local target="$1"
-  local installer="$tmp_dir/install-$target.sh"
-  local url="$base_url/install-$target.sh"
-  local installer_args=()
+manifest="$tmp_dir/release-manifest.json"
+checksums="$tmp_dir/SHA256SUMS.txt"
+curl -fsSL "$base_url/release-manifest.json" -o "$manifest"
+curl -fsSL "$base_url/SHA256SUMS.txt" -o "$checksums"
+resolved_version="$(node - "$manifest" <<'NODE'
+const { readFileSync } = require('fs')
+const version = JSON.parse(readFileSync(process.argv[2], 'utf8'))?.plugin?.version
+if (typeof version !== 'string' || !version) process.exit(1)
+process.stdout.write(version)
+NODE
+)"
+if [ "$version" != "latest" ] && [ "${version#v}" != "$resolved_version" ]; then
+  echo "Release manifest version $resolved_version does not match requested version $version." >&2
+  exit 1
+fi
+export MDP_RESOLVED_VERSION="$resolved_version"
 
-  if [ "$agents" = "1" ] && [ "$target" = "claude-code" ] && ! command -v claude >/dev/null 2>&1; then
-    echo "Skipping Claude Code bundle because the claude CLI is not available on PATH." >&2
-    echo "Run with --claude-code to require Claude Code installation and fail if prerequisites are missing." >&2
+summary_file="$tmp_dir/summary.tsv"
+: > "$summary_file"
+failed=0
+
+verify_release_asset() {
+  local filepath="$1" asset_name="$2" expected actual
+  expected="$(awk -v name="$asset_name" '$2 == name { print $1 }' "$checksums")"
+  if [ -z "$expected" ] || [ "$(printf '%s' "$expected" | wc -c | tr -d ' ')" -ne 64 ]; then
+    echo "Release checksum inventory is missing a valid digest for $asset_name." >&2
+    return 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$filepath" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$filepath" | awk '{print $1}')"
+  else echo "Missing required checksum command: sha256sum or shasum" >&2; return 1
+  fi
+  if [ "$actual" != "$expected" ]; then
+    echo "Release checksum mismatch for $asset_name." >&2
+    return 1
+  fi
+}
+
+install_cli() {
+  local installed_version="" installer="$tmp_dir/install-cli.sh"
+  if command -v mdp >/dev/null 2>&1; then
+    installed_version="$(mdp --version 2>/dev/null | awk '{print $NF}' || true)"
+  fi
+  if [ "$installed_version" = "$resolved_version" ] && [ "$force_cli" != "1" ]; then
+    printf 'cli\tunchanged\t\n' >> "$summary_file"
     return 0
   fi
-
-  if [ "$agents" = "1" ] && [ "$target" = "codex" ] && ! command -v codex >/dev/null 2>&1; then
-    echo "Skipping Codex bundle because the codex CLI is not available on PATH." >&2
-    echo "Run with --codex to require Codex installation and fail if prerequisites are missing." >&2
-    return 0
-  fi
-
-  if [ "$yes" = "1" ]; then
-    installer_args+=(--yes)
-  fi
-
-  echo "Installing Message Decision Packs for $target..."
-  curl -fsSL "$url" -o "$installer"
-  bash "$installer" "${installer_args[@]}"
-
-  if [ "$target" = "cli" ]; then
+  curl -fsSL "$base_url/install-cli.sh" -o "$installer" || return 1
+  verify_release_asset "$installer" "install-cli.sh" || return 1
+  if bash "$installer"; then
+    if [ -n "$installed_version" ]; then printf 'cli\tupdated\t\n' >> "$summary_file"
+    else printf 'cli\tinstalled\t\n' >> "$summary_file"
+    fi
     export MDP_SKIP_CLI_UPDATE=1
+  else
+    printf 'cli\tfailed\tinstaller failed\n' >> "$summary_file"
+    failed=1
   fi
+}
+
+install_native_targets() {
+  local installer="$tmp_dir/install-agents.sh" result="$tmp_dir/native-results.json" status=0
+  local args=(--json --quiet --base-url "$base_url" --version "$resolved_version")
+  local target
+  if [ "$yes" = "1" ]; then args+=(--yes); fi
+  if [ "$agents" = "1" ]; then
+    args+=(--agents)
+  else
+    for target in "${targets[@]}"; do
+      case "$target" in claude-code|cursor|codex|opencode) args+=("--$target");; esac
+    done
+  fi
+  curl -fsSL "$base_url/install-agents.sh" -o "$installer" || return 1
+  verify_release_asset "$installer" "install-agents.sh" || return 1
+  set +e
+  bash "$installer" "${args[@]}" > "$result"
+  status=$?
+  set -e
+  if ! node - "$result" "$summary_file" "$resolved_version" <<'NODE'
+const { appendFileSync, readFileSync } = require('fs')
+const fail = (message) => { console.error(message); process.exit(1) }
+let value
+try { value = JSON.parse(readFileSync(process.argv[2], 'utf8')) } catch { fail('Native installer returned invalid JSON.') }
+const states = new Set(['installed', 'updated', 'unchanged', 'skipped', 'failed'])
+const targets = new Set(['claude-code', 'cursor', 'codex', 'opencode'])
+if (value?.schema !== 'pluxx.install-results.v1' || value?.plugin?.name !== 'message-decision-packs' ||
+    value?.plugin?.version !== process.argv[4] ||
+    !['aggregate', 'explicit'].includes(value?.selectionMode) || !Array.isArray(value?.results) ||
+    !Array.isArray(value?.plan) || value.results.length !== value.plan.length) fail('Native installer result envelope failed validation.')
+const seen = new Set()
+for (const result of value.results) {
+  if (!targets.has(result?.target) || seen.has(result.target) || !states.has(result?.state)) fail('Native installer returned an invalid target result.')
+  if (result.state === 'skipped' && !result.reason) fail('Skipped native result is missing a reason.')
+  if (result.state === 'failed' && (!result.error || !result.action)) fail('Failed native result is missing corrective detail.')
+  seen.add(result.target)
+  appendFileSync(process.argv[3], `${result.target}\t${result.state}\t${result.reason || result.error || ''}\n`)
+}
+NODE
+  then
+    echo "Could not consume the Pluxx install-results contract." >&2
+    return 1
+  fi
+  native_failed=0
+  grep -q $'\tfailed\t' "$summary_file" && native_failed=1
+  if [ "$status" -ne 0 ] && [ "$native_failed" = "0" ]; then
+    echo "Native installer exited nonzero without a failed terminal result." >&2
+    return 1
+  fi
+  if [ "$status" -ne 0 ] || [ "$native_failed" = "1" ]; then failed=1; fi
 }
 
 install_agent_plugins() {
@@ -309,7 +394,8 @@ install_agent_plugins() {
   local checksums="$tmp_dir/SHA256SUMS.txt"
   local extracted="$tmp_dir/portable-extracted"
   local source_root="$extracted/agent-plugins"
-  local expected actual
+  local expected actual existed=0
+  [ -e "$install_dir" ] && existed=1
 
   need_cmd tar
   need_cmd node
@@ -409,6 +495,35 @@ if (
 ) fail('Release manifest portable-package contract does not match the extracted artifact.')
 NODE
 
+  if [ -d "$install_dir" ] && node - "$source_root" "$install_dir" <<'NODE'
+const { createHash } = require('crypto')
+const { lstatSync, readFileSync, readdirSync } = require('fs')
+const { join, relative } = require('path')
+const digest = (root) => {
+  const records = []
+  const walk = (directory) => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = join(directory, name); const stats = lstatSync(path)
+      if (stats.isSymbolicLink()) process.exit(1)
+      if (stats.isDirectory()) walk(path)
+      else if (stats.isFile()) records.push({
+        path: relative(root, path).split('\\').join('/'),
+        executable: (stats.mode & 0o111) !== 0,
+        sha256: createHash('sha256').update(readFileSync(path)).digest('hex'),
+      })
+      else process.exit(1)
+    }
+  }
+  walk(root)
+  return createHash('sha256').update(`${JSON.stringify(records)}\n`).digest('hex')
+}
+process.exit(digest(process.argv[2]) === digest(process.argv[3]) ? 0 : 1)
+NODE
+  then
+    printf 'unchanged\n' > "$tmp_dir/portable-state"
+    return 0
+  fi
+
   mkdir -p "$(dirname "$install_dir")"
   local staged="$install_dir.mdp-portable-staging.$$"
   local backup="$install_dir.mdp-portable-backup.$$"
@@ -422,16 +537,79 @@ NODE
     return 1
   fi
   rm -rf "$backup"
-  echo "Installed Agent Plugins portable core to $install_dir"
-  echo "Reload the compatible client and record real-client discovery separately from native hook proof."
+  if [ "$existed" = "1" ]; then printf 'updated\n' > "$tmp_dir/portable-state"
+  else printf 'installed\n' > "$tmp_dir/portable-state"
+  fi
 }
 
+has_cli=0
+has_native=0
+has_portable=0
 for target in "${targets[@]}"; do
-  if [ "$target" = "agent-plugins" ]; then
-    install_agent_plugins
-  else
-    run_installer "$target"
-  fi
+  case "$target" in
+    cli) has_cli=1 ;;
+    claude-code|cursor|codex|opencode) has_native=1 ;;
+    agent-plugins) has_portable=1 ;;
+  esac
 done
 
-echo "Message Decision Packs install complete."
+if [ "$has_cli" = "1" ]; then
+  if ! install_cli; then
+    printf 'cli\tfailed\tinstaller preparation failed\n' >> "$summary_file"
+    failed=1
+  fi
+fi
+if [ "$has_native" = "1" ]; then
+  if ! install_native_targets; then
+    echo "Native installer orchestration failed before returning a valid result envelope." >&2
+    if [ "$agents" = "1" ]; then
+      printf '%s\tfailed\tnative installer orchestration failed\n' claude-code cursor codex opencode >> "$summary_file"
+    else
+      for target in "${targets[@]}"; do
+        case "$target" in
+          claude-code|cursor|codex|opencode)
+            printf '%s\tfailed\tnative installer orchestration failed\n' "$target" >> "$summary_file" ;;
+        esac
+      done
+    fi
+    failed=1
+  fi
+fi
+if [ "$has_portable" = "1" ]; then
+  set +e
+  ( set -e; install_agent_plugins )
+  portable_status=$?
+  set -e
+  if [ "$portable_status" -eq 0 ]; then
+    portable_state="$(cat "$tmp_dir/portable-state")"
+    printf 'agent-plugins\t%s\t\n' "$portable_state" >> "$summary_file"
+  else
+    printf 'agent-plugins\tfailed\tportable install failed\n' >> "$summary_file"
+    failed=1
+  fi
+fi
+
+echo "Message Decision Packs $resolved_version"
+reload_hosts=()
+while IFS=$'\t' read -r target state detail; do
+  case "$state" in
+    installed|updated) marker="✓" ;;
+    unchanged) marker="=" ;;
+    skipped) marker="-" ;;
+    failed) marker="!" ;;
+    *) marker="?" ;;
+  esac
+  if [ -n "$detail" ]; then printf '%s %s: %s (%s)\n' "$marker" "$target" "$state" "$detail"
+  else printf '%s %s: %s\n' "$marker" "$target" "$state"
+  fi
+  case "$target:$state" in
+    claude-code:installed|claude-code:updated|cursor:installed|cursor:updated|codex:installed|codex:updated|opencode:installed|opencode:updated)
+      reload_hosts+=("$target") ;;
+  esac
+done < "$summary_file"
+if [ "${#reload_hosts[@]}" -gt 0 ]; then
+  reload_list="${reload_hosts[0]}"
+  for target in "${reload_hosts[@]:1}"; do reload_list="$reload_list, $target"; done
+  printf 'Reload or restart updated agent hosts: %s.\n' "$reload_list"
+fi
+[ "$failed" -eq 0 ]

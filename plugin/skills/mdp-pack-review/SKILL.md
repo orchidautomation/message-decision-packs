@@ -2,7 +2,7 @@
 name: mdp-pack-review
 description: Use for read-only audit, validation, hardening, testing, or diagnosis of an existing Message Decision Pack itself, including structure, jobs, routes, prompts, gaps, evals, and installed parity. Do not edit unless review plus repair is explicit.
 metadata:
-  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
+  compatibility: Requires the mdp CLI on PATH. Node.js 18+ is also required for generative direct-CLI runs and native plugin helpers; non-generative CLI paths do not require Node.js. A portable skill install does not imply PLUGIN_ROOT or MCP support.
 ---
 
 # MDP Pack Review

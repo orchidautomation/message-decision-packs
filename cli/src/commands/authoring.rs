@@ -1500,13 +1500,75 @@ fn archived_state_leaf(state: &TransactionState) -> Result<String> {
 }
 
 #[cfg(unix)]
+// Archive names and nested inode identities are unique to one publication
+// attempt. The remaining fields describe the committed authority material that
+// repeated applications of the same sealed plan must agree on.
+#[derive(Debug, Eq, PartialEq)]
+struct ArchivedCommittedStateSemantics<'a> {
+    contract: &'a str,
+    phase: u8,
+    change_set_sha256: &'a str,
+    live_root_sha256: &'a str,
+    live_root_identity: (u64, u64),
+    parent_identity: (u64, u64),
+    created_directories: Vec<&'a str>,
+    backups: Vec<(&'a str, &'a str, u64)>,
+    installs: Vec<(&'a str, &'a str, u64)>,
+}
+
+#[cfg(unix)]
+fn archived_committed_state_semantics(
+    state: &TransactionState,
+) -> ArchivedCommittedStateSemantics<'_> {
+    let mut created_directories = state
+        .created_directories
+        .iter()
+        .map(|directory| directory.path.as_str())
+        .collect::<Vec<_>>();
+    created_directories.sort_unstable();
+    let mut backups = state
+        .backups
+        .iter()
+        .map(|backup| (backup.path.as_str(), backup.sha256.as_str(), backup.bytes))
+        .collect::<Vec<_>>();
+    backups.sort_unstable();
+    let mut installs = state
+        .installs
+        .iter()
+        .map(|install| {
+            (
+                install.path.as_str(),
+                install.sha256.as_str(),
+                install.bytes,
+            )
+        })
+        .collect::<Vec<_>>();
+    installs.sort_unstable();
+    ArchivedCommittedStateSemantics {
+        contract: &state.contract,
+        phase: state.phase,
+        change_set_sha256: &state.change_set_sha256,
+        live_root_sha256: &state.live_root_sha256,
+        live_root_identity: (state.live_root_dev, state.live_root_ino),
+        parent_identity: (state.parent_dev, state.parent_ino),
+        created_directories,
+        backups,
+        installs,
+    }
+}
+
+#[cfg(unix)]
 fn read_archived_committed_state(
     parent: &File,
     live_root: &Path,
     change_set_sha256: &str,
 ) -> Result<Option<TransactionState>> {
     let binding = root_binding(live_root);
-    let mut matched = None;
+    // Keep only the deterministic representative while validating every
+    // matching archive. Retained evidence is intentionally unbounded, so
+    // collecting complete states here would make recovery memory grow with
+    // the number of otherwise valid retries.
+    let mut matched: Option<(String, TransactionState)> = None;
     for entry in fs::read_dir(descriptor_path(parent))? {
         let entry = entry?;
         let name = entry.file_name();
@@ -1530,13 +1592,26 @@ fn read_archived_committed_state(
         if state.phase != 1 {
             continue;
         }
-        if matched.replace(state).is_some() {
-            return Err(anyhow!(
-                "multiple archived committed author transaction states match the change set"
-            ));
+        if let Some((selected_name, selected)) = &mut matched {
+            if archived_committed_state_semantics(&state)
+                != archived_committed_state_semantics(selected)
+            {
+                return Err(anyhow!(
+                    "conflicting archived committed author transaction states match the change set"
+                ));
+            }
+            // Directory iteration order is unspecified. Retain the state with
+            // the smallest authenticated archive leaf so selection remains
+            // deterministic without retaining all complete records.
+            if name < selected_name.as_str() {
+                *selected_name = name.to_string();
+                *selected = state;
+            }
+        } else {
+            matched = Some((name.to_string(), state));
         }
     }
-    Ok(matched)
+    Ok(matched.map(|(_, state)| state))
 }
 
 #[cfg(unix)]

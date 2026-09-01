@@ -136,7 +136,8 @@ The MDP `0.1.101` release contains:
 - Pluxx-generated native bundles and installers for Claude Code, Cursor, Codex,
   and OpenCode;
 - one separate Pluxx-generated `agent-plugins` portable archive;
-- `install.sh` and `install-cli.sh`;
+- the MDP `install.sh` front door, standalone `install-cli.sh`, and checksummed
+  Pluxx-generated `install-agents.sh` native-host orchestrator;
 - checksums and release metadata that bind native trees and the portable tree
   separately; and
 - released `llms.txt` and `llms-full.txt` files.
@@ -154,6 +155,11 @@ The tag, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests must use the
 same semantic version. MDP `0.1.101` is bound to public
 `@orchid-labs/pluxx@0.1.42`, registry integrity
 `sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw==`.
+Current CI and release generation are pinned to `@orchid-labs/pluxx@0.1.43`
+and verify npm tarball SHA-256
+`2851a386dc415fd37e124fa132d70af516fee062a8ac355310ea157fa8d2dfc3`.
+That release supplies `pluxx.install-results.v1`; MDP validates the envelope and
+adds only CLI/portable policy plus its branded aggregate summary.
 
 ## Agent-readable context
 

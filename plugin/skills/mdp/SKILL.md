@@ -2,7 +2,7 @@
 name: mdp
 description: Use for MDP CLI/operator questions, contract inspection, validation-command guidance, or an explicitly mixed workflow spanning multiple MDP skills. Do not use merely because a specialized builder, pack-review, or pack-apply request names MDP.
 metadata:
-  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
+  compatibility: Requires the mdp CLI on PATH. Node.js 18+ is also required for generative direct-CLI runs and native plugin helpers; non-generative CLI paths do not require Node.js. A portable skill install does not imply PLUGIN_ROOT or MCP support.
 ---
 
 # MDP
@@ -22,7 +22,7 @@ gates, blockers, and decisions.
 
 Present MDP as two product journeys, not as a catalog the user must learn:
 
-- **Author and maintain** creates, explicitly edits, validates, and reviews
+- **Author and maintain** plans source authority, creates, explicitly edits, validates, and reviews
   durable pack authority. Route mutations to `$mdp-pack-builder`; route
   read-only pack QA to `$mdp-pack-review`.
 - **Use and decide** selects an existing pack, exact job, and supplied input,
@@ -32,7 +32,7 @@ Present MDP as two product journeys, not as a catalog the user must learn:
 Ask which journey is intended only when the request is genuinely ambiguous.
 Absent explicit edit intent, default to Use and decide or read-only review.
 
-- Creating or editing `.mdp/`: `$mdp-pack-builder`.
+- Planning approved sources or creating/editing `.mdp/`: `$mdp-pack-builder`.
 - Read-only pack audit, hardening, or installed QA: `$mdp-pack-review`.
 - Applying any exact profile job to supplied inputs: `$mdp-pack-apply`.
 - Stay here only for operator help, validation-command guidance, or a request
@@ -88,7 +88,8 @@ The Rust CLI is the decision authority. Preserve or reduce its authority; never 
 
 Name the journey and report the pack root, selected owner/job, commands run,
 readiness state, durable artifacts, unresolved gaps, next action, and
-installed-versus-source uncertainty. Author and maintain closes only with
-validated file changes or read-only findings; Use and decide closes with the
+installed-versus-source uncertainty. Author and maintain closes with validated
+file changes, read-only findings, or an approved non-mutating `source-plan`;
+Use and decide closes with the
 canonical decision, verified bundle when present, gaps, and next permitted
 action.

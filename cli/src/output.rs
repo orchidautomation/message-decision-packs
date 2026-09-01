@@ -398,7 +398,7 @@ pub(crate) fn print_output_with_status(
 ) -> Result<()> {
     let actionable_diagnostics = diagnostics_for_result(command, &data);
     if summary_mode {
-        let summary = omit_null_object_fields(summarize(command, &data));
+        let summary = summary_for_output(command, &data);
         if command == "route-budget" {
             crate::commands::schemas::validate_route_budget_summary_output(&summary)?;
         }
@@ -425,6 +425,16 @@ pub(crate) fn print_output_with_status(
         }
     }
     Ok(())
+}
+
+fn summary_for_output(command: &str, data: &Value) -> Value {
+    let mut summary = omit_null_object_fields(summarize(command, data));
+    if command == "route-budget" {
+        if let Some(summary) = summary.as_object_mut() {
+            summary.entry("tightest_headroom").or_insert(Value::Null);
+        }
+    }
+    summary
 }
 
 fn attach_actionable_fields(envelope: &mut Value, diagnostics: Option<&Value>) {
@@ -1634,7 +1644,7 @@ mod tests {
                 "route_card_cap": {"status": "ready"}
             }]
         });
-        let summary = omit_null_object_fields(summarize("route-budget", &raw));
+        let summary = summary_for_output("route-budget", &raw);
         crate::commands::schemas::validate_route_budget_summary_output(&summary)
             .expect("null-omitting route-budget summary should satisfy its schema");
 
@@ -1643,8 +1653,52 @@ mod tests {
         assert!(summary["query"].get("job_id").is_none());
         assert!(summary["query"].get("persona").is_none());
         assert_eq!(summary["route_status_counts"]["ready"], 1);
+        assert_eq!(
+            summary["tightest_headroom"]["job_id"],
+            "outbound-copy-brief"
+        );
         assert!(summary.get("routes").is_none());
         assert!(!summary.to_string().contains("entry body"));
+    }
+
+    #[test]
+    fn route_budget_summary_preserves_explicit_null_headroom_when_unassessed() {
+        let raw = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": true,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "pack_id": "synthetic-pack",
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "route_count": 1,
+            "overflow_count": 0,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 1,
+            "routes": [{
+                "persona": "PMM",
+                "job_id": "legacy-job",
+                "job": "legacy-job",
+                "status": "unassessed",
+                "budget": null,
+                "selected_count": null,
+                "excluded_count": null,
+                "allocation": null,
+                "diagnostics": [],
+                "reason_distribution": {},
+                "excluded_reason_distribution": {},
+                "largest_contributing_cards": [],
+                "route_card_cap": null
+            }]
+        });
+
+        let summary = summary_for_output("route-budget", &raw);
+        crate::commands::schemas::validate_route_budget_summary_output(&summary)
+            .expect("explicit-null route-budget summary should satisfy its schema");
+
+        assert!(summary.get("tightest_headroom").is_some());
+        assert!(summary["tightest_headroom"].is_null());
+        assert!(summary["query"].get("job_id").is_none());
+        assert!(summary["query"].get("persona").is_none());
     }
 
     #[test]
