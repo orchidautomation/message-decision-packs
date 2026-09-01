@@ -1369,46 +1369,79 @@ mod tests {
     }
 
     #[test]
-    fn projected_conflicts_are_the_symmetric_clap_closure() {
+    fn projected_conflicts_match_the_stable_cli_contract() {
         let result = capabilities();
         let projected = result["cli"]["commands"].as_array().unwrap();
-        let mut clap = Cli::command();
-        clap.build();
-
-        for command in projected {
-            let path = command["path"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|part| part.as_str().unwrap())
-                .collect::<Vec<_>>();
-            let clap_command = clap_command_at(&clap, &path);
-
-            for argument in clap_command.get_arguments() {
-                let expected = clap_command
-                    .get_arguments()
-                    .filter(|candidate| {
-                        argument.get_id() != candidate.get_id()
-                            && (clap_command
-                                .get_arg_conflicts_with(argument)
-                                .iter()
-                                .any(|conflict| conflict.get_id() == candidate.get_id())
-                                || clap_command
-                                    .get_arg_conflicts_with(candidate)
-                                    .iter()
-                                    .any(|conflict| conflict.get_id() == argument.get_id()))
+        let actual = projected
+            .iter()
+            .filter_map(|command| {
+                let arguments = command["arguments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|argument| {
+                        argument["conflicts_with"]
+                            .as_array()
+                            .is_some_and(|conflicts| !conflicts.is_empty())
                     })
-                    .map(canonical_argument)
+                    .map(|argument| {
+                        json!({
+                            "canonical": argument["canonical"],
+                            "conflicts_with": argument["conflicts_with"],
+                        })
+                    })
                     .collect::<Vec<_>>();
-                let projected = projected_argument(command, &canonical_argument(argument));
-                assert_eq!(
-                    projected["conflicts_with"],
-                    json!(expected),
-                    "conflict projection drift at {path:?} for {}",
-                    argument.get_id()
-                );
-            }
-        }
+                (!arguments.is_empty()).then(|| {
+                    json!({
+                        "path": command["path"],
+                        "arguments": arguments,
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
+        // This is an intentionally explicit contract fixture, not another
+        // implementation of the projection algorithm. Any parser change that
+        // adds or removes an effective conflict must update this list after
+        // its user-facing behavior has been reviewed.
+        let expected = vec![
+            json!({
+                "path": ["rebind-synthetic-chain"],
+                "arguments": [
+                    {"canonical": "--dry-run", "conflicts_with": ["--apply", "--force"]},
+                    {"canonical": "--apply", "conflicts_with": ["--dry-run"]},
+                    {"canonical": "--force", "conflicts_with": ["--dry-run"]},
+                ],
+            }),
+            json!({
+                "path": ["trace"],
+                "arguments": [
+                    {"canonical": "--file", "conflicts_with": ["--bundle", "--receipt"]},
+                    {"canonical": "--dir", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--prompt-output", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--validation-input", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--bundle", "conflicts_with": ["--file"]},
+                    {"canonical": "--receipt", "conflicts_with": ["--file"]},
+                    {"canonical": "--artifact-root", "conflicts_with": ["--dir", "--prompt-output", "--validation-input"]},
+                ],
+            }),
+            json!({
+                "path": ["fit"],
+                "arguments": [
+                    {"canonical": "--prospect", "conflicts_with": ["--normalized-input"]},
+                    {"canonical": "--normalized-input", "conflicts_with": ["--prospect"]},
+                ],
+            }),
+            json!({
+                "path": ["brief"],
+                "arguments": [
+                    {"canonical": "--prospect", "conflicts_with": ["--normalized-input"]},
+                    {"canonical": "--normalized-input", "conflicts_with": ["--prospect"]},
+                ],
+            }),
+        ];
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
