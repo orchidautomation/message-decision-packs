@@ -18,70 +18,72 @@ SENSITIVE_NAMES = {
     "service-account.json",
 }
 SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx"}
+PARAGRAPH_SAFE_WS = r"(?:(?!\n\s*\n)\s)+"
+
+
+def prose_pattern(pattern: str) -> re.Pattern[str]:
+    """Compile whitespace-aware prose without allowing matches across paragraphs."""
+    return re.compile(pattern.replace(r"\s+", PARAGRAPH_SAFE_WS), re.I)
+
+
 CLAIM_PATTERNS = [
-    (re.compile(r"\bMDP\s+(?:is|provides)\s+(?:an?\s+)?AI SDR\b", re.I), "ai_sdr_claim"),
-    (re.compile(r"\b(?:CMMC|NIST(?:\s+800-\d+)?)\s+(?:certified|compliant)\b", re.I), "compliance_claim"),
-    (re.compile(r"(?<!not )\bguarantees?\s+(?:security|compliance|proposal\s+success)\b", re.I), "guarantee_claim"),
-    (re.compile(r"\bapproved\s+(?:handling\s+)?for\s+CUI\b", re.I), "cui_approval_claim"),
-    (re.compile(r"\bfully\s+automated\s+proposal\s+writing\b", re.I), "automation_claim"),
-    (re.compile(r"(?<!not )\breplaces?\s+(?:human\s+)?(?:compliance\s+review|proposal\s+management\s+software)\b", re.I), "replacement_claim"),
+    (prose_pattern(r"\bMDP\s+(?:is|provides)\s+(?:an?\s+)?AI SDR\b"), "ai_sdr_claim"),
+    (prose_pattern(r"\b(?:CMMC|NIST(?:\s+800-\d+)?)\s+(?:certified|compliant)\b"), "compliance_claim"),
+    (prose_pattern(r"(?<!not )\bguarantees?\s+(?:security|compliance|proposal\s+success)\b"), "guarantee_claim"),
+    (prose_pattern(r"\bapproved\s+(?:handling\s+)?for\s+CUI\b"), "cui_approval_claim"),
+    (prose_pattern(r"\bfully\s+automated\s+proposal\s+writing\b"), "automation_claim"),
+    (prose_pattern(r"(?<!not )\breplaces?\s+(?:human\s+)?(?:compliance\s+review|proposal\s+management\s+software)\b"), "replacement_claim"),
 ]
 CONTROL_PLANE_PATTERNS = [
     (
-        re.compile(r"\b(?:delegated|assigned)\s+to\s+(?:Orchid|Eve|a\s+Linear\s+agent)\b", re.I),
+        prose_pattern(r"\b(?:delegated|assigned)\s+to\s+(?:Orchid|Eve|a\s+Linear\s+agent)\b"),
         "private_execution_assignment",
     ),
     (
-        re.compile(
+        prose_pattern(
             r"\b(?:credentials?|tokens?)\s+(?:are|is|remains?)\s+"
-            r"(?:enabled|available|exposed)(?:\s+at\s+process\s+scope)?\b",
-            re.I,
+            r"(?:enabled|available|exposed)(?:\s+at\s+process\s+scope)?\b"
         ),
         "ambient_credential_roadmap",
     ),
     (
-        re.compile(
+        prose_pattern(
             r"\b(?:next|then)\s+(?:private\s+)?(?:Linear\s+)?"
-            r"(?:issue|task|ticket)\s+[A-Z][A-Z0-9]+-\d+\b",
-            re.I,
+            r"(?:issue|task|ticket)\s+[A-Z][A-Z0-9]+-\d+\b"
         ),
         "private_linear_sequence",
     ),
     (
-        re.compile(
+        prose_pattern(
             r"\b[A-Z][A-Z0-9]+-\d+\s+(?:must|should|will)\s+"
             r"(?:land|merge|ship|complete|start|run)\s+(?:before|after)\s+"
-            r"[A-Z][A-Z0-9]+-\d+\b",
-            re.I,
+            r"[A-Z][A-Z0-9]+-\d+\b"
         ),
         "private_linear_sequence",
     ),
     (
-        re.compile(
+        prose_pattern(
             r"\b(?:before|after)\s+[A-Z][A-Z0-9]+-\d+\b"
             r"(?:(?!\n\s*\n)[^.!?]){0,80}"
             r"\b(?:start|run|land|merge|ship|complete)\s+"
-            r"[A-Z][A-Z0-9]+-\d+\b",
-            re.I,
+            r"[A-Z][A-Z0-9]+-\d+\b"
         ),
         "private_linear_sequence",
     ),
     (
-        re.compile(
+        prose_pattern(
             r"\b[A-Z][A-Z0-9]+-\d+\s+(?:then|followed\s+by|->)\s+"
-            r"[A-Z][A-Z0-9]+-\d+\b",
-            re.I,
+            r"[A-Z][A-Z0-9]+-\d+\b"
         ),
         "private_linear_sequence",
     ),
     (
-        re.compile(
+        prose_pattern(
             r"\b(?:security|authentication|authorization|credential|token|provider)\s+"
             r"(?:boundary|hardening|isolation|migration|remediation|work|"
             r"integration|enablement|support)\s+"
             r"(?:is|remains?|will\s+be)\s+"
-            r"(?:pending|planned|deferred|unremediated|unfinished|incomplete)\b",
-            re.I,
+            r"(?:pending|planned|deferred|unremediated|unfinished|incomplete)\b"
         ),
         "private_security_provider_roadmap",
     ),

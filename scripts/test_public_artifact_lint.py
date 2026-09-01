@@ -166,8 +166,10 @@ class PublicArtifactLintTests(unittest.TestCase):
             plan = root / "docs" / "orchid" / "plans" / "paragraphs.md"
             plan.parent.mkdir(parents=True)
             plan.write_text(
-                "After ABC-201, this paragraph ends.\n\n"
-                "Start ABC-202 in an unrelated example.\n"
+                "After ABC-201 the scope widens\n\n"
+                "start ABC-202 in an unrelated example\n"
+                "After ABC-203 start\n\n"
+                "ABC-204 in another unrelated example\n"
             )
 
             self.assertEqual(
