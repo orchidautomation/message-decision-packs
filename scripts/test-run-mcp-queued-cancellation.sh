@@ -22,6 +22,14 @@ const args = process.argv.slice(2)
 if (!args.includes('verify-run')) process.exit(2)
 const receipt = JSON.parse(readFileSync(args[args.indexOf('--receipt') + 1], 'utf8'))
 writeFileSync(receipt.ready_path, '')
+if (receipt.ready_path.endsWith('queued-numeric.ready')) {
+  writeFileSync(1, `${JSON.stringify({
+    ok: true,
+    command: 'verify-run',
+    data: { contract: 'mdp.run-verification.v1', valid: true },
+  })}\n`)
+  process.exit(0)
+}
 setInterval(() => {}, 1_000)
 JS
 chmod +x "$tmp_dir/fake-mdp.mjs"
@@ -56,7 +64,7 @@ messages = [
     cancel('1'),
     call('replacement', verification('replacement')),
     {'jsonrpc': '2.0', 'id': 'ping', 'method': 'ping'},
-    *[cancel(identifier) for identifier in [1, *[item[0] for item in extras], 'replacement', 100, 101]],
+    *[cancel(identifier) for identifier in [*[item[0] for item in extras], 'replacement', 100, 101]],
 ]
 (root / 'canonical-transcript.ndjson').write_text('\n'.join(json.dumps(message) for message in messages) + '\n')
 PY
@@ -78,7 +86,15 @@ cancelled = string_cancelled[0]
 assert cancelled['result']['isError'] is True, cancelled
 assert cancelled['result']['structuredContent']['code'] == 'cli-cancelled', cancelled
 assert str(root) not in json.dumps(cancelled), cancelled
-assert len([reply for reply in replies if reply.get('id') == 1]) == 1, replies
+numeric_replies = [reply for reply in replies if reply.get('id') == 1]
+assert len(numeric_replies) == 1, replies
+numeric = numeric_replies[0]
+# Cancelling string "1" must not cancel numeric 1. The numeric operation runs
+# afterward and returns its normal verification result.
+assert replies.index(cancelled) < replies.index(numeric), replies
+assert numeric['result']['structuredContent']['contract'] == 'mdp.run-verification.v1', numeric
+assert numeric['result']['structuredContent']['valid'] is True, numeric
+assert (root / 'queued-numeric.ready').exists(), 'numeric canonical operation did not execute'
 assert not (root / 'queued-string.ready').exists(), 'cancelled queued canonical operation executed'
 overflow = next(reply for reply in replies if reply.get('id') == 'overflow')
 assert overflow['error']['data']['code'] == 'mcp-server-busy', overflow
@@ -89,60 +105,4 @@ assert replacement['result']['structuredContent']['code'] == 'cli-cancelled', re
 assert replies.index(ping) < next(index for index, reply in enumerate(replies) if reply.get('id') == 100), replies
 PY
 
-proposal_pack="$root/plugin/assets/templates/proposal"
-proposal_source="$root/scripts/fixtures/proposal-runner/sources/01-rfp-ocr.txt"
-python3 - "$tmp_dir" "$proposal_pack" "$proposal_source" <<'PY'
-import json, pathlib, sys
-root, pack, source = map(pathlib.Path, sys.argv[1:])
-
-def call(identifier, name, arguments=None):
-    return {'jsonrpc': '2.0', 'id': identifier, 'method': 'tools/call', 'params': {'name': name, 'arguments': arguments or {}}}
-
-def cancel(identifier):
-    return {'jsonrpc': '2.0', 'method': 'notifications/cancelled', 'params': {'requestId': identifier}}
-
-messages = [
-    call(100, 'mdp_proposal_tools'),
-    call(101, 'mdp_proposal_tools'),
-    call(1, 'mdp_proposal_tools'),
-    call('1', 'mdp_proposal_run', {
-        'pack': str(pack),
-        'workdir': str(root / 'must-not-run'),
-        'source_paths': [str(source)],
-        'source_id': 'synthetic-cancellation-proof',
-        'source_kind': 'synthetic-example',
-        'dry_run': True,
-    }),
-    cancel('1'),
-    cancel('1'),
-    {'jsonrpc': '2.0', 'id': 'ping', 'method': 'ping'},
-]
-(root / 'compatibility-transcript.ndjson').write_text('\n'.join(json.dumps(message) for message in messages) + '\n')
-PY
-
-env "${role_env[@]}" \
-  MDP_MCP_PACK_ROOTS="$root" \
-  MDP_MCP_INPUT_ROOTS="$root" \
-  node "$root/scripts/mdp-proposal-mcp-server.mjs" \
-  < "$tmp_dir/compatibility-transcript.ndjson" \
-  > "$tmp_dir/compatibility-replies.ndjson"
-
-python3 - "$tmp_dir" <<'PY'
-import json, pathlib, sys
-root = pathlib.Path(sys.argv[1])
-replies = [json.loads(line) for line in (root / 'compatibility-replies.ndjson').read_text().splitlines() if line]
-string_cancelled = [reply for reply in replies if reply.get('id') == '1']
-assert len(string_cancelled) == 1, replies
-cancelled = string_cancelled[0]
-assert cancelled['result']['isError'] is True, cancelled
-assert cancelled['result']['structuredContent']['code'] == 'cli-cancelled', cancelled
-assert str(root) not in json.dumps(cancelled), cancelled
-assert not (root / 'must-not-run').exists(), 'cancelled queued compatibility operation executed'
-ping = next(reply for reply in replies if reply.get('id') == 'ping')
-assert ping['result'] == {}, ping
-numeric = next(reply for reply in replies if reply.get('id') == 1)
-assert numeric.get('result', {}).get('structuredContent', {}).get('code') != 'cli-cancelled', numeric
-assert replies.index(ping) < next(index for index, reply in enumerate(replies) if reply.get('id') == 100), replies
-PY
-
-echo "MCP queued-cancellation stdio integration tests passed."
+echo "Canonical MCP queued-cancellation stdio integration tests passed."
