@@ -117,6 +117,33 @@ need_cmd curl
 need_cmd mktemp
 need_cmd bash
 
+read_manifest_version() {
+  local manifest_path="$1"
+  if command -v node >/dev/null 2>&1; then
+    node - "$manifest_path" <<'NODE'
+const { readFileSync } = require('fs')
+const version = JSON.parse(readFileSync(process.argv[2], 'utf8'))?.plugin?.version
+if (typeof version !== 'string' || !version) process.exit(1)
+process.stdout.write(version)
+NODE
+  else
+    awk '
+      { body = body $0 }
+      END {
+        marker = index(body, "\"plugin\"")
+        if (!marker) exit 1
+        body = substr(body, marker)
+        if (!match(body, /"version"[[:space:]]*:[[:space:]]*"[^"]+"/)) exit 1
+        value = substr(body, RSTART, RLENGTH)
+        sub(/^.*"version"[[:space:]]*:[[:space:]]*"/, "", value)
+        sub(/"$/, "", value)
+        if (!length(value)) exit 1
+        print value
+      }
+    ' "$manifest_path"
+  fi
+}
+
 if [ -z "$base_url" ]; then
   if [ "$version" = "latest" ]; then
     base_url="https://github.com/$repo/releases/latest/download"
@@ -279,13 +306,7 @@ manifest="$tmp_dir/release-manifest.json"
 checksums="$tmp_dir/SHA256SUMS.txt"
 curl -fsSL "$base_url/release-manifest.json" -o "$manifest"
 curl -fsSL "$base_url/SHA256SUMS.txt" -o "$checksums"
-resolved_version="$(node - "$manifest" <<'NODE'
-const { readFileSync } = require('fs')
-const version = JSON.parse(readFileSync(process.argv[2], 'utf8'))?.plugin?.version
-if (typeof version !== 'string' || !version) process.exit(1)
-process.stdout.write(version)
-NODE
-)"
+resolved_version="$(read_manifest_version "$manifest")"
 if [ "$version" != "latest" ] && [ "${version#v}" != "$resolved_version" ]; then
   echo "Release manifest version $resolved_version does not match requested version $version." >&2
   exit 1
@@ -314,9 +335,11 @@ verify_release_asset() {
 }
 
 install_cli() {
-  local installed_version="" installer="$tmp_dir/install-cli.sh"
-  if command -v mdp >/dev/null 2>&1; then
-    installed_version="$(mdp --version 2>/dev/null | awk '{print $NF}' || true)"
+  local install_dir="${MDP_INSTALL_DIR:-$HOME/.local/bin}"
+  local cli_path="$install_dir/mdp" installed_version="" installer="$tmp_dir/install-cli.sh" existed=0
+  if [ -e "$cli_path" ]; then existed=1; fi
+  if [ -x "$cli_path" ]; then
+    installed_version="$("$cli_path" --version 2>/dev/null | awk '{print $NF}' || true)"
   fi
   if [ "$installed_version" = "$resolved_version" ] && [ "$force_cli" != "1" ]; then
     printf 'cli\tunchanged\t\n' >> "$summary_file"
@@ -324,27 +347,50 @@ install_cli() {
   fi
   curl -fsSL "$base_url/install-cli.sh" -o "$installer" || return 1
   verify_release_asset "$installer" "install-cli.sh" || return 1
-  if bash "$installer"; then
-    if [ -n "$installed_version" ]; then printf 'cli\tupdated\t\n' >> "$summary_file"
-    else printf 'cli\tinstalled\t\n' >> "$summary_file"
-    fi
-    export MDP_SKIP_CLI_UPDATE=1
-  else
+  if ! bash "$installer"; then
     printf 'cli\tfailed\tinstaller failed\n' >> "$summary_file"
     failed=1
+    return 1
   fi
+  if [ ! -x "$cli_path" ]; then
+    printf 'cli\tfailed\tselected CLI was not installed at %s\n' "$cli_path" >> "$summary_file"
+    failed=1
+    return 1
+  fi
+  installed_version="$("$cli_path" --version 2>/dev/null | awk '{print $NF}' || true)"
+  if [ "$installed_version" != "$resolved_version" ]; then
+    printf 'cli\tfailed\tselected CLI version is %s, expected %s\n' "${installed_version:-unknown}" "$resolved_version" >> "$summary_file"
+    failed=1
+    return 1
+  fi
+  if [ "$existed" = "1" ]; then printf 'cli\tupdated\t\n' >> "$summary_file"
+  else printf 'cli\tinstalled\t\n' >> "$summary_file"
+  fi
+  export MDP_SKIP_CLI_UPDATE=1
 }
 
 install_native_targets() {
-  local installer="$tmp_dir/install-agents.sh" result="$tmp_dir/native-results.json" status=0
+  local installer="$tmp_dir/install-agents.sh" result="$tmp_dir/native-results.json" native_summary="$tmp_dir/native-summary.tsv" status=0
   local args=(--json --quiet --base-url "$base_url" --version "$resolved_version")
-  local target
+  local target expected_mode expected_targets
+  need_cmd node
+  : > "$native_summary"
   if [ "$yes" = "1" ]; then args+=(--yes); fi
   if [ "$agents" = "1" ]; then
     args+=(--agents)
+    expected_mode=aggregate
+    expected_targets=claude-code,cursor,codex,opencode
   else
+    expected_mode=explicit
+    expected_targets=""
     for target in "${targets[@]}"; do
-      case "$target" in claude-code|cursor|codex|opencode) args+=("--$target");; esac
+      case "$target" in
+        claude-code|cursor|codex|opencode)
+          args+=("--$target")
+          if [ -n "$expected_targets" ]; then expected_targets="$expected_targets,"; fi
+          expected_targets="$expected_targets$target"
+          ;;
+      esac
     done
   fi
   curl -fsSL "$base_url/install-agents.sh" -o "$installer" || return 1
@@ -353,32 +399,43 @@ install_native_targets() {
   bash "$installer" "${args[@]}" > "$result"
   status=$?
   set -e
-  if ! node - "$result" "$summary_file" "$resolved_version" <<'NODE'
-const { appendFileSync, readFileSync } = require('fs')
+  if ! node - "$result" "$native_summary" "$resolved_version" "$expected_mode" "$expected_targets" <<'NODE'
+const { readFileSync, writeFileSync } = require('fs')
 const fail = (message) => { console.error(message); process.exit(1) }
 let value
 try { value = JSON.parse(readFileSync(process.argv[2], 'utf8')) } catch { fail('Native installer returned invalid JSON.') }
 const states = new Set(['installed', 'updated', 'unchanged', 'skipped', 'failed'])
 const targets = new Set(['claude-code', 'cursor', 'codex', 'opencode'])
+const expectedMode = process.argv[5]
+const expectedTargets = process.argv[6].split(',').filter(Boolean)
+const sameTargets = (actual) => actual.length === expectedTargets.length &&
+  actual.every((target) => expectedTargets.includes(target)) && new Set(actual).size === actual.length
 if (value?.schema !== 'pluxx.install-results.v1' || value?.plugin?.name !== 'message-decision-packs' ||
     value?.plugin?.version !== process.argv[4] ||
-    !['aggregate', 'explicit'].includes(value?.selectionMode) || !Array.isArray(value?.results) ||
+    value?.selectionMode !== expectedMode || !Array.isArray(value?.results) ||
     !Array.isArray(value?.plan) || value.results.length !== value.plan.length) fail('Native installer result envelope failed validation.')
+const plannedTargets = value.plan.map((entry) => entry?.target)
+const resultTargets = value.results.map((entry) => entry?.target)
+if (!plannedTargets.every((target) => targets.has(target)) || !sameTargets(plannedTargets) || !sameTargets(resultTargets) ||
+    !plannedTargets.every((target) => resultTargets.includes(target))) fail('Native installer targets do not match the requested selection.')
 const seen = new Set()
+const lines = []
 for (const result of value.results) {
   if (!targets.has(result?.target) || seen.has(result.target) || !states.has(result?.state)) fail('Native installer returned an invalid target result.')
   if (result.state === 'skipped' && !result.reason) fail('Skipped native result is missing a reason.')
   if (result.state === 'failed' && (!result.error || !result.action)) fail('Failed native result is missing corrective detail.')
   seen.add(result.target)
-  appendFileSync(process.argv[3], `${result.target}\t${result.state}\t${result.reason || result.error || ''}\n`)
+  lines.push(`${result.target}\t${result.state}\t${result.reason || result.error || ''}\n`)
 }
+writeFileSync(process.argv[3], lines.join(''))
 NODE
   then
     echo "Could not consume the Pluxx install-results contract." >&2
     return 1
   fi
+  cat "$native_summary" >> "$summary_file"
   native_failed=0
-  grep -q $'\tfailed\t' "$summary_file" && native_failed=1
+  grep -q $'\tfailed\t' "$native_summary" && native_failed=1
   if [ "$status" -ne 0 ] && [ "$native_failed" = "0" ]; then
     echo "Native installer exited nonzero without a failed terminal result." >&2
     return 1
@@ -555,7 +612,9 @@ done
 
 if [ "$has_cli" = "1" ]; then
   if ! install_cli; then
-    printf 'cli\tfailed\tinstaller preparation failed\n' >> "$summary_file"
+    if ! grep -q $'^cli\t' "$summary_file"; then
+      printf 'cli\tfailed\tinstaller preparation failed\n' >> "$summary_file"
+    fi
     failed=1
   fi
 fi

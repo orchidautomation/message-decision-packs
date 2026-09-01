@@ -133,12 +133,15 @@ jobs:
           gh release download "v$version" --dir release-assets
           chmod +x release-assets/mdp-*
           cp release-assets/install.sh release-assets/install-agents.sh
-          shasum -a 256 release-assets/install-agents.sh >> release-assets/SHA256SUMS.txt
           cp scripts/install.sh release-assets/install.sh
           cp scripts/bootstrap-runtime.sh release-assets/install-cli.sh
           cp llms.txt release-assets/llms.txt
           cp llms-full.txt release-assets/llms-full.txt
           chmod +x release-assets/install.sh release-assets/install-cli.sh
+          (
+            cd release-assets
+            shasum -a 256 install-agents.sh install-cli.sh >> SHA256SUMS.txt
+          )
           scripts/finalize-release-assets.sh release-assets
           gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/SHA256SUMS.txt release-assets/release-manifest.json release-assets/install.sh release-assets/install-agents.sh release-assets/install-cli.sh release-assets/install-codex.sh release-assets/llms.txt release-assets/llms-full.txt --clobber
       - name: Install and smoke-test the published release

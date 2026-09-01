@@ -101,6 +101,12 @@ assert(
   `Release workflow must publish, download, stage, finalize, and upload in order; got ${releaseSequenceIndexes.join(', ')}.`,
 )
 assert(
+  releaseWorkflow.includes('cd release-assets') &&
+    releaseWorkflow.includes('shasum -a 256 install-agents.sh install-cli.sh >> SHA256SUMS.txt') &&
+    !releaseWorkflow.includes('shasum -a 256 release-assets/install-agents.sh'),
+  'Release workflow must checksum staged aggregate and CLI installers by basename before finalization.',
+)
+assert(
   releaseWorkflow.includes('MDP_RELEASE_REQUIRE_STAGED_PARITY=1') &&
     releaseWorkflow.includes('MDP_RELEASE_INSTALLER="release-assets/install.sh"') &&
     releaseWorkflow.includes('scripts/release-install-smoke.sh "$version"'),

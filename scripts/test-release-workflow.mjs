@@ -371,6 +371,24 @@ function assertPublishJobNoRebuild(workflow) {
   )
 }
 
+function assertPublishInstallerChecksums(workflow) {
+  const commands = runBlock(workflow, 'Publish release assets').filter(
+    (line) => !line.startsWith('#'),
+  )
+  const stageAggregate = commands.indexOf('cp release-assets/install.sh release-assets/install-agents.sh')
+  const stageCli = commands.indexOf('cp scripts/bootstrap-runtime.sh release-assets/install-cli.sh')
+  const enterAssets = commands.indexOf('cd release-assets')
+  const checksum = commands.indexOf(
+    'shasum -a 256 install-agents.sh install-cli.sh >> SHA256SUMS.txt',
+  )
+  const finalize = commands.indexOf('scripts/finalize-release-assets.sh release-assets')
+  assert.ok(
+    [stageAggregate, stageCli, enterAssets, checksum, finalize].every((index) => index >= 0) &&
+      stageAggregate < enterAssets && stageCli < enterAssets && enterAssets < checksum && checksum < finalize,
+    'release publish must stage both installers, checksum them by basename inside release-assets, then finalize',
+  )
+}
+
 function assertReleaseSmokeContract(workflow) {
   const commands = runBlock(workflow, stepName).filter((line) => !line.startsWith('#'))
   const smokeIndex = commands.indexOf(smokeCommand)
@@ -441,6 +459,7 @@ function assertReleaseSmokeContract(workflow) {
   assert.equal(workflow.includes(neutralFixtureId), false, 'release sources must exclude neutral fixture IDs')
   assertReleaseCacheContract(workflow)
   assertPublishJobNoRebuild(workflow)
+  assertPublishInstallerChecksums(workflow)
 }
 
 function assertAssetParityCiContract(workflow) {
@@ -547,6 +566,20 @@ for (const [name, mutation] of [
   ],
   ['missing pinned Codex package', workflow.replace(codexPackCommand, 'npm pack @openai/codex@latest')],
   ['missing Codex version proof', workflow.replace(codexVersionCommand, 'codex --version')],
+  [
+    'installer checksums retain staging paths',
+    workflow.replace(
+      'shasum -a 256 install-agents.sh install-cli.sh >> SHA256SUMS.txt',
+      'shasum -a 256 release-assets/install-agents.sh release-assets/install-cli.sh >> release-assets/SHA256SUMS.txt',
+    ),
+  ],
+  [
+    'standalone CLI checksum omitted',
+    workflow.replace(
+      'shasum -a 256 install-agents.sh install-cli.sh >> SHA256SUMS.txt',
+      'shasum -a 256 install-agents.sh >> SHA256SUMS.txt',
+    ),
+  ],
 ]) {
   assert.throws(() => assertReleaseSmokeContract(mutation), undefined, name)
 }
