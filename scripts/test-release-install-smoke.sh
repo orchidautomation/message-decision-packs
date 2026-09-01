@@ -57,6 +57,12 @@ if ! command -v claude >/dev/null 2>&1; then
   echo "release smoke did not provide the isolated Claude CLI prerequisite" >&2
   exit 1
 fi
+for detected_host_cli in cursor opencode; do
+  if ! command -v "\$detected_host_cli" >/dev/null 2>&1; then
+    echo "release smoke did not provide the isolated \$detected_host_cli detection fixture" >&2
+    exit 1
+  fi
+done
 if [ "\$PLUXX_INSTALL_LOCK_ROOT" != "\$expected_home/.pluxx/install-locks" ]; then
   echo "release smoke did not isolate PLUXX_INSTALL_LOCK_ROOT: \$PLUXX_INSTALL_LOCK_ROOT" >&2
   exit 1
