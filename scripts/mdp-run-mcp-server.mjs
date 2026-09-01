@@ -848,7 +848,12 @@ const callRun = async (args, signal = null) => {
     finalCheckInputs()
     policy.finalCheck('output', outputParent.path, outputParent, 'directory')
     const outputReservation = policy.newOutput('output', outputRequest)
-    const pinnedOutput = pinOutputParent(outputReservation, join(frozenRequest.privateDir, 'run-output-receipt'))
+    let pinnedOutput
+    try {
+      pinnedOutput = pinOutputParent(outputReservation, join(frozenRequest.privateDir, 'run-output-receipt'))
+    } catch {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-output-parent-changed' }, true)
+    }
     const outputDir = outputReservation.path
     const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     try {

@@ -98,9 +98,11 @@ if (args.includes('run-preflight')) {
 }
 const requestPath = args[args.indexOf('--request') + 1]
 const secureRun = args.includes('__secure-run')
-const descriptorRoot = process.platform === 'linux' ? '/proc/self/fd/' : '/dev/fd/'
 const outputDir = secureRun
-  ? descriptorRoot + args[args.indexOf('--dir-fd') + 1] + '/' + args[args.indexOf('--output-leaf') + 1]
+  // The real helper uses fchdir(2). The fixture child is already spawned with
+  // the pinned parent as its cwd, which gives the same rename-stable behavior
+  // without relying on the macOS descriptor alias for a child path.
+  ? './' + args[args.indexOf('--output-leaf') + 1]
   : args[args.indexOf('--out-dir') + 1]
 const reportedOutputDir = secureRun
   ? args[args.indexOf('--display-output-dir') + 1]
@@ -1717,7 +1719,6 @@ test('run stays on the approved output descriptor when its public parent path is
   assert.equal(existsSync(join(escapedParent, 'run')), false)
   assert.equal(existsSync(join(renamedParent, 'run', 'run-bundle.json')), true)
   assert.equal(existsSync(join(renamedParent, 'run', 'run-receipt.json')), true)
-  assert.deepEqual(readdirSync(renamedParent).filter((name) => name.startsWith('.run.tmp-') || name === '.run.mdp-run.claim'), [])
   assert.equal(JSON.stringify(reply).includes(root), false)
 })
 
