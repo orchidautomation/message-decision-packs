@@ -9,6 +9,73 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
+#[cfg(unix)]
+pub(crate) fn secure_run_request_file(
+    request_path: &Path,
+    output_leaf: &str,
+    display_output_dir: &Path,
+    dir_fd: std::os::fd::RawFd,
+    expected_dev: u64,
+    expected_ino: u64,
+    transport_timeout_ms: Option<u64>,
+) -> Result<Value> {
+    use std::mem::MaybeUninit;
+
+    if output_leaf.is_empty()
+        || output_leaf == "."
+        || output_leaf == ".."
+        || output_leaf.as_bytes().contains(&b'/')
+        || output_leaf.as_bytes().contains(&0)
+    {
+        anyhow::bail!("secure run output leaf is invalid");
+    }
+    if !display_output_dir.is_absolute()
+        || display_output_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            != Some(output_leaf)
+    {
+        anyhow::bail!("secure run display output is invalid");
+    }
+    let mut stat = MaybeUninit::<libc::stat>::uninit();
+    if unsafe { libc::fstat(dir_fd, stat.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let stat = unsafe { stat.assume_init() };
+    if (stat.st_mode & libc::S_IFMT) != libc::S_IFDIR
+        || stat.st_dev as u64 != expected_dev
+        || stat.st_ino as u64 != expected_ino
+    {
+        anyhow::bail!("secure run output parent identity mismatch");
+    }
+    if unsafe { libc::fchdir(dir_fd) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    // All output operations now resolve from the inherited, identity-checked
+    // directory descriptor. Replacing its former pathname cannot redirect it.
+    let descriptor_relative_output = Path::new(".").join(output_leaf);
+    let mut result = run_request_file_with_transport(
+        request_path,
+        &descriptor_relative_output,
+        transport_timeout_ms,
+    )?;
+    // The runtime must resolve only relative to the checked descriptor, but the
+    // public contract continues to report the policy-approved absolute path.
+    // The adapter discards this value if that public parent identity changed.
+    if result.get("run_dir").and_then(Value::as_str).is_some() {
+        result["run_dir"] = json!(display_output_dir.display().to_string());
+        if let Some(verification) = result
+            .get_mut("authority_block")
+            .and_then(|value| value.get_mut("verification"))
+        {
+            verification["bundle"] = json!(display_output_dir.join("run-bundle.json"));
+            verification["receipt"] = json!(display_output_dir.join("run-receipt.json"));
+            verification["artifact_root"] = json!(display_output_dir.display().to_string());
+        }
+    }
+    Ok(result)
+}
+
 pub(crate) fn recover_run_output(output_root: &Path, apply: bool) -> Result<Value> {
     crate::run_runtime::recover_run_output(output_root, apply)
 }
