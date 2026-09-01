@@ -118,7 +118,11 @@ fn copy_tree(source: &std::path::Path, target: &std::path::Path) {
     for entry in std::fs::read_dir(source).expect("source directory should be readable") {
         let entry = entry.expect("source entry should be readable");
         let destination = target.join(entry.file_name());
-        if entry.file_type().expect("entry type should be readable").is_dir() {
+        if entry
+            .file_type()
+            .expect("entry type should be readable")
+            .is_dir()
+        {
             copy_tree(&entry.path(), &destination);
         } else {
             std::fs::copy(entry.path(), destination).expect("fixture file should be copied");
@@ -140,7 +144,9 @@ struct TemporaryFixture {
 
 impl TemporaryFixture {
     fn new(label: &str) -> Self {
-        Self { root: temporary_root(label) }
+        Self {
+            root: temporary_root(label),
+        }
     }
 
     fn path(&self) -> &std::path::Path {
