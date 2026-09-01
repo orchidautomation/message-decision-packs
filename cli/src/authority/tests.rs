@@ -237,7 +237,7 @@ fn hand_authored_run_oracle_matches_the_authority_kernel() {
         checked += 1;
     }
     assert_eq!(
-        checked, 8,
+        checked, 9,
         "every run-terminal oracle case must be exercised"
     );
 }

@@ -633,7 +633,7 @@ fn run_publish<F>(
 where
     F: FnOnce(&Path) -> Result<()>,
 {
-    let parent = root.parent().unwrap_or(root);
+    let parent = init_transaction::destination_parent(root);
     if !parent.exists() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating destination parent {}", parent.display()))?;
@@ -657,7 +657,11 @@ where
     let staging_root = stage_artifacts(parent, inventory, &nonce)?;
     let validation = validate(&staging_root);
     if let Err(error) = validation {
-        let _ = init_transaction::cleanup(&[&staging_root]);
+        if let Err(cleanup_error) = init_transaction::cleanup(&[&staging_root]) {
+            return Err(anyhow!(
+                "init not published: staged validation failed and transaction cleanup failed: cleanup={cleanup_error}; validation={error}"
+            ));
+        }
         return Err(error.context("init not published: staged validation failed"));
     }
     let backup_root = parent.join(format!(".mdp.init.backup.{nonce}"));
@@ -665,7 +669,13 @@ where
         Ok(outcome) => Ok(outcome),
         Err(error) => {
             if !error.to_string().contains("publication indeterminate") {
-                let _ = init_transaction::cleanup(&[&staging_root, &backup_root]);
+                if let Err(cleanup_error) =
+                    init_transaction::cleanup(&[&staging_root, &backup_root])
+                {
+                    return Err(anyhow!(
+                        "init not published: publication failed and transaction cleanup failed: cleanup={cleanup_error}; publication={error}"
+                    ));
+                }
             }
             Err(error.context("init not published: publication failed"))
         }
