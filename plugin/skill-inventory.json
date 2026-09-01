@@ -1,0 +1,9 @@
+{
+  "model": "mdp.skill-inventory.v1",
+  "skills": [
+    "mdp",
+    "mdp-pack-apply",
+    "mdp-pack-builder",
+    "mdp-pack-review"
+  ]
+}
