@@ -16,6 +16,7 @@ for required in SHA256SUMS.txt install.sh install-agents.sh install-cli.sh insta
 done
 
 node "$(dirname "$0")/patch-codex-installer.mjs" "$release_assets/install-codex.sh"
+node "$(dirname "$0")/patch-agents-installer.mjs" "$release_assets/install-agents.sh"
 
 node "$(dirname "$0")/finalize-release-manifest.mjs" "$release_assets/release-manifest.json"
 
