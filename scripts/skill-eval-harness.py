@@ -29,6 +29,10 @@ CASE_TYPES = {
 }
 QUERY_SHAPES = {"direct", "typo", "indirect-intent"}
 COMPARISON_MODES = {"with-skill", "baseline", "previous-version"}
+GOVERNED_MODE_ASSERTION_CATEGORIES = {
+    mode: frozenset({"evidence", "safety", "human-review"})
+    for mode in ("bid-no-bid", "compliance", "proof", "red-team")
+}
 TYPO_QUERY_MARKERS = frozenset(
     {
         "skils",
@@ -81,6 +85,13 @@ TRIGGER_OBSERVATION_KEYS = frozenset(
     {"case_id", "trial_id", "selected_skill_id"}
 )
 OUTPUT_OBSERVATION_KEYS = frozenset({"case_id", "trial_id", "assertions"})
+SOURCE_PLAN_OUTCOME_CONTRACT = {
+    "kind": "non-mutating-plan",
+    "pack_files": "unchanged",
+    "preview": "not-run",
+    "apply": "not-run",
+    "report_file_edits": False,
+}
 PACK_PROFILES = {"none", "gtm", "proposal", "invalid"}
 SHARED_SKILLS = ["mdp", "mdp-pack-builder", "mdp-pack-review"]
 PROFILE_JOBS = {
@@ -201,6 +212,17 @@ def normalized_query(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def string_list_set(value: Any) -> set[str] | None:
+    """Return a safe set for a non-empty, non-blank string list."""
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item.strip() for item in value)
+    ):
+        return None
+    return set(value)
+
+
 def validate_query_shape(
     case_id: Any, query: str, query_shape: Any, errors: list[str]
 ) -> None:
@@ -269,6 +291,12 @@ def validate_skill_eval_indexes(
             "required_assertion_categories"
         ):
             errors.append(f"{index_path}: required assertion categories drift from coverage")
+        if index.get("required_assertion_categories_by_mode") != definition.get(
+            "required_assertion_categories_by_mode"
+        ):
+            errors.append(
+                f"{index_path}: per-mode required assertion categories drift from coverage"
+            )
         expected_shapes = definition.get(
             "allowed_query_shapes", sorted(QUERY_SHAPES)
         )
@@ -343,6 +371,22 @@ def validate_coverage(
         errors.append("coverage.json: skills must be a non-empty list")
         return [], {}
 
+    output_requirements = payload.get("output_requirements")
+    allowed_categories: set[str] = set()
+    if not isinstance(output_requirements, dict):
+        errors.append("coverage.json: output_requirements must be an object")
+    else:
+        raw_allowed_categories = output_requirements.get("allowed_assertion_categories")
+        parsed_allowed_categories = string_list_set(raw_allowed_categories)
+        if parsed_allowed_categories is None or len(raw_allowed_categories) != len(
+            parsed_allowed_categories
+        ):
+            errors.append(
+                "coverage.json: allowed_assertion_categories must be a unique non-empty string list"
+            )
+        else:
+            allowed_categories = parsed_allowed_categories
+
     definitions: dict[str, dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("id"), str):
@@ -354,10 +398,70 @@ def validate_coverage(
             continue
         modes = row.get("modes")
         categories = row.get("required_assertion_categories")
-        if not isinstance(modes, list) or not modes or len(modes) != len(set(modes)):
+        parsed_modes = string_list_set(modes)
+        if parsed_modes is None or len(modes) != len(parsed_modes):
             errors.append(f"coverage.json: {skill_id} needs unique modes")
+        parsed_categories = string_list_set(categories)
         if not isinstance(categories, list) or not categories:
             errors.append(f"coverage.json: {skill_id} needs assertion categories")
+        elif parsed_categories is None:
+            errors.append(
+                f"coverage.json: {skill_id} assertion categories must be non-empty strings"
+            )
+        elif len(categories) != len(parsed_categories):
+            errors.append(f"coverage.json: {skill_id} assertion categories must be unique")
+        elif allowed_categories and not parsed_categories.issubset(allowed_categories):
+            errors.append(f"coverage.json: {skill_id} has unsupported assertion categories")
+
+        per_mode = row.get("required_assertion_categories_by_mode")
+        if row.get("risk_tier") == "high":
+            if not isinstance(per_mode, dict):
+                errors.append(
+                    f"coverage.json: high-risk {skill_id} needs per-mode assertion categories"
+                )
+            elif parsed_modes is not None and set(per_mode) != parsed_modes:
+                errors.append(
+                    f"coverage.json: {skill_id} per-mode assertion categories must cover every mode exactly"
+                )
+            else:
+                for mode, mode_categories in per_mode.items():
+                    parsed_mode_categories = string_list_set(mode_categories)
+                    if parsed_mode_categories is None or len(mode_categories) != len(
+                        parsed_mode_categories
+                    ):
+                        errors.append(
+                            f"coverage.json: {skill_id}/{mode} needs unique assertion categories"
+                        )
+                    elif allowed_categories and not parsed_mode_categories.issubset(
+                        allowed_categories
+                    ):
+                        errors.append(
+                            f"coverage.json: {skill_id}/{mode} has unsupported assertion categories"
+                        )
+        elif per_mode is not None:
+            errors.append(
+                f"coverage.json: {skill_id} cannot declare high-risk per-mode categories"
+            )
+
+        if row.get("risk_tier") == "high":
+            for mode in GOVERNED_MODE_ASSERTION_CATEGORIES:
+                if parsed_modes is None or mode not in parsed_modes:
+                    errors.append(
+                        f"coverage.json: high-risk {skill_id} must declare governed mode {mode}"
+                    )
+        for mode, governed_categories in GOVERNED_MODE_ASSERTION_CATEGORIES.items():
+            if parsed_modes is None or mode not in parsed_modes:
+                continue
+            raw_mode_categories = per_mode.get(mode) if isinstance(per_mode, dict) else None
+            parsed_mode_categories = string_list_set(raw_mode_categories)
+            if (
+                parsed_mode_categories is None
+                or not governed_categories.issubset(parsed_mode_categories)
+            ):
+                errors.append(
+                    f"coverage.json: {skill_id}/{mode} must require governed assertion "
+                    f"categories {sorted(governed_categories)}"
+                )
         definitions[skill_id] = row
 
         if not isinstance(row.get("eval_index"), str) or not row["eval_index"].endswith(
@@ -408,6 +512,24 @@ def validate_triggers(
 ) -> dict[str, Any]:
     if payload.get("model") != "mdp.skill-trigger-corpus.v1":
         errors.append("trigger-cases.json: unexpected model")
+    trigger_revision = payload.get("revision")
+    coverage_revision = coverage.get("revision")
+    trigger_revision_valid = isinstance(trigger_revision, str) and bool(
+        trigger_revision.strip()
+    )
+    coverage_revision_valid = isinstance(coverage_revision, str) and bool(
+        coverage_revision.strip()
+    )
+    if not trigger_revision_valid:
+        errors.append("trigger-cases.json: revision must be a non-empty string")
+    if not coverage_revision_valid:
+        errors.append("coverage.json: revision must be a non-empty string")
+    if (
+        trigger_revision_valid
+        and coverage_revision_valid
+        and trigger_revision != coverage_revision
+    ):
+        errors.append("trigger-cases.json: revision must match coverage.json")
     cases = payload.get("cases")
     if not isinstance(cases, list) or not cases:
         errors.append("trigger-cases.json: cases must be non-empty")
@@ -596,9 +718,20 @@ def validate_outputs(
     scenario_splits: dict[str, set[str]] = defaultdict(set)
     coverage_seen: set[tuple[str, str, str]] = set()
     communication_seen: set[tuple[str, str]] = set()
-    allowed_categories = set(
-        coverage.get("output_requirements", {}).get("allowed_assertion_categories", [])
+    output_requirements = coverage.get("output_requirements")
+    raw_allowed_categories = (
+        output_requirements.get("allowed_assertion_categories")
+        if isinstance(output_requirements, dict)
+        else None
     )
+    parsed_allowed_categories = string_list_set(raw_allowed_categories)
+    if parsed_allowed_categories is None:
+        errors.append(
+            "coverage.json: allowed_assertion_categories must be a unique non-empty string list"
+        )
+        allowed_categories: set[str] = set()
+    else:
+        allowed_categories = parsed_allowed_categories
 
     for index, case in enumerate(cases):
         label = f"output case #{index + 1}"
@@ -655,7 +788,7 @@ def validate_outputs(
                 errors.append(f"duplicate assertion id {assertion_id}")
             else:
                 assertion_ids.add(assertion_id)
-            if category not in allowed_categories:
+            if not isinstance(category, str) or category not in allowed_categories:
                 errors.append(f"{case_id}: invalid assertion category {category}")
             else:
                 categories.add(category)
@@ -665,10 +798,40 @@ def validate_outputs(
                 errors.append(f"{case_id}: assertion criterion must be non-empty")
             if assertion.get("required") is not True:
                 errors.append(f"{case_id}: all committed assertions must be required")
-        required = set(definition.get("required_assertion_categories", []))
+        raw_base_categories = definition.get("required_assertion_categories")
+        base_categories = string_list_set(raw_base_categories)
+        if base_categories is None:
+            errors.append(
+                f"coverage.json: {skill_id} assertion categories must be a non-empty string list"
+            )
+            base_categories = set()
+        raw_per_mode = definition.get("required_assertion_categories_by_mode")
+        mode_categories: set[str] = set()
+        if raw_per_mode is not None:
+            if not isinstance(raw_per_mode, dict):
+                errors.append(
+                    f"coverage.json: {skill_id} per-mode assertion categories must be an object"
+                )
+            else:
+                raw_mode_categories = raw_per_mode.get(mode)
+                if raw_mode_categories is not None:
+                    parsed_mode_categories = string_list_set(raw_mode_categories)
+                    if parsed_mode_categories is None:
+                        errors.append(
+                            f"coverage.json: {skill_id}/{mode} assertion categories "
+                            "must be a non-empty string list"
+                        )
+                    else:
+                        mode_categories = parsed_mode_categories
+        required = base_categories | mode_categories
         missing = required - categories
         if missing:
             errors.append(f"{case_id}: missing required assertion categories {sorted(missing)}")
+        if skill_id == "mdp-pack-builder" and mode == "source-plan":
+            if case.get("outcome_contract") != SOURCE_PLAN_OUTCOME_CONTRACT:
+                errors.append(
+                    f"{case_id}: source-plan outcome_contract must be the exact non-mutating closeout contract"
+                )
 
     for family, splits in scenario_splits.items():
         if len(splits) > 1:

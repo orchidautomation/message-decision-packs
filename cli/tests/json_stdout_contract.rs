@@ -7,6 +7,7 @@
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn mdp_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mdp"))
@@ -98,6 +99,67 @@ fn write_fixture(root: &std::path::Path, name: &str, body: serde_json::Value) ->
     path
 }
 
+fn copy_dir_all(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).expect("fixture destination");
+    for entry in std::fs::read_dir(source).expect("fixture source") {
+        let entry = entry.expect("fixture entry");
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type().expect("fixture file type").is_dir() {
+            copy_dir_all(&source_path, &destination_path);
+        } else {
+            std::fs::copy(&source_path, &destination_path).expect("copy fixture file");
+        }
+    }
+}
+
+fn copy_tree(source: &std::path::Path, target: &std::path::Path) {
+    std::fs::create_dir_all(target).expect("target directory should be created");
+    for entry in std::fs::read_dir(source).expect("source directory should be readable") {
+        let entry = entry.expect("source entry should be readable");
+        let destination = target.join(entry.file_name());
+        if entry
+            .file_type()
+            .expect("entry type should be readable")
+            .is_dir()
+        {
+            copy_tree(&entry.path(), &destination);
+        } else {
+            std::fs::copy(entry.path(), destination).expect("fixture file should be copied");
+        }
+    }
+}
+
+fn temporary_root(label: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock should follow epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!("mdp-json-contract-{label}-{suffix}"))
+}
+
+struct TemporaryFixture {
+    root: PathBuf,
+}
+
+impl TemporaryFixture {
+    fn new(label: &str) -> Self {
+        Self {
+            root: temporary_root(label),
+        }
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.root
+    }
+}
+
+impl Drop for TemporaryFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
 #[test]
 fn capabilities_envelope_is_one_parseable_json_value() {
     let (code, stdout, stderr, value) = run(&["--json", "capabilities"], Case::Ok);
@@ -133,6 +195,66 @@ fn capabilities_envelope_is_one_parseable_json_value() {
         .expect("doctor command projection");
     assert_eq!(doctor["output_contract"], "mdp.doctor.v1");
     assert!(stdout.contains("presentation_contract"));
+}
+
+#[test]
+fn all_unassessed_route_budget_summary_emits_schema_valid_explicit_null_headroom() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-route-budget-unassessed-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic");
+    copy_dir_all(&source, &root);
+
+    let manifest_path = root.join(".mdp/manifest.yaml");
+    let mut manifest: serde_yaml::Value = serde_yaml::from_str(
+        &std::fs::read_to_string(&manifest_path).expect("read fixture manifest"),
+    )
+    .expect("parse fixture manifest");
+    for job in manifest["jobs"].as_sequence_mut().expect("manifest jobs") {
+        job.as_mapping_mut()
+            .expect("job mapping")
+            .remove(serde_yaml::Value::String("context_budget".to_string()));
+    }
+    std::fs::write(
+        &manifest_path,
+        serde_yaml::to_string(&manifest).expect("serialize unassessed manifest"),
+    )
+    .expect("write unassessed manifest");
+
+    let root_arg = root.display().to_string();
+    let (code, _, stderr, envelope) = run(
+        &[
+            "--json",
+            "--summary",
+            "route-budget",
+            "--dir",
+            root_arg.as_str(),
+        ],
+        Case::Ok,
+    );
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let envelope = envelope.expect("route-budget summary envelope");
+    let summary = &envelope["summary"];
+    assert_eq!(summary["route_status_counts"]["unassessed"], 9);
+    assert_eq!(summary["unassessed_generation_count"], 2);
+    assert!(summary.get("tightest_headroom").is_some());
+    assert!(summary["tightest_headroom"].is_null());
+    assert!(summary["query"].get("job_id").is_none());
+    assert!(summary["query"].get("persona").is_none());
+
+    let (_, _, _, schema_envelope) =
+        run(&["--json", "schema", "route-budget-summary-v1"], Case::Ok);
+    let schema_envelope = schema_envelope.expect("route-budget summary schema envelope");
+    jsonschema::draft202012::validate(&schema_envelope["data"], summary)
+        .expect("real unassessed summary should satisfy the advertised schema");
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -851,6 +973,59 @@ fn prepare_run_blocked_envelope_preserves_single_json_value() {
         .expect("blocked data must satisfy the closed compile schema");
     assert!(!stdout.contains("error:"));
     let _ = code;
+}
+
+#[test]
+fn check_envelope_classifies_missing_readiness_authority_as_stable() {
+    let fixture = TemporaryFixture::new("readiness-authority");
+    let root = fixture.path();
+    let template =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic");
+    copy_tree(&template, &root);
+
+    let manifest_path = root.join(".mdp/manifest.yaml");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+    let unbound = manifest.replacen(
+        "  decision_input_contracts:\n  - gtm.prospect-context\n",
+        "",
+        1,
+    );
+    assert_ne!(
+        manifest, unbound,
+        "fixture must remove the decision authority"
+    );
+    std::fs::write(&manifest_path, unbound).unwrap();
+
+    let root_arg = root.to_string_lossy().into_owned();
+    let (_code, _stdout, _stderr, value) = run(
+        &[
+            "--json",
+            "check",
+            "--dir",
+            &root_arg,
+            "--job",
+            "prospect-fit-or-brief",
+        ],
+        Case::Ok,
+    );
+    let envelope = value.expect("blocked check should produce one JSON envelope");
+    let diagnostic = envelope["actionable_diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["code"] == "job_readiness_unavailable")
+        .expect("job readiness authority diagnostic");
+    assert_eq!(diagnostic["phase"], "validation");
+    assert_eq!(diagnostic["retryability"], "after-user-action");
+    assert_eq!(diagnostic["prerequisites"][0]["kind"], "authority");
+    assert_eq!(diagnostic["next_action"]["kind"], "manual");
+    assert!(diagnostic["next_action"].get("command").is_none());
+    assert!(envelope["data"].get("actionable_diagnostics").is_none());
+
+    let (_, _, _, schema) = run(&["--json", "schema", "readiness-v1"], Case::Ok);
+    let schema = schema.expect("readiness schema envelope");
+    jsonschema::draft202012::validate(&schema["data"], &envelope["data"])
+        .expect("diagnostic metadata must not change the closed readiness payload");
 }
 
 #[test]

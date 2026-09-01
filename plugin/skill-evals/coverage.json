@@ -77,6 +77,37 @@
       "required_assertion_categories": [
         "evidence"
       ],
+      "required_assertion_categories_by_mode": {
+        "prospect-fit-or-brief": [
+          "evidence"
+        ],
+        "outbound-copy-brief": [
+          "evidence"
+        ],
+        "outbound-copy-review": [
+          "evidence"
+        ],
+        "bid-no-bid": [
+          "evidence",
+          "safety",
+          "human-review"
+        ],
+        "compliance": [
+          "evidence",
+          "safety",
+          "human-review"
+        ],
+        "proof": [
+          "evidence",
+          "safety",
+          "human-review"
+        ],
+        "red-team": [
+          "evidence",
+          "safety",
+          "human-review"
+        ]
+      },
       "eval_index": "plugin/skills/mdp-pack-apply/evals/index.json",
       "allowed_query_shapes": [
         "direct",

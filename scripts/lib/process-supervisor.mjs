@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   unlinkSync,
 } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -19,8 +20,8 @@ const EXECUTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 
 const sameFile = (left, right) => left.dev === right.dev && left.ino === right.ino
 const ownedByCurrentUser = (stats) =>
-  typeof process.getuid !== 'function' || stats.uid === process.getuid()
-const singleLink = (stats) => typeof stats.nlink !== 'number' || stats.nlink === 1
+  typeof process.getuid !== 'function' || BigInt(stats.uid) === BigInt(process.getuid())
+const singleLink = (stats) => typeof stats.nlink === 'bigint' ? stats.nlink === 1n : typeof stats.nlink !== 'number' || stats.nlink === 1
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const readRecoveryClaim = (claimPath) => {
@@ -42,18 +43,32 @@ const readRecoveryClaim = (claimPath) => {
   }
 }
 
-export const cleanupMdpRecoveryClaim = ({ outputDir, executionId, expectedProcessId = null }) => {
+export const cleanupMdpRecoveryClaim = ({ outputDir, executionId, expectedProcessId = null, expectedParentIdentity = null, outputParentFd = null }) => {
   if (!EXECUTION_ID_PATTERN.test(executionId || '')) return false
   const requestedOutput = resolve(outputDir)
   const outputLeaf = basename(requestedOutput)
   const requestedParent = dirname(requestedOutput)
-  if (!outputLeaf || outputLeaf === '.' || outputLeaf === '..' || !existsSync(requestedParent)) return false
+  if (!outputLeaf || outputLeaf === '.' || outputLeaf === '..' || (outputParentFd === null && !existsSync(requestedParent))) return false
 
   let parent
+  let descriptorBoundParent = false
   try {
-    const parentStats = lstatSync(requestedParent)
-    if (!parentStats.isDirectory() || parentStats.isSymbolicLink() || !ownedByCurrentUser(parentStats)) return false
-    parent = realpathSync(requestedParent)
+    const parentStats = outputParentFd === null
+      ? lstatSync(requestedParent)
+      : fstatSync(outputParentFd, { bigint: true })
+    if (!parentStats.isDirectory() || (outputParentFd === null && parentStats.isSymbolicLink()) || !ownedByCurrentUser(parentStats)) return false
+    if (expectedParentIdentity && (
+      BigInt(parentStats.dev) !== BigInt(expectedParentIdentity.dev) ||
+      BigInt(parentStats.ino) !== BigInt(expectedParentIdentity.ino)
+    )) return false
+    if (outputParentFd === null) {
+      parent = realpathSync(requestedParent)
+    } else {
+      parent = process.platform === 'linux' ? `/proc/self/fd/${outputParentFd}` : `/dev/fd/${outputParentFd}`
+      const aliasStats = statSync(parent, { bigint: true })
+      if (aliasStats.dev !== parentStats.dev || aliasStats.ino !== parentStats.ino) return false
+      descriptorBoundParent = true
+    }
   } catch {
     return false
   }
@@ -103,7 +118,7 @@ export const cleanupMdpRecoveryClaim = ({ outputDir, executionId, expectedProces
       transactionStats.ino !== value.transaction_ino
     )) return false
     const canonicalTransaction = realpathSync(transactionPath)
-    if (dirname(canonicalTransaction) !== parent || basename(canonicalTransaction) !== value.transaction_leaf) return false
+    if ((!descriptorBoundParent && dirname(canonicalTransaction) !== parent) || basename(canonicalTransaction) !== value.transaction_leaf) return false
     const beforeRemoval = lstatSync(transactionPath)
     if (!sameFile(transactionStats, beforeRemoval) || !beforeRemoval.isDirectory() || beforeRemoval.isSymbolicLink()) return false
   } catch {

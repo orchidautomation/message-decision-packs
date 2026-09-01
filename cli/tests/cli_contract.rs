@@ -190,3 +190,56 @@ fn help_and_capabilities_expose_grouping_status_and_canonical_options() {
     assert_eq!(status["output_contract"], "mdp.status.v1");
     assert_eq!(status["side_effects"], "read-only-observational");
 }
+
+#[test]
+fn capabilities_report_reverse_declared_trace_conflicts() {
+    let (output, value) = json(&["--json", "capabilities"]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let trace = value["data"]["cli"]["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|command| command["path"] == serde_json::json!(["trace"]))
+        .unwrap();
+    let conflicts = |canonical: &str| {
+        trace["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|argument| argument["canonical"] == canonical)
+            .unwrap()["conflicts_with"]
+            .clone()
+    };
+
+    assert_eq!(conflicts("--bundle"), serde_json::json!(["--file"]));
+    assert_eq!(
+        conflicts("--artifact-root"),
+        serde_json::json!(["--dir", "--prompt-output", "--validation-input"])
+    );
+
+    let rejected_source_pair = run(&[
+        "trace",
+        "--file",
+        "result.json",
+        "--bundle",
+        "bundle.json",
+        "--receipt",
+        "receipt.json",
+    ]);
+    assert_eq!(rejected_source_pair.status.code(), Some(2));
+
+    let rejected_authority_pair = run(&[
+        "trace",
+        "--file",
+        "result.json",
+        "--dir",
+        ".",
+        "--prompt-output",
+        "prompt-output.json",
+        "--artifact-root",
+        ".",
+    ]);
+    assert_eq!(rejected_authority_pair.status.code(), Some(2));
+}

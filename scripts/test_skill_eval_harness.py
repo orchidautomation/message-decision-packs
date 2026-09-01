@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -156,6 +157,288 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
         )
 
         self.assertIn("output communication coverage missing mdp/train", errors)
+
+    def test_high_risk_apply_modes_require_safety_and_human_review(self) -> None:
+        expected = {"evidence", "safety", "human-review"}
+        governed_modes = {"bid-no-bid", "compliance", "proof", "red-team"}
+        apply_definition = self.definitions["mdp-pack-apply"]
+        per_mode = apply_definition["required_assertion_categories_by_mode"]
+        self.assertEqual(
+            {mode: set(per_mode[mode]) for mode in governed_modes},
+            {mode: expected for mode in governed_modes},
+        )
+
+        for missing_category in ("safety", "human-review"):
+            payload = copy.deepcopy(self.outputs)
+            case = next(
+                row
+                for row in payload["cases"]
+                if row["skill_id"] == "mdp-pack-apply" and row["mode"] == "bid-no-bid"
+            )
+            case["assertions"] = [
+                assertion
+                for assertion in case["assertions"]
+                if assertion["category"] != missing_category
+            ]
+            errors: list[str] = []
+
+            HARNESS.validate_outputs(
+                payload, self.coverage, self.skills, self.definitions, errors
+            )
+
+            self.assertTrue(
+                any(
+                    case["id"] in error
+                    and "missing required assertion categories" in error
+                    and missing_category in error
+                    for error in errors
+                ),
+                msg=f"missing {missing_category} was not rejected: {errors}",
+            )
+
+    def test_governed_apply_modes_cannot_be_downgraded_by_coordinated_edit(self) -> None:
+        payload = copy.deepcopy(self.coverage)
+        payload["output_requirements"]["allowed_assertion_categories"] = ["evidence"]
+        definition = next(row for row in payload["skills"] if row["id"] == "mdp-pack-apply")
+        for mode in ("bid-no-bid", "compliance", "proof", "red-team"):
+            definition["required_assertion_categories_by_mode"][mode] = ["evidence"]
+        errors: list[str] = []
+
+        HARNESS.validate_coverage(payload, ROOT / "plugin" / "skills", None, errors)
+
+        for mode in ("bid-no-bid", "compliance", "proof", "red-team"):
+            self.assertTrue(
+                any(
+                    f"mdp-pack-apply/{mode} must require governed assertion categories"
+                    in error
+                    for error in errors
+                ),
+                msg=f"coordinated downgrade of {mode} was accepted: {errors}",
+            )
+
+    def test_governed_modes_survive_skill_id_rename(self) -> None:
+        payload = copy.deepcopy(self.coverage)
+        definition = next(row for row in payload["skills"] if row["id"] == "mdp-pack-apply")
+        definition["id"] = "renamed-pack-apply"
+        definition["eval_index"] = "plugin/skills/renamed-pack-apply/evals/index.json"
+        for mode in ("bid-no-bid", "compliance", "proof", "red-team"):
+            definition["required_assertion_categories_by_mode"][mode] = ["evidence"]
+        errors: list[str] = []
+
+        HARNESS.validate_coverage(payload, ROOT / "plugin" / "skills", None, errors)
+
+        for mode in ("bid-no-bid", "compliance", "proof", "red-team"):
+            self.assertTrue(
+                any(
+                    f"renamed-pack-apply/{mode} must require governed assertion categories"
+                    in error
+                    for error in errors
+                ),
+                msg=f"renaming the skill bypassed {mode} governance: {errors}",
+            )
+
+    def test_high_risk_per_mode_contract_must_be_complete(self) -> None:
+        payload = copy.deepcopy(self.coverage)
+        definition = next(row for row in payload["skills"] if row["id"] == "mdp-pack-apply")
+        del definition["required_assertion_categories_by_mode"]["red-team"]
+        errors: list[str] = []
+
+        HARNESS.validate_coverage(payload, ROOT / "plugin" / "skills", None, errors)
+
+        self.assertIn(
+            "coverage.json: mdp-pack-apply per-mode assertion categories must cover every mode exactly",
+            errors,
+        )
+
+    def test_required_category_contracts_reject_malformed_values_without_crashing(self) -> None:
+        mutations = (
+            ("base object", "required_assertion_categories", {"evidence": True}),
+            ("base unhashable", "required_assertion_categories", [["evidence"]]),
+            (
+                "per-mode object",
+                "required_assertion_categories_by_mode",
+                ["evidence"],
+            ),
+        )
+        for label, field, value in mutations:
+            with self.subTest(label=label):
+                coverage = copy.deepcopy(self.coverage)
+                definition = next(
+                    row for row in coverage["skills"] if row["id"] == "mdp-pack-apply"
+                )
+                definition[field] = value
+                definitions = {row["id"]: row for row in coverage["skills"]}
+                errors: list[str] = []
+
+                HARNESS.validate_coverage(
+                    coverage, ROOT / "plugin" / "skills", None, errors
+                )
+                HARNESS.validate_outputs(
+                    self.outputs, coverage, self.skills, definitions, errors
+                )
+
+                self.assertTrue(
+                    any("assertion categories" in error for error in errors),
+                    msg=f"malformed {label} contract was accepted: {errors}",
+                )
+
+        coverage = copy.deepcopy(self.coverage)
+        definition = next(
+            row for row in coverage["skills"] if row["id"] == "mdp-pack-apply"
+        )
+        definition["required_assertion_categories_by_mode"]["bid-no-bid"] = [
+            ["evidence"]
+        ]
+        definitions = {row["id"]: row for row in coverage["skills"]}
+        errors = []
+
+        HARNESS.validate_coverage(coverage, ROOT / "plugin" / "skills", None, errors)
+        HARNESS.validate_outputs(
+            self.outputs, coverage, self.skills, definitions, errors
+        )
+
+        self.assertTrue(
+            any("mdp-pack-apply/bid-no-bid" in error for error in errors),
+            msg=f"unhashable per-mode category was accepted: {errors}",
+        )
+
+        outputs = copy.deepcopy(self.outputs)
+        outputs["cases"][0]["assertions"][0]["category"] = ["evidence"]
+        errors = []
+
+        HARNESS.validate_outputs(
+            outputs, self.coverage, self.skills, self.definitions, errors
+        )
+
+        self.assertTrue(
+            any("invalid assertion category" in error for error in errors),
+            msg=f"unhashable output category crashed or was accepted: {errors}",
+        )
+
+    def test_per_mode_requirements_extend_base_requirements(self) -> None:
+        coverage = copy.deepcopy(self.coverage)
+        definition = next(
+            row for row in coverage["skills"] if row["id"] == "mdp-pack-apply"
+        )
+        definition["required_assertion_categories_by_mode"]["bid-no-bid"] = [
+            "safety",
+            "human-review",
+        ]
+        definitions = {row["id"]: row for row in coverage["skills"]}
+        outputs = copy.deepcopy(self.outputs)
+        case = next(
+            row
+            for row in outputs["cases"]
+            if row["skill_id"] == "mdp-pack-apply" and row["mode"] == "bid-no-bid"
+        )
+        case["assertions"] = [
+            assertion
+            for assertion in case["assertions"]
+            if assertion["category"] != "evidence"
+        ]
+        errors: list[str] = []
+
+        HARNESS.validate_outputs(
+            outputs, coverage, self.skills, definitions, errors
+        )
+
+        self.assertTrue(
+            any(
+                case["id"] in error
+                and "missing required assertion categories" in error
+                and "evidence" in error
+                for error in errors
+            ),
+            msg=f"per-mode requirements replaced the base requirement: {errors}",
+        )
+
+    def test_trigger_and_documented_revisions_match_coverage(self) -> None:
+        payload = copy.deepcopy(self.triggers)
+        payload["revision"] = "stale-revision"
+        errors: list[str] = []
+
+        HARNESS.validate_triggers(
+            payload, self.coverage, self.skills, self.definitions, errors
+        )
+
+        self.assertIn("trigger-cases.json: revision must match coverage.json", errors)
+        documentation = (ROOT / "docs" / "skill-progressive-disclosure.md").read_text(
+            encoding="utf-8"
+        )
+        documented_revision = re.search(
+            r"trigger-cases\.json` and `coverage\.json` carry revision\s+`([^`]+)`",
+            documentation,
+        )
+        self.assertIsNotNone(documented_revision)
+        self.assertEqual(documented_revision.group(1), self.coverage["revision"])
+
+    def test_trigger_and_coverage_revisions_must_be_non_empty_strings(self) -> None:
+        mutations = (
+            (None, None),
+            ("", ""),
+            ("   ", "   "),
+            ("mdp-249.v1", None),
+            (None, "mdp-249.v1"),
+        )
+        for trigger_revision, coverage_revision in mutations:
+            with self.subTest(
+                trigger_revision=trigger_revision,
+                coverage_revision=coverage_revision,
+            ):
+                triggers = copy.deepcopy(self.triggers)
+                coverage = copy.deepcopy(self.coverage)
+                if trigger_revision is None:
+                    triggers.pop("revision", None)
+                else:
+                    triggers["revision"] = trigger_revision
+                if coverage_revision is None:
+                    coverage.pop("revision", None)
+                else:
+                    coverage["revision"] = coverage_revision
+                errors: list[str] = []
+
+                HARNESS.validate_triggers(
+                    triggers, coverage, self.skills, self.definitions, errors
+                )
+
+                if not isinstance(trigger_revision, str) or not trigger_revision.strip():
+                    self.assertIn(
+                        "trigger-cases.json: revision must be a non-empty string",
+                        errors,
+                    )
+                if not isinstance(coverage_revision, str) or not coverage_revision.strip():
+                    self.assertIn(
+                        "coverage.json: revision must be a non-empty string", errors
+                    )
+    def test_source_plan_outputs_require_exact_non_mutating_contract(self) -> None:
+        expected_error = (
+            "builder-source-plan-validation: source-plan outcome_contract must be "
+            "the exact non-mutating closeout contract"
+        )
+        for field, invalid in (
+            ("kind", "author-and-apply"),
+            ("pack_files", "changed"),
+            ("preview", "ran"),
+            ("apply", "ran"),
+            ("report_file_edits", True),
+        ):
+            with self.subTest(field=field):
+                payload = copy.deepcopy(self.outputs)
+                case = next(
+                    row for row in payload["cases"]
+                    if row["id"] == "builder-source-plan-validation"
+                )
+                self.assertEqual(
+                    case["outcome_contract"], HARNESS.SOURCE_PLAN_OUTCOME_CONTRACT
+                )
+                case["outcome_contract"][field] = invalid
+                errors: list[str] = []
+
+                HARNESS.validate_outputs(
+                    payload, self.coverage, self.skills, self.definitions, errors
+                )
+
+                self.assertIn(expected_error, errors)
 
     def test_missing_index_and_installed_corpus_drift_fail(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-installed-evals-") as temp:

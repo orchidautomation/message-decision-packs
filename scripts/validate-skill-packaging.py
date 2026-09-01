@@ -15,6 +15,7 @@ from pathlib import Path
 HOSTS = ("claude-code", "cursor", "codex", "opencode")
 PORTABLE_TARGET = "agent-plugins"
 CORPUS_ROOT = Path("plugin/skill-evals")
+CANONICAL_INVENTORY = Path("plugin/skill-inventory.json")
 GENERATED_INVENTORIES = {
     "codex": ".codex/skills.generated.json",
     "opencode": "skills.generated.json",
@@ -106,6 +107,40 @@ def skill_inventory(root: Path, errors: list[str]) -> list[str]:
     return inventory
 
 
+def canonical_skill_inventory(path: Path, errors: list[str]) -> list[str]:
+    """Load the independent authored allowlist for shipped skills."""
+    payload = load_json(path, errors)
+    if payload.get("model") != "mdp.skill-inventory.v1":
+        errors.append(f"{path}: unexpected model")
+
+    skills = payload.get("skills")
+    if not isinstance(skills, list) or not all(
+        isinstance(skill, str) and skill for skill in skills
+    ):
+        errors.append(f"{path}: skills must be a non-empty string array")
+        return []
+    if not skills:
+        errors.append(f"{path}: skills must not be empty")
+        return []
+    if len(skills) != len(set(skills)):
+        errors.append(f"{path}: skills must be unique")
+    if skills != sorted(skills):
+        errors.append(f"{path}: skills must use deterministic lexical ordering")
+    return skills
+
+
+def validate_source_inventory(
+    source: Path, expected: list[str], errors: list[str]
+) -> list[str]:
+    """Compare the live authored tree with the independent canonical allowlist."""
+    actual = skill_inventory(source, errors)
+    if source.is_dir() and actual != expected:
+        errors.append(
+            f"authored skill inventory drift: expected {expected}, found {actual}"
+        )
+    return actual
+
+
 def relative_files(root: Path) -> dict[str, Path]:
     return {
         path.relative_to(root).as_posix(): path
@@ -183,6 +218,8 @@ def compare_tree(source: Path, bundle: Path, label: str, errors: list[str]) -> N
 
 def validate_portable_skill_layout(source: Path, errors: list[str]) -> None:
     """Validate each skill as an isolated Agent Skills installation."""
+    if not source.is_dir():
+        return
     for skill_dir in sorted(path for path in source.iterdir() if path.is_dir()):
         for doc in sorted(skill_dir.rglob("*.md")):
             for raw_target in MARKDOWN_LINK.findall(doc.read_text(encoding="utf-8")):
@@ -208,10 +245,14 @@ def validate_portable_skill_layout(source: Path, errors: list[str]) -> None:
                     )
 
 
-def validate_shared_reference_parity(source: Path, errors: list[str]) -> None:
+def validate_shared_reference_parity(
+    source: Path, expected: list[str], errors: list[str]
+) -> None:
+    if not source.is_dir():
+        return
     projections = {
-        "communication-contract.md": set(skill_inventory(source, [])),
-        "runtime-compatibility.md": set(skill_inventory(source, [])),
+        "communication-contract.md": set(expected),
+        "runtime-compatibility.md": set(expected),
         "workflow-bundle-handoff.md": {
             "mdp",
             "mdp-pack-apply",
@@ -405,6 +446,10 @@ def validate_packaged_doc_references(errors: list[str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=Path("plugin/skills"))
+    parser.add_argument(
+        "--inventory", type=Path, default=CANONICAL_INVENTORY,
+        help="Independent authored allowlist of canonical skill IDs.",
+    )
     parser.add_argument("--corpus", type=Path, default=CORPUS_ROOT)
     parser.add_argument("--dist", type=Path, default=Path("dist"))
     parser.add_argument(
@@ -423,10 +468,12 @@ def main() -> int:
             "examples/ai-sdr-eve-vercel/agent/skills/"
         )
 
-    expected = skill_inventory(args.source, errors)
-    validate_portable_skill_layout(args.source, errors)
-    validate_shared_reference_parity(args.source, errors)
-    validate_source_eval_indexes(args.source, args.corpus, expected, errors)
+    expected = canonical_skill_inventory(args.inventory, errors)
+    validate_source_inventory(args.source, expected, errors)
+    if args.source.is_dir():
+        validate_portable_skill_layout(args.source, errors)
+        validate_shared_reference_parity(args.source, expected, errors)
+        validate_source_eval_indexes(args.source, args.corpus, expected, errors)
     validate_current_agent_surfaces(errors)
     validate_packaged_doc_references(errors)
 
@@ -450,6 +497,7 @@ def main() -> int:
     result = {
         "model": "mdp.skill-packaging-validation.v1",
         "source": str(args.source),
+        "inventory": str(args.inventory),
         "skills": expected,
         "hosts": (list(HOSTS) + [PORTABLE_TARGET]) if args.require_bundles else [],
         "valid": not errors,

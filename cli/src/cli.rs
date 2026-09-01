@@ -246,6 +246,24 @@ pub(crate) enum Commands {
         #[arg(long)]
         receipt_fd: Option<i32>,
     },
+    #[cfg(unix)]
+    #[command(name = "__secure-run", hide = true)]
+    SecureRun {
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output_leaf: String,
+        #[arg(long)]
+        display_output_dir: PathBuf,
+        #[arg(long)]
+        dir_fd: i32,
+        #[arg(long)]
+        expected_dev: u64,
+        #[arg(long)]
+        expected_ino: u64,
+        #[arg(long)]
+        transport_timeout_ms: Option<u64>,
+    },
     #[command(about = "Generate or safely rebind a complete synthetic v2 input chain")]
     RebindSyntheticChain {
         #[arg(long, default_value = ".")]
