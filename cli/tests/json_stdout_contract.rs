@@ -124,6 +124,28 @@ fn temporary_root(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!("mdp-json-contract-{label}-{suffix}"))
 }
 
+struct TemporaryFixture {
+    root: PathBuf,
+}
+
+impl TemporaryFixture {
+    fn new(label: &str) -> Self {
+        Self {
+            root: temporary_root(label),
+        }
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.root
+    }
+}
+
+impl Drop for TemporaryFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
 #[test]
 fn capabilities_envelope_is_one_parseable_json_value() {
     let (code, stdout, stderr, value) = run(&["--json", "capabilities"], Case::Ok);
@@ -881,7 +903,8 @@ fn prepare_run_blocked_envelope_preserves_single_json_value() {
 
 #[test]
 fn check_envelope_classifies_missing_readiness_authority_as_stable() {
-    let root = temporary_root("readiness-authority");
+    let fixture = TemporaryFixture::new("readiness-authority");
+    let root = fixture.path();
     let template =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic");
     copy_tree(&template, &root);
@@ -929,7 +952,6 @@ fn check_envelope_classifies_missing_readiness_authority_as_stable() {
     let schema = schema.expect("readiness schema envelope");
     jsonschema::draft202012::validate(&schema["data"], &envelope["data"])
         .expect("diagnostic metadata must not change the closed readiness payload");
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
