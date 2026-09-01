@@ -20,29 +20,53 @@ need_cmd head
 REPO="${MDP_GITHUB_REPO:-orchidautomation/message-decision-packs}"
 VERSION="${MDP_VERSION:-latest}"
 INSTALL_DIR="${MDP_INSTALL_DIR:-$HOME/.local/bin}"
+CLI_PATH="$INSTALL_DIR/mdp"
+
+# Aggregate installs set the skip flag only after verifying this destination.
+# Honor that handoff without network or Node, unless repair was requested.
+if [[ "${MDP_SKIP_CLI_UPDATE:-0}" == "1" && "${MDP_FORCE_CLI_UPDATE:-0}" != "1" && -x "$CLI_PATH" ]]; then
+  exit 0
+fi
+
+read_manifest_version() {
+  if command -v node >/dev/null 2>&1; then
+    node -e '
+      let body = ""; process.stdin.on("data", (chunk) => { body += chunk });
+      process.stdin.on("end", () => {
+        const version = JSON.parse(body)?.plugin?.version;
+        if (typeof version !== "string" || !version) process.exit(1);
+        process.stdout.write(version);
+      });
+    '
+  else
+    awk '
+      { body = body $0 }
+      END {
+        marker = index(body, "\"plugin\"")
+        if (!marker) exit 1
+        body = substr(body, marker)
+        if (!match(body, /"version"[[:space:]]*:[[:space:]]*"[^"]+"/)) exit 1
+        value = substr(body, RSTART, RLENGTH)
+        sub(/^.*"version"[[:space:]]*:[[:space:]]*"/, "", value)
+        sub(/"$/, "", value)
+        if (!length(value)) exit 1
+        print value
+      }
+    '
+  fi
+}
 
 RESOLVED_VERSION="${MDP_RESOLVED_VERSION:-}"
 if [[ -z "$RESOLVED_VERSION" && "$VERSION" != "latest" ]]; then
   RESOLVED_VERSION="${VERSION#v}"
 fi
 if [[ -z "$RESOLVED_VERSION" ]]; then
-  need_cmd node
   MANIFEST_URL="${MDP_RELEASE_BASE_URL:-https://github.com/$REPO/releases/latest/download}/release-manifest.json"
-  RESOLVED_VERSION="$(curl -fsSL "$MANIFEST_URL" | node -e '
-    let body = ""; process.stdin.on("data", (chunk) => { body += chunk });
-    process.stdin.on("end", () => {
-      const version = JSON.parse(body)?.plugin?.version;
-      if (typeof version !== "string" || !version) process.exit(1);
-      process.stdout.write(version);
-    });
-  ')"
+  RESOLVED_VERSION="$(curl -fsSL "$MANIFEST_URL" | read_manifest_version)"
 fi
 
-if command -v mdp >/dev/null 2>&1; then
-  installed_version="$(mdp --version 2>/dev/null | awk '{print $NF}' || true)"
-  if [[ "${MDP_SKIP_CLI_UPDATE:-0}" == "1" && "${MDP_FORCE_CLI_UPDATE:-0}" != "1" ]]; then
-    exit 0
-  fi
+if [[ -x "$CLI_PATH" ]]; then
+  installed_version="$("$CLI_PATH" --version 2>/dev/null | awk '{print $NF}' || true)"
   if [[ "$installed_version" == "$RESOLVED_VERSION" && "${MDP_FORCE_CLI_UPDATE:-0}" != "1" ]]; then
     echo "mdp CLI $RESOLVED_VERSION is already up to date."
     exit 0
@@ -142,10 +166,10 @@ fi
 "$BINARY_PATH" --version >/dev/null
 
 mkdir -p "$INSTALL_DIR"
-cp "$BINARY_PATH" "$INSTALL_DIR/mdp"
-chmod +x "$INSTALL_DIR/mdp"
+cp "$BINARY_PATH" "$CLI_PATH"
+chmod +x "$CLI_PATH"
 
-echo "Installed mdp CLI to $INSTALL_DIR/mdp"
+echo "Installed mdp CLI to $CLI_PATH"
 
 case ":$PATH:" in
   *":$INSTALL_DIR:"*)
