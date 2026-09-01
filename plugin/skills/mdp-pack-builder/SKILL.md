@@ -1,6 +1,6 @@
 ---
 name: mdp-pack-builder
-description: Use when the user intends to plan approved source authority or create, initialize, reconstruct, or edit a Message Decision Pack from approved GTM, source, RFP, proposal, or capture material. Do not use for read-only pack audit or for applying a pack to a prospect or proposal.
+description: Use to plan approved source authority or create, initialize, reconstruct, or edit a Message Decision Pack from approved GTM, RFP, proposal, or capture material. Do not use for read-only pack audit or applying a pack to supplied inputs.
 metadata:
   compatibility: Requires the mdp CLI on PATH. Node.js 18+ is also required for generative direct-CLI runs and native plugin helpers; non-generative CLI paths do not require Node.js. A portable skill install does not imply PLUGIN_ROOT or MCP support.
 ---

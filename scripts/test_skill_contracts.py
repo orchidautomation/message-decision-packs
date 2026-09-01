@@ -277,6 +277,14 @@ class SkillContractTests(unittest.TestCase):
     def test_entrypoints_stay_bounded_and_references_are_one_level(self):
         for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
             self.assertLessEqual(path.stat().st_size, module.MAX_ENTRYPOINT_BYTES, path)
+            frontmatter = module.FRONTMATTER.match(path.read_text())
+            self.assertIsNotNone(frontmatter, path)
+            description = dict(module.FIELD.findall(frontmatter.group(1)))[
+                "description"
+            ].strip("'\"")
+            self.assertLessEqual(
+                len(description), module.MAX_SUPPORTED_DESCRIPTION_CHARS, path
+            )
         reference = self.root / "plugin/skills/mdp/references/operator-runtime.md"
         original = reference.read_text()
         reference.write_text(original + "\n[next](cli-operator.md)\n")
@@ -288,6 +296,15 @@ class SkillContractTests(unittest.TestCase):
         skill.write_text(skill.read_text() + ("\nexcess\n" * 1000))
         self.assertIn("skill_entrypoint_too_large", self.codes())
 
+        skill.write_text(
+            skill.read_text().replace(
+                "description: ",
+                "description: " + ("overlong " * 40),
+                1,
+            )
+        )
+        self.assertIn("frontmatter_description_invalid", self.codes())
+
     def test_skill_local_link_escape_fails(self):
         path = self.root / "plugin/skills/mdp/SKILL.md"
         path.write_text(path.read_text() + "\n[escape](references/../../mdp-pack-builder/SKILL.md)\n")
@@ -296,10 +313,32 @@ class SkillContractTests(unittest.TestCase):
     def test_every_skill_declares_actionable_runtime_compatibility(self):
         for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
             text = path.read_text()
-            for marker in ("metadata:", "compatibility:", *module.COMPATIBILITY_TERMS):
-                self.assertIn(marker, text, path)
+            frontmatter = module.FRONTMATTER.match(text)
+            self.assertIsNotNone(frontmatter, path)
+            compatibility_match = module.COMPATIBILITY_METADATA.search(
+                frontmatter.group(1)
+            )
+            self.assertIsNotNone(compatibility_match, path)
+            compatibility = compatibility_match.group(1).strip("'\"")
+            for marker in module.COMPATIBILITY_TERMS:
+                self.assertIn(marker, compatibility, path)
         path = self.root / "plugin/skills/mdp/SKILL.md"
-        path.write_text(path.read_text().replace("Node.js 18+", "Node runtime", 1))
+        original = path.read_text()
+        frontmatter = module.FRONTMATTER.match(original)
+        self.assertIsNotNone(frontmatter)
+        mutated_frontmatter, replacements = re.subn(
+            re.escape("Node.js 18+"),
+            "Node runtime",
+            frontmatter.group(1),
+            count=1,
+        )
+        self.assertEqual(replacements, 1)
+        path.write_text(
+            original[: frontmatter.start(1)]
+            + mutated_frontmatter
+            + original[frontmatter.end(1) :]
+            + "\nNode.js 18+ may still appear in body prose.\n"
+        )
         self.assertIn("frontmatter_compatibility_invalid", self.codes())
 
     def test_compatibility_requires_direct_cli_node_boundary(self):
@@ -319,9 +358,37 @@ class SkillContractTests(unittest.TestCase):
             original = path.read_text()
             for phrase in phrases:
                 with self.subTest(skill_id=skill_id, phrase=phrase):
-                    path.write_text(original.replace(phrase, "REMOVED_SOURCE_PLAN_CONTRACT", 1))
+                    flexible_phrase = r"\s+".join(
+                        re.escape(part) for part in phrase.split()
+                    )
+                    mutated, replacements = re.subn(
+                        flexible_phrase,
+                        "REMOVED_SOURCE_PLAN_CONTRACT",
+                        original,
+                        count=1,
+                    )
+                    self.assertEqual(replacements, 1)
+                    path.write_text(mutated)
                     self.assertIn(f"authoring_closeout_missing:{skill_id}", self.codes())
                     path.write_text(original)
+
+    def test_source_plan_guardrails_ignore_markdown_reflow(self):
+        path = self.root / "plugin/skills/mdp-pack-builder/SKILL.md"
+        original = path.read_text()
+        phrase = module.AUTHORING_CLOSEOUT_GUARDRAILS["mdp-pack-builder"][0]
+        reflowed = phrase.replace(", return ", ",\n   return ")
+        self.assertNotEqual(reflowed, phrase)
+        mutated, replacements = re.subn(
+            r"\s+".join(re.escape(part) for part in phrase.split()),
+            reflowed,
+            original,
+            count=1,
+        )
+        self.assertEqual(replacements, 1)
+        path.write_text(mutated)
+        self.assertNotIn(
+            "authoring_closeout_missing:mdp-pack-builder", self.codes()
+        )
 
     def test_repo_only_document_dependency_fails(self):
         path = self.root / "plugin/skills/mdp/references/operator-runtime.md"

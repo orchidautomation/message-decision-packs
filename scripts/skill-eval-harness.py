@@ -669,6 +669,22 @@ def validate_outputs(
         missing = required - categories
         if missing:
             errors.append(f"{case_id}: missing required assertion categories {sorted(missing)}")
+        if skill_id == "mdp-pack-builder" and mode == "source-plan":
+            expected = " ".join(str(case.get("expected_output", "")).lower().split())
+            communication = " ".join(
+                str(assertion.get("criterion", "")).lower()
+                for assertion in assertions
+                if isinstance(assertion, dict)
+                and assertion.get("category") == "communication"
+            )
+            if "non-mutating" not in expected or "no claimed file edits" not in expected:
+                errors.append(
+                    f"{case_id}: source-plan expected_output must forbid claimed file edits"
+                )
+            if "without claimed file mutation" not in communication:
+                errors.append(
+                    f"{case_id}: source-plan communication must close without claimed file mutation"
+                )
 
     for family, splits in scenario_splits.items():
         if len(splits) > 1:
