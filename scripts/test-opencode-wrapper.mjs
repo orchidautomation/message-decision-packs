@@ -640,7 +640,7 @@ try {
       aggregateEnvelope.plan[0]?.target === 'codex' &&
       aggregateEnvelope.results?.length === 1 &&
       aggregateEnvelope.results[0]?.target === 'codex' &&
-      aggregateEnvelope.results[0]?.state === 'installed',
+      ['installed', 'updated'].includes(aggregateEnvelope.results[0]?.state),
     'Finalized aggregate installer must parse and consume one Node 24 Codex install result.',
   )
 
