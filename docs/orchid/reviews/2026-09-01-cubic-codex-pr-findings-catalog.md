@@ -92,6 +92,47 @@ The three confirmed P1s are current variants of one boundary problem split into 
 - GitHub reports green `cli` and `mcp-macos` checks for the exact verification head `9472547`; PR #219 also completed both checks successfully. The full local Node MCP file was not used as a single proof unit because its long-running process/cancellation cases exceeded a practical bounded verification window in this sandbox. The ledger names the focused regression tests beside each fixed finding and separately records the exact-head CI evidence plus focused local Rust, activation, version, syntax, and direct protocol results.
 - No provider was invoked; all filesystem inspection and local tests used repository or temporary fixtures.
 
+## MDP-318 current-main verification: MCP lifecycle and cancellation
+
+> Verified 2026-09-01 against `origin/main` at `21f7abdfaf2e04400e1c0e1227bf539835d67b0c`, using the two assigned PR #229 source URLs. This ledger covers exactly 2 P1 findings.
+
+### Reconciled result
+
+| Disposition | P1 | Total |
+|---|---:|---:|
+| `confirmed` | 2 | 2 |
+| `already fixed with regression proof` | 0 | 0 |
+| `superseded` | 0 | 0 |
+| `false positive` | 0 | 0 |
+| `needs product decision` | 0 | 0 |
+| **Total** | **2** | **2** |
+
+Both confirmed P1s share one independently reviewable lifecycle invariant: a JSON-RPC request must retain its typed identity from admission through cancellation, and cancellation must atomically remove and resolve a queued operation so it releases capacity immediately. The smallest remediation slice is therefore one scheduler/API change used by both MCP servers, plus deterministic unit and stdio regressions for numeric/string ID separation, immediate queued cancellation, queue-capacity release, and exactly one cancellation response.
+
+### Per-finding ledger
+
+| Priority | Source URL | Disposition | Current-main proof |
+|---|---|---|---|
+| P1 | [PR #229 r3873795692](https://github.com/orchidautomation/message-decision-packs/pull/229#discussion_r3873795692) | `confirmed` | `createBoundedToolScheduler` exposes only `schedule` and `isQueued`; queued entries remain in `queued` until `drain` shifts them (`scripts/lib/mcp-lifecycle.mjs:68-105`). Both servers only add a queued ID to `pendingCancellations` (`scripts/mdp-run-mcp-server.mjs:1014-1017`; `scripts/mdp-proposal-mcp-server.mjs:858-861`), then wait for the operation to start before returning `cli-cancelled`. A bounded one-active/one-queued reproduction showed the cancelled entry remained queued, a subsequent request received `mcp-server-busy`, and the cancellation result appeared only after the active operation released. Risk: delayed cancellation and avoidable capacity refusal. Proposed regression: cancel a fully queued call while active slots are held and assert immediate cancellation response, immediate admission of a replacement call, and no invocation of the cancelled operation. Cluster: typed request identity and cancellable queue. |
+| P1 | [PR #229 r3873795700](https://github.com/orchidautomation/message-decision-packs/pull/229#discussion_r3873795700) | `confirmed` | Scheduler entries and membership use `String(id)` (`scripts/lib/mcp-lifecycle.mjs:96-104`); both servers use the same coercion for `activeRequests` and `pendingCancellations` (`scripts/mdp-run-mcp-server.mjs:1011-1017,1065-1074`; `scripts/mdp-proposal-mcp-server.mjs:854-861,911-924`). A bounded reproduction with numeric `1` active and string `"1"` queued showed cancellation of string `"1"` aborted numeric `1`; the string request later ran uncancelled. Risk: cancellation crosses JSON-RPC request identity. Proposed regression: hold numeric `1` active and string `"1"` queued simultaneously, cancel each independently, and assert only the exact typed ID is affected. Cluster: typed request identity and cancellable queue. |
+
+### Verification notes
+
+- Passed: `node --test scripts/test-mcp-lifecycle.mjs` and Node syntax checks for the shared lifecycle helper and both MCP servers.
+- Deterministic temporary reproductions exercised the current scheduler and copied only the servers' in-memory cancellation bookkeeping. They used no repository writes, provider calls, external processes, or private source files.
+- Current tests enforce concurrency and queue bounds but contain no regression for typed-ID separation or removal of a cancelled queued operation.
+- Residual risk remains in both the canonical run MCP server and the compatibility proposal MCP server until the shared lifecycle slice lands.
+
+### Combined MCP remediation recommendation
+
+Across MDP-314 and MDP-318, the five confirmed P1 findings fit three independently reviewable implementation slices:
+
+1. **Typed request identity and cancellable queue** — both MDP-318 findings; change the shared scheduler contract and both server integrations together.
+2. **Source materialization and exact consent binding** — two MDP-314 findings; snapshot every model-visible source, including the prompt, and bind consent to those private bytes.
+3. **Descriptor-bound run output publication** — one MDP-314 finding; preserve approved output-parent identity through the run handoff.
+
+Do not combine these three slices into one implementation PR: cancellation bookkeeping, provider-input authority, and filesystem output authority have different failure modes and regression surfaces.
+
 
 ## Audited PR population
 
