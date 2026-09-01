@@ -195,6 +195,19 @@ fn rewrite_archived_state(path: &Path, edit: impl FnOnce(&mut Value)) {
     fs::write(path, bytes).expect("archived state should be writable");
 }
 
+#[cfg(unix)]
+fn clone_archived_state_with_suffix(source: &Path, root: &Path, suffix: u64) -> PathBuf {
+    let mut state: Value =
+        serde_json::from_slice(&fs::read(source).expect("archived state should be readable"))
+            .expect("archived state should be JSON");
+    state["staging_name"] = Value::String(format!(".mdp.author.staging.{suffix}"));
+    let target = root.join(format!(".mdp.author.evidence-state.{suffix}"));
+    let mut bytes = serde_json::to_vec(&state).expect("archived state should serialize");
+    bytes.push(b'\n');
+    fs::write(&target, bytes).expect("cloned archived state should be writable");
+    target
+}
+
 fn preview(live: &Path, candidate: &Path, plan: &Path) -> Output {
     run(&preview_args(live, candidate, plan), None)
 }
@@ -655,6 +668,30 @@ fn retry_accepts_equivalent_archived_commits_for_the_same_plan() {
             .iter()
             .any(|code| code == "interrupted-commit-recovered")
     );
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn retry_streams_many_equivalent_archived_commits_for_the_same_plan() {
+    let (root, live, candidate, plan, archived) =
+        fixture_with_two_archived_commits("many-equivalent-archived-states");
+    // Retained evidence has no archive-count limit. Exercise enough complete
+    // records to guard against reintroducing a collector whose memory grows
+    // with every valid retry; production keeps only one representative state.
+    for suffix in 900_000..900_254 {
+        clone_archived_state_with_suffix(&archived[0], &root, suffix);
+    }
+    assert_eq!(archived_state_paths(&root).len(), 256);
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(
+        recovered.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    assert_eq!(data(&recovered)["status"], "applied");
     assert_eq!(snapshot(&live), snapshot(&candidate));
     let _ = fs::remove_dir_all(root);
 }

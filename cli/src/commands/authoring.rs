@@ -1564,7 +1564,11 @@ fn read_archived_committed_state(
     change_set_sha256: &str,
 ) -> Result<Option<TransactionState>> {
     let binding = root_binding(live_root);
-    let mut matched = Vec::new();
+    // Keep only the deterministic representative while validating every
+    // matching archive. Retained evidence is intentionally unbounded, so
+    // collecting complete states here would make recovery memory grow with
+    // the number of otherwise valid retries.
+    let mut matched: Option<(String, TransactionState)> = None;
     for entry in fs::read_dir(descriptor_path(parent))? {
         let entry = entry?;
         let name = entry.file_name();
@@ -1588,26 +1592,26 @@ fn read_archived_committed_state(
         if state.phase != 1 {
             continue;
         }
-        matched.push((name.to_string(), state));
+        if let Some((selected_name, selected)) = &mut matched {
+            if archived_committed_state_semantics(&state)
+                != archived_committed_state_semantics(selected)
+            {
+                return Err(anyhow!(
+                    "conflicting archived committed author transaction states match the change set"
+                ));
+            }
+            // Directory iteration order is unspecified. Retain the state with
+            // the smallest authenticated archive leaf so selection remains
+            // deterministic without retaining all complete records.
+            if name < selected_name.as_str() {
+                *selected_name = name.to_string();
+                *selected = state;
+            }
+        } else {
+            matched = Some((name.to_string(), state));
+        }
     }
-    // Directory iteration order is unspecified. Select by the authenticated
-    // archive leaf only after proving every matching record is semantically
-    // equivalent, so ordering cannot affect either acceptance or the result.
-    matched.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-    let Some((_, selected)) = matched.first() else {
-        return Ok(None);
-    };
-    let selected_semantics = archived_committed_state_semantics(selected);
-    if matched
-        .iter()
-        .skip(1)
-        .any(|(_, state)| archived_committed_state_semantics(state) != selected_semantics)
-    {
-        return Err(anyhow!(
-            "conflicting archived committed author transaction states match the change set"
-        ));
-    }
-    Ok(matched.into_iter().next().map(|(_, state)| state))
+    Ok(matched.map(|(_, state)| state))
 }
 
 #[cfg(unix)]
