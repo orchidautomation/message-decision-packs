@@ -1180,7 +1180,16 @@ fn link_definition_trailing_title(suffix: &str) -> Option<&str> {
         }
         end
     };
-    Some(rest[destination_end..].trim_matches([' ', '\t']))
+    let trailing = &rest[destination_end..];
+    if !trailing.is_empty()
+        && !trailing
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, ' ' | '\t'))
+    {
+        return None;
+    }
+    Some(trailing.trim_matches([' ', '\t']))
 }
 
 fn link_definition_continuation_title_state(line: &str) -> Option<bool> {
@@ -1274,6 +1283,7 @@ fn multiline_title_line_state(line: &str, closing: char) -> Option<bool> {
     for (index, character) in line.char_indices() {
         match character {
             '\\' if !escaped => escaped = true,
+            '(' if closing == ')' && !escaped => return None,
             character if character == closing && !escaped => {
                 return line[index + character.len_utf8()..]
                     .trim_matches([' ', '\t'])
@@ -1521,6 +1531,38 @@ mod tests {
                 created_by: "test".into(),
                 notes: vec![],
             },
+        }
+    }
+
+    #[test]
+    fn link_definition_titles_require_commonmark_separation_and_nesting() {
+        assert_eq!(
+            link_reference_title_state("[ref]: <url> \"title\""),
+            Some(true)
+        );
+        assert_eq!(link_reference_title_state("[ref]: <url>\"title\""), None);
+        assert_eq!(multiline_title_line_state("continued)", ')'), Some(true));
+        assert_eq!(multiline_title_line_state("continued ( title)", ')'), None);
+        assert_eq!(
+            multiline_title_line_state("continued \\( title", ')'),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn invalid_link_definition_titles_do_not_expose_owned_markers() {
+        for invalid_title in ["[ref]: <url>\"title\"", "[ref]: /url (foo\nbar ( baz)"] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let readme = format!(
+                "{invalid_title}\n2. ```markdown\n   human paragraph\n   ```\n{ownership}{inventory}"
+            );
+
+            assert!(validate_readme_regions(&readme).is_ok());
+            assert!(open_fence_at_eof(&readme).is_some(), "{invalid_title}");
+            assert_eq!(extract_ownership_block(&readme), None, "{invalid_title}");
+            assert_eq!(extract_inventory_block(&readme), None, "{invalid_title}");
         }
     }
 
