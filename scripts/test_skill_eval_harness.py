@@ -157,34 +157,35 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
 
         self.assertIn("output communication coverage missing mdp/train", errors)
 
-    def test_source_plan_outputs_must_prove_non_mutating_closeout(self) -> None:
-        payload = copy.deepcopy(self.outputs)
-        case = next(
-            row for row in payload["cases"]
-            if row["id"] == "builder-source-plan-validation"
+    def test_source_plan_outputs_require_exact_non_mutating_contract(self) -> None:
+        expected_error = (
+            "builder-source-plan-validation: source-plan outcome_contract must be "
+            "the exact non-mutating closeout contract"
         )
-        case["expected_output"] = "A source inventory and evidence plan."
-        communication = next(
-            assertion for assertion in case["assertions"]
-            if assertion["category"] == "communication"
-        )
-        communication["criterion"] = (
-            "Closes with artifacts, readiness, gaps, and the next allowed action."
-        )
-        errors: list[str] = []
+        for field, invalid in (
+            ("kind", "author-and-apply"),
+            ("pack_files", "changed"),
+            ("preview", "ran"),
+            ("apply", "ran"),
+            ("report_file_edits", True),
+        ):
+            with self.subTest(field=field):
+                payload = copy.deepcopy(self.outputs)
+                case = next(
+                    row for row in payload["cases"]
+                    if row["id"] == "builder-source-plan-validation"
+                )
+                self.assertEqual(
+                    case["outcome_contract"], HARNESS.SOURCE_PLAN_OUTCOME_CONTRACT
+                )
+                case["outcome_contract"][field] = invalid
+                errors: list[str] = []
 
-        HARNESS.validate_outputs(
-            payload, self.coverage, self.skills, self.definitions, errors
-        )
+                HARNESS.validate_outputs(
+                    payload, self.coverage, self.skills, self.definitions, errors
+                )
 
-        self.assertIn(
-            "builder-source-plan-validation: source-plan expected_output must forbid claimed file edits",
-            errors,
-        )
-        self.assertIn(
-            "builder-source-plan-validation: source-plan communication must close without claimed file mutation",
-            errors,
-        )
+                self.assertIn(expected_error, errors)
 
     def test_missing_index_and_installed_corpus_drift_fail(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-installed-evals-") as temp:

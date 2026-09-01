@@ -62,6 +62,7 @@
       "id": "builder-source-plan-train", "split": "train", "scenario_family": "output-source-plan-gtm", "skill_id": "mdp-pack-builder", "mode": "source-plan", "risk_tier": "elevated", "fixture": "synthetic:approved-gtm-notes",
       "prompt": "Plan the approved sources, evidence needs, exclusions, and gaps for a new GTM MDP.",
       "expected_output": "A bounded non-mutating source plan mapped to universal primitives, with no claimed file edits.",
+      "outcome_contract": {"kind": "non-mutating-plan", "pack_files": "unchanged", "preview": "not-run", "apply": "not-run", "report_file_edits": false},
       "assertions": [
         {"id": "builder-plan-train-content", "category": "content", "criterion": "Maps source needs to universal primitives and the pack objective.", "required": true},
         {"id": "builder-plan-train-evidence", "category": "evidence", "criterion": "Requires receipts, dates, confidence, and source classification.", "required": true},
@@ -103,6 +104,7 @@
       "id": "builder-source-plan-validation", "split": "validation", "scenario_family": "output-source-plan-proposal", "skill_id": "mdp-pack-builder", "mode": "source-plan", "risk_tier": "elevated", "fixture": "synthetic:approved-rfp-index",
       "prompt": "Plan source intake for an existing proposal MDP with amendments and missing proof.",
       "expected_output": "A non-mutating source inventory, primitive map, exclusions, evidence thresholds, and gaps, with no claimed file edits.",
+      "outcome_contract": {"kind": "non-mutating-plan", "pack_files": "unchanged", "preview": "not-run", "apply": "not-run", "report_file_edits": false},
       "assertions": [
         {"id": "builder-plan-val-content", "category": "content", "criterion": "Connects approved sources to review decisions and primitives.", "required": true},
         {"id": "builder-plan-val-evidence", "category": "evidence", "criterion": "Requires section-level receipts and flags missing proof.", "required": true},
