@@ -449,6 +449,8 @@ function assertAssetParityCiContract(workflow) {
   assertCliJobWiring(workflow)
   assertCliPathFilter(workflow, 'plugin/assets/**')
   assertCliPathFilter(workflow, 'assets/**')
+  assertCliPathFilter(workflow, 'scripts/patch-codex-installer.mjs')
+  assertCliPathFilter(workflow, 'scripts/test-opencode-wrapper.mjs')
   const cliJob = jobBlock(workflow, 'cli').join('\n')
   assertUnconditionalStep(cliJob, 'Validate authored asset parity')
   const commands = runBlock(cliJob, 'Validate authored asset parity')
@@ -551,6 +553,20 @@ for (const [name, mutation] of [
 
 
 for (const [name, mutation] of [
+  [
+    'missing Codex installer patch filter',
+    ciWorkflow.replace(
+      '              - "scripts/patch-codex-installer.mjs"',
+      '              - "scripts/patch-codex-installer.mjs.disabled"',
+    ),
+  ],
+  [
+    'missing generated Codex installer proof filter',
+    ciWorkflow.replace(
+      '              - "scripts/test-opencode-wrapper.mjs"',
+      '              - "scripts/test-opencode-wrapper.mjs.disabled"',
+    ),
+  ],
   ['commented asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          # ${assetParityCommand}`)],
   ['echoed asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          echo ${assetParityCommand}`)],
   ['unreachable asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          if false; then\n            ${assetParityCommand}\n          fi`)],

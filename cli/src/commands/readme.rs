@@ -932,7 +932,16 @@ fn link_definition_trailing_title(suffix: &str) -> Option<&str> {
         }
         end
     };
-    Some(rest[destination_end..].trim_matches([' ', '\t']))
+    let trailing = &rest[destination_end..];
+    if !trailing.is_empty()
+        && !trailing
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, ' ' | '\t'))
+    {
+        return None;
+    }
+    Some(trailing.trim_matches([' ', '\t']))
 }
 
 fn link_definition_continuation_title_state(line: &str) -> Option<bool> {
@@ -1026,6 +1035,7 @@ fn multiline_title_line_state(line: &str, closing: char) -> Option<bool> {
     for (index, character) in line.char_indices() {
         match character {
             '\\' if !escaped => escaped = true,
+            '(' if closing == ')' && !escaped => return None,
             character if character == closing && !escaped => {
                 return line[index + character.len_utf8()..]
                     .trim_matches([' ', '\t'])
@@ -1515,6 +1525,21 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos()
+    }
+
+    #[test]
+    fn link_definition_titles_require_commonmark_separation_and_nesting() {
+        assert_eq!(
+            link_reference_title_state("[ref]: <url> \"title\""),
+            Some(true)
+        );
+        assert_eq!(link_reference_title_state("[ref]: <url>\"title\""), None);
+        assert_eq!(multiline_title_line_state("continued)", ')'), Some(true));
+        assert_eq!(multiline_title_line_state("continued ( title)", ')'), None);
+        assert_eq!(
+            multiline_title_line_state("continued \\( title", ')'),
+            Some(false)
+        );
     }
 
     #[test]
@@ -2705,6 +2730,7 @@ Inline `inline-code` must be ignored.
         for (case, title) in [
             ("complete", "[ref]: /url (foo ( bar)"),
             ("incomplete", "[ref]: /url (foo ( bar"),
+            ("multiline", "[ref]: /url (foo\nbar ( baz)"),
         ] {
             let root =
                 std::env::temp_dir().join(format!("mdp-readme-nested-title-{case}-{}", nonce()));
@@ -2734,6 +2760,35 @@ Inline `inline-code` must be ignored.
             );
             let _ = std::fs::remove_dir_all(root);
         }
+    }
+
+    #[test]
+    fn adjacent_angle_destination_title_keeps_check_refresh_fail_closed() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-angle-title-{}", nonce()));
+        init_pack(&root, "Angle Title Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let prefix = "[ref]: <url>\"title\"\n2. ```markdown\n   human paragraph\n   ```";
+        let adversarial = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!("{prefix}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+            1,
+        );
+        std::fs::write(&readme_path, &adversarial).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "unassessed", "{checked}");
+        let error = refresh_readme(&root, None, true)
+            .expect_err("dry-run must refuse insertion inside the actual open fence");
+        assert_eq!(
+            error.to_string(),
+            crate::pack_readme::README_FENCE_DIAGNOSTIC
+        );
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("README after refusal"),
+            adversarial
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

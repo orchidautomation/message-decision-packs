@@ -314,6 +314,14 @@ fn diagnostic_class(code: &str) -> DiagnosticClass {
         || code.contains("do_not_contact")
     {
         DiagnosticClass::Policy
+    } else if matches!(
+        code,
+        "job_readiness_unavailable" | "job-readiness-unavailable"
+    ) {
+        // This named condition means the selected job has no compiled
+        // readiness authority. The shared word "unavailable" must not turn
+        // that stable configuration gap into a retryable runtime outage.
+        DiagnosticClass::MissingAuthority
     } else if code.contains("timeout")
         || code.contains("runner_failed")
         || code.contains("runner-failed")
@@ -346,7 +354,7 @@ fn phase(command: &str, code: &str) -> &'static str {
     }
     match command {
         "init" | "doctor" => "setup",
-        "validate" => "validation",
+        "check" | "validate" => "validation",
         "skills" | "requirements" => "readiness",
         "prepare-run" | "run" | "recover-run" | "run-preflight" | "verify-run" => "execution",
         "check-claims" => "policy",
@@ -491,6 +499,24 @@ mod tests {
             let value = serde_json::to_value(project("run", code)).unwrap();
             assert_eq!(value["retryability"], retryability);
             assert_eq!(value["next_action"]["kind"], action_kind);
+        }
+    }
+
+    #[test]
+    fn readiness_unavailability_precedes_generic_transient_matching() {
+        for code in ["job_readiness_unavailable", "job-readiness-unavailable"] {
+            let value = serde_json::to_value(project("check", code)).unwrap();
+            assert_eq!(value["phase"], "validation");
+            assert_eq!(value["retryability"], "after-user-action");
+            assert_eq!(value["prerequisites"][0]["kind"], "authority");
+            assert_eq!(value["next_action"]["kind"], "manual");
+        }
+
+        for code in ["runner_unavailable", "transport_unavailable"] {
+            let value = serde_json::to_value(project("run", code)).unwrap();
+            assert_eq!(value["phase"], "execution");
+            assert_eq!(value["retryability"], "transient");
+            assert_eq!(value["prerequisites"][0]["kind"], "runtime");
         }
     }
 
