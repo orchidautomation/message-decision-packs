@@ -159,14 +159,27 @@ fn assert_published_tree(root: &Path) {
 }
 
 fn assert_publication_paths_clean(publication: &Value) {
+    let current_dir = std::env::current_dir().expect("test runner current directory should exist");
+    assert_publication_paths_clean_from(publication, &current_dir);
+}
+
+fn assert_publication_paths_clean_from(publication: &Value, current_dir: &Path) {
     for key in ["staging_root", "backup_root"] {
-        if let Some(value) = publication.get(key).and_then(Value::as_str) {
-            let path = Path::new(value);
-            assert!(
-                !path.exists(),
-                "publication path {key}={value} should be removed after success"
-            );
-        }
+        let value = publication
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("publication should report {key}"));
+        let reported = Path::new(value);
+        let resolved = if reported.is_absolute() {
+            reported.to_path_buf()
+        } else {
+            current_dir.join(reported)
+        };
+        assert!(
+            !resolved.exists(),
+            "publication path {key}={value} (resolved as {}) should be removed after success",
+            resolved.display()
+        );
     }
 }
 
@@ -216,7 +229,7 @@ fn single_component_relative_root_publishes_from_current_directory() {
     let payload = data_envelope(&stdout);
     assert_eq!(payload["publication"]["mode"], "atomic-directory-rename");
     assert_published_tree(&current_dir.join("pack"));
-    assert_publication_paths_clean(&payload["publication"]);
+    assert_publication_paths_clean_from(&payload["publication"], &current_dir);
 
     let _ = fs::remove_dir_all(&current_dir);
 }
@@ -492,7 +505,14 @@ fn dry_run_does_not_touch_destination_or_create_staging() {
     assert_eq!(publication["mode"], "atomic-directory-rename");
     assert_eq!(publication["atomic"], true);
     assert!(!root.exists(), "dry run must not create the destination");
-    assert_publication_paths_clean(&publication);
+    assert!(
+        publication.get("staging_root").is_none(),
+        "dry run must not report a staging path"
+    );
+    assert!(
+        publication.get("backup_root").is_none(),
+        "dry run must not report a backup path"
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
