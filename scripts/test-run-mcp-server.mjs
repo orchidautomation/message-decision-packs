@@ -165,7 +165,7 @@ const unavailable = request.test_mode === 'unavailable'
 const data = {
   contract: request.test_mode === 'wrong-contract' ? 'wrong.run-contract' : 'mdp.run-execution.v1',
   valid: request.test_mode === 'wrong-contract' ? 'yes' : !blocked && !unavailable,
-  execution_id: 'exec-fixture',
+  execution_id: typeof request.execution_id === 'string' ? request.execution_id : 'exec-fixture',
   terminal_state: blocked ? 'no-draft:decision-invalid' : unavailable ? 'no-draft:runner-failed' : 'success',
   run_dir: reportedOutputDir,
   bundle_sha256: 'a'.repeat(64),
@@ -443,6 +443,7 @@ test('failed output-parent pin preserves one-shot consent for a valid retry', as
   assert.equal(failedPin.result.structuredContent.code, 'mcp-output-parent-changed', JSON.stringify(failedPin))
   assert.equal(failedPin.result.isError, true)
   assert.equal(retried.result.isError, false, JSON.stringify(retried))
+  assert.equal(retried.result.structuredContent.execution_id, 'exec-consent-pin-retry')
   assert.equal(existsSync(join(root, 'run', 'run-bundle.json')), true)
   assert.equal(replayed.error.code, -32602, JSON.stringify(replayed))
   assert.match(replayed.error.message, /already been consumed/)
