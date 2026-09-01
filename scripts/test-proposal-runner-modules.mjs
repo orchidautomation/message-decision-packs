@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, constants, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -156,6 +156,40 @@ test('supervisor recovery accepts the exact v2 claim emitted by the native CLI',
   }), true)
   assert.equal(existsSync(transaction), false)
   assert.equal(existsSync(claim), false)
+})
+
+test('supervisor recovery stays bound to the approved parent descriptor after a pathname swap', (t) => {
+  if (!['linux', 'darwin'].includes(process.platform)) return t.skip('directory descriptor aliases require Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-recovery-parent-fd-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const parent = join(root, 'approved')
+  const renamedParent = join(root, 'approved-renamed')
+  const escapedParent = join(root, 'escaped')
+  mkdirSync(parent)
+  mkdirSync(escapedParent)
+  const parentStats = statSync(parent)
+  const parentFd = openSync(parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0))
+  t.after(() => closeSync(parentFd))
+  const output = join(parent, 'clean-run')
+  const transactionLeaf = '.clean-run.tmp-0123456789abcdef0123456789abcdef'
+  mkdirSync(join(parent, transactionLeaf))
+  writeFileSync(join(parent, '.clean-run.mdp-run.claim'), `${JSON.stringify({
+    contract: 'mdp.run-recovery-claim.v1',
+    execution_id: 'run-fd',
+    transaction_leaf: transactionLeaf,
+  })}\n`)
+
+  renameSync(parent, renamedParent)
+  symlinkSync(escapedParent, parent, 'dir')
+  assert.equal(cleanupMdpRecoveryClaim({
+    outputDir: output,
+    executionId: 'run-fd',
+    expectedParentIdentity: { dev: parentStats.dev, ino: parentStats.ino },
+    outputParentFd: parentFd,
+  }), true)
+  assert.equal(existsSync(join(renamedParent, transactionLeaf)), false)
+  assert.equal(existsSync(join(renamedParent, '.clean-run.mdp-run.claim')), false)
+  assert.deepEqual(readdirSync(escapedParent), [])
 })
 
 test('recovery refuses hard-linked or mismatched claims without deleting a transaction', (t) => {

@@ -8,6 +8,11 @@
       "expected": {"authority_level": "authoritative", "disposition": "allow", "terminal": "success", "governed_generation": "available"}
     },
     {
+      "id": "secure-run-success-preserves-authority",
+      "source": {"surface": "__secure-run", "terminal_state": "success", "decision": "ready", "governed_output_present": true},
+      "expected": {"authority_level": "authoritative", "disposition": "allow", "terminal": "success", "governed_generation": "available"}
+    },
+    {
       "id": "lifecycle-success-blocked-decision",
       "source": {"terminal_state": "success", "decision": "no-draft", "governed_output_present": true},
       "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
