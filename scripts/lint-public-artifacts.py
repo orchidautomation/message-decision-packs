@@ -26,6 +26,20 @@ CLAIM_PATTERNS = [
     (re.compile(r"\bfully\s+automated\s+proposal\s+writing\b", re.I), "automation_claim"),
     (re.compile(r"(?<!not )\breplaces?\s+(?:human\s+)?(?:compliance\s+review|proposal\s+management\s+software)\b", re.I), "replacement_claim"),
 ]
+CONTROL_PLANE_PATTERNS = [
+    (
+        re.compile(r"\b(?:delegated|assigned)\s+to\s+(?:Orchid|Eve|a\s+Linear\s+agent)\b", re.I),
+        "private_execution_assignment",
+    ),
+    (
+        re.compile(
+            r"\b(?:credentials?|tokens?)\s+(?:are|is|remains?)\s+"
+            r"(?:enabled|available|exposed)(?:\s+at\s+process\s+scope)?\b",
+            re.I,
+        ),
+        "ambient_credential_roadmap",
+    ),
+]
 NEGATION_MARKERS = (
     " not ",
     "never ",
@@ -54,6 +68,13 @@ def is_claim_surface(relative: str) -> bool:
     )
 
 
+def is_publication_boundary_surface(relative: str) -> bool:
+    path = Path(relative)
+    return path.suffix.lower() in {".md", ".rst", ".txt"} and relative.startswith(
+        "docs/orchid/"
+    )
+
+
 def lint_paths(root: Path, relative_paths: list[str]) -> list[dict[str, str | int]]:
     findings: list[dict[str, str | int]] = []
     for relative in relative_paths:
@@ -68,6 +89,11 @@ def lint_paths(root: Path, relative_paths: list[str]) -> list[dict[str, str | in
             lines = path.read_text(encoding="utf-8").splitlines()
         except (UnicodeDecodeError, OSError):
             continue
+        if is_publication_boundary_surface(relative):
+            for number, line in enumerate(lines, 1):
+                for pattern, code in CONTROL_PLANE_PATTERNS:
+                    if pattern.search(line):
+                        findings.append({"path": relative, "line": number, "code": code})
         if not is_claim_surface(relative):
             continue
         for number, line in enumerate(lines, 1):
@@ -90,6 +116,10 @@ def tracked_paths(root: Path) -> list[str]:
     return [item.decode() for item in result.stdout.split(b"\0") if item]
 
 
+def format_finding(finding: dict[str, str | int]) -> str:
+    return f"{finding['path']}:{finding['line']}: {finding['code']}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -98,7 +128,7 @@ def main() -> int:
     findings = lint_paths(root, tracked_paths(root))
     if findings:
         for finding in findings:
-            print(f"{finding['path']}:{finding['line']}: {finding['code']}")
+            print(format_finding(finding))
         print(f"{CONTRACT}: blocked ({len(findings)} finding(s))")
         return 1
     print(f"{CONTRACT}: passed")
