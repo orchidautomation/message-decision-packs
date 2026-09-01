@@ -133,6 +133,50 @@ Across MDP-314 and MDP-318, the five confirmed P1 findings fit three independent
 
 Do not combine these three slices into one implementation PR: cancellation bookkeeping, provider-input authority, and filesystem output authority have different failure modes and regression surfaces.
 
+## MDP-320 current-main verification: release assets and installers
+
+> Verified 2026-09-01 against `origin/main` at `b5bbe716525f830f90461b9fc05f1deee9a064b1`, using the 15 assigned source URLs from PRs #221, #224, #234, and #235. The source set contains 4 P1 and 11 P2 findings; none includes a Cubic repair prompt.
+
+### Reconciled result
+
+| Disposition | P1 | P2 | Total |
+|---|---:|---:|---:|
+| `confirmed` | 1 | 0 | 1 |
+| `already fixed with regression proof` | 3 | 11 | 14 |
+| `superseded` | 0 | 0 | 0 |
+| `false positive` | 0 | 0 | 0 |
+| `needs product decision` | 0 | 0 | 0 |
+| **Total** | **4** | **11** | **15** |
+
+The one confirmed P1 is a single independently reviewable installer invariant: a custom `CODEX_HOME` must control the native plugin install root independently of the marketplace root. The generated installer currently validates `INSTALL_DIR` against `<marketplace-root>/.codex/plugins/<plugin>` instead of `<CODEX_HOME>/plugins/<plugin>`. The smallest remediation slice changes that path binding and adds a generated-installer fixture proving a non-default `CODEX_HOME` succeeds while mismatched config, marketplace, and install roots still fail closed.
+
+### Per-finding ledger
+
+| Priority | Source URL | Disposition | Current-main proof |
+|---|---|---|---|
+| P1 | [PR #221 r3869118124](https://github.com/orchidautomation/message-decision-packs/pull/221#discussion_r3869118124) | `already fixed with regression proof` | `.github/workflows/ci.yml:69,94-95` includes `scripts/test-release-workflow.mjs` in the CLI change filter and executes it in the required CLI job. The workflow contract passes locally. Fix lineage: `ad3f631`, `c82c5a2`. |
+| P1 | [PR #221 r3869118129](https://github.com/orchidautomation/message-decision-packs/pull/221#discussion_r3869118129) | `already fixed with regression proof` | `assertReleaseSmokeContract` parses the named run block, filters comments, requires the exact top-level staged-source binding, and rejects commented, echoed, late, and conditional variants (`scripts/test-release-workflow.mjs:374-428,474-503`). All mutations pass by being rejected. Fix lineage: `ad3f631`, `c82c5a2`. |
+| P2 | [PR #221 r3869150818](https://github.com/orchidautomation/message-decision-packs/pull/221#discussion_r3869150818) | `already fixed with regression proof` | `assertReleaseSmokeContract` tracks conditional depth and accepts the staged-source binding only at depth zero (`scripts/test-release-workflow.mjs:383-407`); the `unreachable staged source binding` mutation is rejected. The contract test passes. Fix lineage: `c82c5a2`. |
+| P2 | [PR #224 r3869447348](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869447348) | `already fixed with regression proof` | The contract now verifies both asset globs, paths-filter projection into the `cli` job, and unconditional parity execution (`scripts/test-release-workflow.mjs:115-163,446-472`). Mutations for missing filters, disconnected output, disabled jobs, and disabled steps are rejected. Fix lineage: `dfebde2`, `d45c390`. |
+| P2 | [PR #224 r3869519774](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869519774) | `already fixed with regression proof` | Shell overrides are rejected at workflow, job, and required-step scope (`scripts/test-release-workflow.mjs:28-39,164-219`); custom, flow-style, escaped, and explicit-key shell mutations are rejected. Fix lineage: `b089f22`, `16af846`. |
+| P2 | [PR #224 r3869583722](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869583722) | `already fixed with regression proof` | CI executes `/usr/bin/env -i /usr/bin/diff -qr` directly (`.github/workflows/ci.yml:98-100`) rather than inheriting `MAKEFLAGS`; the `dry-run make substitution` mutation is rejected (`scripts/test-release-workflow.mjs:561-566`). Fix lineage: `241c39c`. |
+| P2 | [PR #224 r3869639463](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869639463) | `already fixed with regression proof` | `assertNoWorkflowShellOverride` scans the complete workflow rather than a pre-`jobs` slice (`scripts/test-release-workflow.mjs:194-202,446-472`); the `post-jobs workflow shell` mutation is rejected. Fix lineage: `634e13b`. |
+| P2 | [PR #224 r3869639466](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869639466) | `already fixed with regression proof` | `hasMappingKey` decodes quoted mapping keys before bypass checks (`scripts/test-release-workflow.mjs:41-68`); the `quoted disabled asset parity step` mutation is rejected. Fix lineage: `634e13b`. |
+| P2 | [PR #224 r3869689301](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869689301) | `already fixed with regression proof` | Double-quoted keys are decoded with `JSON.parse`, and unrecognized YAML escape forms fail closed (`scripts/test-release-workflow.mjs:48-57`); `\\u0069f`, `\\x69f`, and `\\U00000069f` bypass mutations are rejected. Fix lineage: `8b417dc`, `3a6479c`. |
+| P2 | [PR #224 r3869689317](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869689317) | `already fixed with regression proof` | The parity command is pinned to `${{ github.workspace }}` and runs in an empty environment (`.github/workflows/ci.yml:98-100`); the alternate-working-directory mutation is rejected. Fix lineage: `3a6479c`, `241c39c`. |
+| P2 | [PR #224 r3869738298](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869738298) | `already fixed with regression proof` | Required scopes fail closed on explicit YAML mapping keys (`scripts/test-release-workflow.mjs:41-46`); quoted, commented, and block-scalar explicit-key mutations are rejected. Fix lineage: `82a71ed`. |
+| P2 | [PR #224 r3869873861](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869873861) | `already fixed with regression proof` | `assertNoWorkflowYamlIndirection` rejects YAML tags, anchors, and aliases across the workflow (`scripts/test-release-workflow.mjs:204-219`); `!!str if`, bare-tag, and aliased-key mutations are rejected. Fix lineage: `4043162`. |
+| P2 | [PR #224 r3869967178](https://github.com/orchidautomation/message-decision-packs/pull/224#discussion_r3869967178) | `already fixed with regression proof` | `filterStepBlock` requires the paths-filter step's only depth-10 input to be `filters: |`, preserving the action's default some-match behavior (`scripts/test-release-workflow.mjs:115-151`); the `predicate-quantifier: every` mutation is rejected. Fix lineage: `1a238e7`. |
+| P1 | [PR #234 r3875873095](https://github.com/orchidautomation/message-decision-packs/pull/234#discussion_r3875873095) | `already fixed with regression proof` | Aggregate `--agents` skips Codex only when its CLI is absent, while explicit `--codex` remains strict (`scripts/install.sh:275-289`). `scripts/test-install.sh:113-120` proves the fixture continues through Cursor and OpenCode without invoking Codex, and the installer fixture suite passes. Fix lineage: `9e99e24`. |
+| P1 | [PR #235 r3876859080](https://github.com/orchidautomation/message-decision-packs/pull/235#discussion_r3876859080) | `confirmed` | `scripts/patch-codex-installer.mjs:47-63` derives `expectedInstallDir` from `marketplaceRoot/.codex/plugins/<plugin>` even though `codexHome` is independently available. A temporary generated-installer fixture with marketplace data under `$HOME/.agents` and plugin/config under a distinct custom `CODEX_HOME` exits 1 with `Codex native registration requires matching native config, marketplace, and plugin paths.` before any Codex command runs. Risk: supported custom-home installs and upgrades are rejected. Cluster: custom `CODEX_HOME` path binding. |
+
+### Verification notes
+
+- Passed on the verification head: `node scripts/test-release-workflow.mjs`, `bash scripts/test-install.sh`, `bash scripts/validate-version-sync.sh`, `bash scripts/test-version-sync.sh`, deterministic 15-URL/count reconciliation, and `git diff --check`.
+- The exact 15 source comments were re-read through the GitHub API and reconciled one-for-one with the catalog URLs. These four source PRs contain no Cubic finding or captured Cubic repair prompt.
+- The confirmed custom-home reproduction used only a disposable generated installer, fake `codex` executable, and temporary paths. It failed during static path validation before registration; it did not install, publish, download, or mutate host configuration.
+- Residual risk is limited to custom `CODEX_HOME` native Codex installs and upgrades until the proposed path-binding slice lands. The release-workflow, asset-parity, and aggregate absent-Codex findings retain direct mutation or fixture regressions on current `main`.
+
 
 ## Audited PR population
 
