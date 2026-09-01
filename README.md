@@ -32,7 +32,7 @@ The installer uses the latest
 [GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 so the CLI and agent instructions remain version-aligned.
 
-MDP `0.1.105` now ships a Pluxx-emitted Agent Plugins v1 portable skills
+MDP `0.1.106` now ships a Pluxx-emitted Agent Plugins v1 portable skills
 package alongside the four native bundles. The portable package has exactly
 the five MDP skills and no portable MCP or hooks. It requires an explicit,
 non-overlapping client-managed destination; MDP does not guess an undocumented
