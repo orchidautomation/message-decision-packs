@@ -38,6 +38,7 @@ import {
   MCP_PROTOCOL_VERSION,
   createBoundedToolScheduler,
   mcpDiagnostic,
+  mcpRequestKey,
   safeMcpMessage,
   toolErrorDiagnostic,
   validateProtocolVersion,
@@ -1009,12 +1010,11 @@ const handleToolCall = async (params, signal = null) => {
 }
 
 const activeRequests = new Map()
-const pendingCancellations = new Set()
 
 const cancelActiveRequest = (requestId) => {
-  const controller = activeRequests.get(String(requestId))
+  const controller = activeRequests.get(mcpRequestKey(requestId))
   if (controller) controller.abort()
-  else if (toolScheduler?.isQueued(requestId)) pendingCancellations.add(String(requestId))
+  else toolScheduler?.cancelQueued(requestId)
 }
 
 let toolScheduler = null
@@ -1063,15 +1063,15 @@ const handleRequest = async (message) => {
       case 'tools/call': {
         if (notification) return null
         const controller = new AbortController()
-        activeRequests.set(String(message.id), controller)
-        if (pendingCancellations.delete(String(message.id))) controller.abort()
+        const requestKey = mcpRequestKey(message.id)
+        activeRequests.set(requestKey, controller)
         try {
           if (controller.signal.aborted) {
             return response(message.id, toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'cli-cancelled' }, true))
           }
           return response(message.id, await handleToolCall(message.params, controller.signal))
         } finally {
-          activeRequests.delete(String(message.id))
+          activeRequests.delete(requestKey)
         }
       }
       default:
@@ -1132,6 +1132,7 @@ toolScheduler = createBoundedToolScheduler({
     retryable: true,
     nextAction: 'Retry after an active tool call completes.',
   })),
+  cancelledResponse: (id) => response(id, toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'cli-cancelled' }, true)),
 })
 
 const dispatchRequest = (message) => {
