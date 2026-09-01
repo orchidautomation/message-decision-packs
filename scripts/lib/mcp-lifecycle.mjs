@@ -59,10 +59,13 @@ export const safeMcpMessage = (value, fallback = 'MCP request failed') => {
     .replace(/\b[A-Za-z]:\\(?:[^\s,;:)"']+\\?)+/gu, '<local-path>')
 }
 
+export const mcpRequestKey = (id) => `${id === null ? 'null' : typeof id}:${JSON.stringify(id)}`
+
 export const createBoundedToolScheduler = ({
   maxConcurrent = MCP_MAX_CONCURRENT_TOOL_CALLS,
   maxQueued = MCP_MAX_QUEUED_TOOL_CALLS,
   busyResponse,
+  cancelledResponse = () => undefined,
 }) => {
   let running = 0
   const queued = []
@@ -71,7 +74,7 @@ export const createBoundedToolScheduler = ({
   const drain = () => {
     while (running < maxConcurrent && queued.length > 0) {
       const item = queued.shift()
-      queuedIds.delete(item.id)
+      if (!queued.some((candidate) => candidate.key === item.key)) queuedIds.delete(item.key)
       running += 1
       let result
       try {
@@ -93,15 +96,27 @@ export const createBoundedToolScheduler = ({
       return Promise.resolve(busyResponse(id))
     }
     return new Promise((resolve, reject) => {
-      queued.push({ id: String(id), operation, resolve, reject })
-      queuedIds.add(String(id))
+      const key = mcpRequestKey(id)
+      queued.push({ id, key, operation, resolve, reject })
+      queuedIds.add(key)
       drain()
     })
   }
 
+  const cancelQueued = (id) => {
+    const key = mcpRequestKey(id)
+    const index = queued.findIndex((item) => item.key === key)
+    if (index < 0) return false
+    const [item] = queued.splice(index, 1)
+    if (!queued.some((candidate) => candidate.key === key)) queuedIds.delete(key)
+    item.resolve(cancelledResponse(item.id))
+    return true
+  }
+
   return {
     schedule,
-    isQueued: (id) => queuedIds.has(String(id)),
+    cancelQueued,
+    isQueued: (id) => queuedIds.has(mcpRequestKey(id)),
     limits: Object.freeze({ maxConcurrent, maxQueued }),
   }
 }
