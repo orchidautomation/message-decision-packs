@@ -32,6 +32,6 @@ one direct hop from the entrypoint.
 ## Versioned eval delta
 
 `plugin/skill-evals/trigger-cases.json` and `coverage.json` carry revision
-`mdp-257.v1`. The current corpus retains distinct GTM and proposal modes but
+`mdp-249.v1`. The current corpus retains distinct GTM and proposal modes but
 expects the same neutral `mdp-pack-apply` owner. Explicit builder, read-only
 pack-review, and apply intent remain distinct from the `mdp` coordinator.
