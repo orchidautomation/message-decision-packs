@@ -76,6 +76,20 @@ fn data(output: &Output) -> Value {
     envelope["data"].clone()
 }
 
+fn error_message(output: &Output) -> String {
+    let envelope: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "author error output should be JSON ({error}); stderr={} stdout={}",
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout),
+        )
+    });
+    envelope["error"]["message"]
+        .as_str()
+        .expect("author error should contain a message")
+        .to_string()
+}
+
 fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
     fn collect(root: &Path, current: &Path, values: &mut BTreeMap<String, Vec<u8>>) {
         for entry in fs::read_dir(current).expect("snapshot directory should be readable") {
@@ -124,6 +138,61 @@ fn fixture(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     fs::remove_file(candidate.join(".mdp/sources.yaml")).expect("candidate file should delete");
     let plan = root.join("change-set.json");
     (root, live, candidate, plan)
+}
+
+#[cfg(unix)]
+fn archived_state_paths(root: &Path) -> Vec<PathBuf> {
+    let mut paths = fs::read_dir(root)
+        .expect("fixture root should be readable")
+        .map(|entry| entry.expect("fixture entry should be readable").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(".mdp.author.evidence-state."))
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
+}
+
+#[cfg(unix)]
+fn fixture_with_two_archived_commits(
+    label: &str,
+) -> (PathBuf, PathBuf, PathBuf, PathBuf, Vec<PathBuf>) {
+    let (root, live, candidate, plan) = fixture(label);
+    let original = root.join("original");
+    copy_tree(&live.join(".mdp"), &original);
+    assert!(preview(&live, &candidate, &plan).status.success());
+
+    let first = apply(&live, &candidate, &plan, None);
+    assert!(
+        first.status.success(),
+        "first apply stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    fs::remove_dir_all(live.join(".mdp")).expect("published authority should be removable");
+    copy_tree(&original, &live.join(".mdp"));
+
+    let second = apply(&live, &candidate, &plan, None);
+    assert!(
+        second.status.success(),
+        "second apply stderr: {}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    let archived = archived_state_paths(&root);
+    assert_eq!(archived.len(), 2, "expected two archived commit records");
+    (root, live, candidate, plan, archived)
+}
+
+#[cfg(unix)]
+fn rewrite_archived_state(path: &Path, edit: impl FnOnce(&mut Value)) {
+    let mut state: Value =
+        serde_json::from_slice(&fs::read(path).expect("archived state should be readable"))
+            .expect("archived state should be JSON");
+    edit(&mut state);
+    let mut bytes = serde_json::to_vec(&state).expect("archived state should serialize");
+    bytes.push(b'\n');
+    fs::write(path, bytes).expect("archived state should be writable");
 }
 
 fn preview(live: &Path, candidate: &Path, plan: &Path) -> Output {
@@ -560,6 +629,98 @@ fn retry_recognizes_commit_after_state_was_archived() {
             .iter()
             .any(|code| code == "recovery-evidence-retained"),
         "retry must report retained recovery evidence: {result}"
+    );
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn retry_accepts_equivalent_archived_commits_for_the_same_plan() {
+    let (root, live, candidate, plan, _) =
+        fixture_with_two_archived_commits("equivalent-archived-states");
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(
+        recovered.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    let result = data(&recovered);
+    assert_eq!(result["status"], "applied");
+    assert!(
+        result["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "interrupted-commit-recovered")
+    );
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn retry_accepts_reordered_equivalent_archived_commit_details() {
+    let (root, live, candidate, plan, archived) =
+        fixture_with_two_archived_commits("reordered-archived-states");
+    rewrite_archived_state(&archived[1], |state| {
+        for key in ["created_directories", "backups", "installs"] {
+            state[key]
+                .as_array_mut()
+                .expect("transaction detail should be an array")
+                .reverse();
+        }
+    });
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(
+        recovered.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    assert_eq!(data(&recovered)["status"], "applied");
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn retry_rejects_divergent_archived_commit_details() {
+    let (root, live, candidate, plan, archived) =
+        fixture_with_two_archived_commits("divergent-archived-states");
+    rewrite_archived_state(&archived[1], |state| {
+        state["backups"][0]["sha256"] = Value::String("0".repeat(64));
+    });
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(!recovered.status.success());
+    assert!(
+        error_message(&recovered).contains(
+            "conflicting archived committed author transaction states match the change set"
+        ),
+        "stdout: {}",
+        String::from_utf8_lossy(&recovered.stdout)
+    );
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn retry_rejects_an_invalid_archived_commit_record() {
+    let (root, live, candidate, plan, archived) =
+        fixture_with_two_archived_commits("invalid-archived-state");
+    rewrite_archived_state(&archived[1], |state| {
+        state["backups"][0]["sha256"] = Value::String("invalid".to_string());
+    });
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(!recovered.status.success());
+    assert!(
+        error_message(&recovered).contains("file digest must be a lowercase SHA-256 digest"),
+        "stdout: {}",
+        String::from_utf8_lossy(&recovered.stdout)
     );
     assert_eq!(snapshot(&live), snapshot(&candidate));
     let _ = fs::remove_dir_all(root);
