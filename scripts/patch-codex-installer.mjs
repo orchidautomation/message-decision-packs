@@ -52,8 +52,7 @@ const expectedMarketplacePath = path.join(
   'marketplace.json',
 )
 const expectedInstallDir = path.join(
-  marketplaceRoot,
-  '.codex',
+  codexHome,
   'plugins',
   pluginName,
 )

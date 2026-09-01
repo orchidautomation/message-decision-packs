@@ -548,6 +548,95 @@ try {
     'Codex installer must preserve the pre-existing marketplace catalog name.',
   )
 
+  const customHome = join(tempRoot, 'installed', 'custom-home-layout')
+  const customCodexHome = join(tempRoot, 'installed', 'custom-codex-home')
+  const customCodexConfigPath = join(customCodexHome, 'config.toml')
+  const customCodexPluginRoot = join(
+    customCodexHome,
+    'plugins/message-decision-packs',
+  )
+  const customCodexMarketplacePath = join(
+    customHome,
+    '.agents/plugins/marketplace.json',
+  )
+  const customCodexTracePath = join(tempRoot, 'custom-codex-registration.trace')
+  run('bash', [join(releaseRoot, 'install-codex.sh')], {
+    cwd: root,
+    environment: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      HOME: customHome,
+      CODEX_HOME: customCodexHome,
+      MDP_SKIP_CLI_UPDATE: '1',
+      PLUXX_CODEX_BUNDLE_PATH: join(
+        releaseRoot,
+        'message-decision-packs-codex-latest.tar.gz',
+      ),
+      PLUXX_CODEX_CONFIG_PATH: customCodexConfigPath,
+      PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+      PLUXX_CODEX_INSTALL_DIR: customCodexPluginRoot,
+      PLUXX_CODEX_MARKETPLACE_PATH: customCodexMarketplacePath,
+      PLUXX_TEST_CODEX_TRACE: customCodexTracePath,
+      PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
+      PLUXX_INSTALL_LOCK_ROOT: join(customHome, '.pluxx/install-locks'),
+      PLUXX_RUNTIME_STORE_ROOT: join(customHome, '.pluxx/runtimes'),
+    },
+  })
+  assert(
+    readFileSync(customCodexTracePath, 'utf8') ===
+      'marketplace add\nplugin add\nplugin list\n',
+    'Generated Codex installer must register when CODEX_HOME is independent of the marketplace root.',
+  )
+  assert(
+    existsSync(join(customCodexPluginRoot, '.codex-plugin/plugin.json')) &&
+      readFileSync(customCodexConfigPath, 'utf8').includes('hooks = true'),
+    'Custom CODEX_HOME must own the installed plugin and native config.',
+  )
+
+  const mismatchHome = join(tempRoot, 'installed', 'mismatched-home-layout')
+  const mismatchCodexHome = join(tempRoot, 'installed', 'mismatched-codex-home')
+  const mismatchTracePath = join(tempRoot, 'mismatched-codex-registration.trace')
+  const mismatchedInstall = spawnSync('bash', [join(releaseRoot, 'install-codex.sh')], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      HOME: mismatchHome,
+      CODEX_HOME: mismatchCodexHome,
+      MDP_SKIP_CLI_UPDATE: '1',
+      PLUXX_CODEX_BUNDLE_PATH: join(
+        releaseRoot,
+        'message-decision-packs-codex-latest.tar.gz',
+      ),
+      PLUXX_CODEX_CONFIG_PATH: join(mismatchCodexHome, 'config.toml'),
+      PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+      PLUXX_CODEX_INSTALL_DIR: join(
+        mismatchHome,
+        '.codex/plugins/message-decision-packs',
+      ),
+      PLUXX_CODEX_MARKETPLACE_PATH: join(
+        mismatchHome,
+        '.agents/plugins/marketplace.json',
+      ),
+      PLUXX_TEST_CODEX_TRACE: mismatchTracePath,
+      PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
+      PLUXX_INSTALL_LOCK_ROOT: join(mismatchHome, '.pluxx/install-locks'),
+      PLUXX_RUNTIME_STORE_ROOT: join(mismatchHome, '.pluxx/runtimes'),
+    },
+    encoding: 'utf8',
+  })
+  assert(
+    mismatchedInstall.status !== 0 &&
+      mismatchedInstall.stderr.includes(
+        'Codex native registration requires matching native config, marketplace, and plugin paths.',
+      ),
+    'Generated Codex installer must reject a plugin path outside custom CODEX_HOME.',
+  )
+  assert(
+    !existsSync(mismatchTracePath) || readFileSync(mismatchTracePath, 'utf8') === '',
+    'Custom CODEX_HOME mismatch must fail before native Codex registration.',
+  )
+
   assert(
     existsSync(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')),
     'Generated Codex installer must install the local proposal runner.',
