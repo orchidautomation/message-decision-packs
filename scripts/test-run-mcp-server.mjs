@@ -97,7 +97,14 @@ if (args.includes('run-preflight')) {
   process.exit(0)
 }
 const requestPath = args[args.indexOf('--request') + 1]
-const outputDir = args[args.indexOf('--out-dir') + 1]
+const secureRun = args.includes('__secure-run')
+const descriptorRoot = process.platform === 'linux' ? '/proc/self/fd/' : '/dev/fd/'
+const outputDir = secureRun
+  ? descriptorRoot + args[args.indexOf('--dir-fd') + 1] + '/' + args[args.indexOf('--output-leaf') + 1]
+  : args[args.indexOf('--out-dir') + 1]
+const reportedOutputDir = secureRun
+  ? args[args.indexOf('--display-output-dir') + 1]
+  : outputDir
 if (existsSync(outputDir + '.pause-before-read')) {
   writeFileSync(outputDir + '.ready', '')
   while (!existsSync(outputDir + '.continue')) {
@@ -148,7 +155,7 @@ const data = {
   valid: request.test_mode === 'wrong-contract' ? 'yes' : !blocked && !unavailable,
   execution_id: 'exec-fixture',
   terminal_state: blocked ? 'no-draft:decision-invalid' : unavailable ? 'no-draft:runner-failed' : 'success',
-  run_dir: outputDir,
+  run_dir: reportedOutputDir,
   bundle_sha256: 'a'.repeat(64),
   receipt_sha256: 'b'.repeat(64),
   authority: {
@@ -1469,12 +1476,18 @@ test('passes only file paths to a bounded CLI child and returns its authority un
   assert.equal('mcp_assurance' in result, false)
 
   const invocation = JSON.parse(readFileSync(`${output}.invocation.json`, 'utf8'))
-  assert.deepEqual(invocation.args.slice(0, 3), ['--json', 'run', '--request'])
+  assert.deepEqual(invocation.args.slice(0, 3), ['--json', '__secure-run', '--request'])
   assert.notEqual(invocation.args[3], request)
   assert.equal(existsSync(invocation.args[3]), false)
-  assert.deepEqual(invocation.args.slice(4), [
-    '--out-dir',
+  assert.deepEqual(invocation.args.slice(4, 10), [
+    '--output-leaf',
+    'new-run',
+    '--display-output-dir',
     join(realpathSync(root), 'new-run'),
+    '--dir-fd',
+    '3',
+  ])
+  assert.deepEqual(invocation.args.slice(-2), [
     '--transport-timeout-ms',
     '60000',
   ])
@@ -1674,6 +1687,38 @@ test('executes frozen request bytes when the public path is mutated or replaced 
     assert.notEqual(invocation.args[3], request)
     assert.equal(existsSync(invocation.args[3]), false)
   }
+})
+
+test('run stays on the approved output descriptor when its public parent path is swapped', async (t) => {
+  if (!['linux', 'darwin'].includes(process.platform)) return t.skip('directory descriptor aliases require Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-output-parent-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const approvedParent = join(root, 'approved')
+  const renamedParent = join(root, 'approved-renamed')
+  const escapedParent = join(root, 'escaped')
+  mkdirSync(approvedParent)
+  mkdirSync(escapedParent)
+  const request = join(root, 'request.json')
+  const output = join(approvedParent, 'run')
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', execution_id: 'exec-fixture', mode: 'deterministic' }))
+  writeFileSync(`${output}.pause-before-read`, '')
+
+  const pending = rpc(fixtureCli(root), [
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: output })),
+  ])
+  await waitForFile(`${output}.ready`)
+  renameSync(approvedParent, renamedParent)
+  symlinkSync(escapedParent, approvedParent, 'dir')
+  writeFileSync(join(renamedParent, 'run.continue'), '')
+  const [reply] = await pending
+
+  assert.equal(reply.result.structuredContent.code, 'mcp-output-parent-changed')
+  assert.equal(reply.result.structuredContent.diagnostic.contract, 'mdp.mcp-diagnostic.v1')
+  assert.equal(existsSync(join(escapedParent, 'run')), false)
+  assert.equal(existsSync(join(renamedParent, 'run', 'run-bundle.json')), true)
+  assert.equal(existsSync(join(renamedParent, 'run', 'run-receipt.json')), true)
+  assert.deepEqual(readdirSync(renamedParent).filter((name) => name.startsWith('.run.tmp-') || name === '.run.mdp-run.claim'), [])
+  assert.equal(JSON.stringify(reply).includes(root), false)
 })
 
 test('fails closed without returning CLI stderr, partial stdout, paths, or source bodies', async (t) => {

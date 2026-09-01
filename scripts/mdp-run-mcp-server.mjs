@@ -312,7 +312,7 @@ const childEnvironment = (includeNativeModel = false) =>
       .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined, absoluteDeadlineMs = null) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined, absoluteDeadlineMs = null, inheritedFds = []) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
@@ -325,6 +325,7 @@ const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = f
     signal,
     ...(terminationGraceMs === undefined ? {} : { terminationGraceMs }),
     ...(absoluteDeadlineMs === null ? {} : { absoluteDeadlineMs }),
+    inheritedFds,
   })
 
 const tools = [
@@ -847,25 +848,44 @@ const callRun = async (args, signal = null) => {
     finalCheckInputs()
     policy.finalCheck('output', outputParent.path, outputParent, 'directory')
     const outputReservation = policy.newOutput('output', outputRequest)
+    const pinnedOutput = pinOutputParent(outputReservation, join(frozenRequest.privateDir, 'run-output-receipt'))
     const outputDir = outputReservation.path
     const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
-    invocation = await invokeCli(
-      ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir, '--transport-timeout-ms', String(timeoutMs)],
-      dirname(outputDir),
-      runBudget,
-      {
-        outputDir,
-        executionId: frozenRequest.executionId,
-        requestSha256: frozenRequest.sha256,
-      },
-      providerCapable,
-      plan,
-      signal,
-    )
+    try {
+      invocation = await invokeCli(
+        ['--json', '__secure-run', '--request', frozenRequest.path, '--output-leaf', basename(outputDir), '--display-output-dir', outputDir, '--dir-fd', '3', '--expected-dev', pinnedOutput.parentIdentity.dev.toString(), '--expected-ino', pinnedOutput.parentIdentity.ino.toString(), '--transport-timeout-ms', String(timeoutMs)],
+        pinnedOutput.parent,
+        runBudget,
+        {
+          outputDir,
+          executionId: frozenRequest.executionId,
+          requestSha256: frozenRequest.sha256,
+          expectedParentIdentity: pinnedOutput.parentIdentity,
+          outputParentFd: pinnedOutput.fd,
+        },
+        providerCapable,
+        plan,
+        signal,
+        undefined,
+        null,
+        [pinnedOutput.fd],
+      )
+      try {
+        policy.finalCheck('output', outputParent.path, outputParent, 'directory')
+      } catch {
+        invocation.outputParentChanged = true
+      }
+    } finally {
+      closeSync(pinnedOutput.fd)
+      closeSync(pinnedOutput.receiptFd)
+    }
   } finally {
     if (!cleanupOwnedTempWorkspace(frozenRequest.privateDir, { purpose: 'run-mcp-freeze' })) {
       return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-cleanup-incomplete' }, true)
     }
+  }
+  if (invocation.outputParentChanged) {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-output-parent-changed' }, true)
   }
   if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.cancelled
