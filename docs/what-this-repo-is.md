@@ -109,7 +109,7 @@ The repository is source-available under the Elastic License 2.0. That supports 
 Pluxx is what makes the agent layer portable.
 
 This repo uses `pluxx.config.ts` as one maintained distribution source. In the
-released MDP `0.1.101` distribution, Pluxx emits:
+released MDP `0.1.107` distribution, Pluxx emits:
 
 - one Agent Plugins v1 portable package containing exactly the four MDP skills;
 - no portable MCP declaration, hooks, scripts, assets, commands, or agents; and
@@ -129,7 +129,7 @@ Portable format validation is not the same as host discovery. Cursor documents
 a local plugin path, but real Cursor discovery was not proven in the current
 environment. No documented Codex root Agent Plugins import path was
 established, so MDP refuses to guess one and preserves the native Codex path.
-Pluxx `0.1.42` and MDP `0.1.101` are public and release-verified. Real client
+Pluxx `0.1.42` and MDP `0.1.107` are public and release-verified. Real client
 discovery remains host-specific; no undocumented generic Codex import path is
 claimed.
 
