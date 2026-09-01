@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { chmodSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { consentBinding, consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
+import { consentBinding, consumeProviderConsent, consumeValidatedProviderConsent, validateProviderConsent } from './lib/mcp-provider-consent.mjs'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { identityBoundDirectoryCandidates } from './lib/identity-bound-directory.mjs'
 import { superviseProcess } from './lib/process-supervisor.mjs'
@@ -291,6 +291,19 @@ test('freezes consent records, rejects mismatch/expiry, and consumes each nonce 
     assert.throws(() => consumeProviderConsent({ policy, consentId: 'mismatch', provider: 'openai', purpose: 'mdp.run', requestSha256: 'b'.repeat(64), outputRoot: mismatch.output_root }), /does not match/)
     const ordered = consentFixture(root, 'ordered', { source_sha256s: ['a'.repeat(64), 'b'.repeat(64)] })
     assert.throws(() => consumeProviderConsent({ policy, consentId: 'ordered', provider: 'openai', purpose: 'mdp.run', requestSha256: ordered.request_sha256, sourceSha256s: ['b'.repeat(64), 'a'.repeat(64)], outputRoot: ordered.output_root }), /does not match/)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('validated consent is not consumed until the secure handoff commits', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-handoff-'))
+  try {
+    const policy = createPathPolicy({ MDP_MCP_CONSENT_ROOTS: root }, ['consent'])
+    const record = consentFixture(root, 'deferred')
+    const validated = validateProviderConsent({ policy, consentId: 'deferred', provider: 'openai', purpose: 'mdp.run', requestSha256: record.request_sha256, outputRoot: record.output_root })
+    const retry = validateProviderConsent({ policy, consentId: 'deferred', provider: 'openai', purpose: 'mdp.run', requestSha256: record.request_sha256, outputRoot: record.output_root })
+    assert.equal(retry.nonce, validated.nonce)
+    assert.equal(consumeValidatedProviderConsent(validated).nonce, validated.nonce)
+    assert.throws(() => consumeValidatedProviderConsent(retry), /already been consumed/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

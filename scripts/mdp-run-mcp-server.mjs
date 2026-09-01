@@ -18,7 +18,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
-import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
+import { consumeValidatedProviderConsent, validateProviderConsent } from './lib/mcp-provider-consent.mjs'
 import {
   cleanupOwnedTempWorkspace,
   cleanupStaleOwnedTempWorkspaces,
@@ -799,9 +799,10 @@ const callRun = async (args, signal = null) => {
     }
     assertOutputOutsidePack(frozenRequest.packDir, outputRequest)
     const outputParent = policy.existing('output', dirname(resolve(outputRequest)), 'directory')
+    let providerConsent = null
     if (providerCapable) {
       const consentId = requiredString(parsed, 'consent_id')
-      consumeProviderConsent({
+      providerConsent = validateProviderConsent({
         policy,
         consentId,
         provider: 'openai',
@@ -857,6 +858,7 @@ const callRun = async (args, signal = null) => {
     const outputDir = outputReservation.path
     const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     try {
+      if (providerConsent) consumeValidatedProviderConsent(providerConsent)
       invocation = await invokeCli(
         ['--json', '__secure-run', '--request', frozenRequest.path, '--output-leaf', basename(outputDir), '--display-output-dir', outputDir, '--dir-fd', '3', '--expected-dev', pinnedOutput.parentIdentity.dev.toString(), '--expected-ino', pinnedOutput.parentIdentity.ino.toString(), '--transport-timeout-ms', String(timeoutMs)],
         pinnedOutput.parent,
