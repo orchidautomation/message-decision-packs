@@ -40,7 +40,7 @@ fi
 
 if command -v mdp >/dev/null 2>&1; then
   installed_version="$(mdp --version 2>/dev/null | awk '{print $NF}' || true)"
-  if [[ "${MDP_SKIP_CLI_UPDATE:-0}" == "1" ]]; then
+  if [[ "${MDP_SKIP_CLI_UPDATE:-0}" == "1" && "${MDP_FORCE_CLI_UPDATE:-0}" != "1" ]]; then
     exit 0
   fi
   if [[ "$installed_version" == "$RESOLVED_VERSION" && "${MDP_FORCE_CLI_UPDATE:-0}" != "1" ]]; then

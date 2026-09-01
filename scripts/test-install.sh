@@ -261,6 +261,38 @@ PATH="$fake_path:$TEST_PATH" "$ROOT/scripts/install.sh" --cli --force-cli -y --b
 assert_log "cli args: skip:0"
 grep -F 'cli: updated' "$TMP_DIR/force.stdout" >/dev/null
 
+# The standalone CLI bootstrap keeps skip-only and exact-version no-op behavior,
+# but an explicit force repair must override the aggregate install's skip flag.
+bootstrap_asset="$TMP_DIR/bootstrap-mdp"
+cat > "$bootstrap_asset" <<'EOF'
+#!/usr/bin/env bash
+echo 'mdp 0.1.101'
+EOF
+chmod +x "$bootstrap_asset"
+for scenario in skip-only same-version; do
+  scenario_dir="$TMP_DIR/bootstrap-$scenario"
+  scenario_skip=0
+  if [ "$scenario" = skip-only ]; then scenario_skip=1; fi
+  MDP_RESOLVED_VERSION=0.1.101 \
+  MDP_DOWNLOAD_URL="file://$bootstrap_asset" \
+  MDP_INSTALL_DIR="$scenario_dir" \
+  MDP_SKIP_CLI_UPDATE="$scenario_skip" \
+  MDP_FORCE_CLI_UPDATE=0 \
+  PATH="$fake_path:$TEST_PATH" \
+    "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-$scenario.stdout"
+  test ! -e "$scenario_dir/mdp"
+done
+forced_bootstrap_dir="$TMP_DIR/bootstrap-forced"
+MDP_RESOLVED_VERSION=0.1.101 \
+MDP_DOWNLOAD_URL="file://$bootstrap_asset" \
+MDP_INSTALL_DIR="$forced_bootstrap_dir" \
+MDP_SKIP_CLI_UPDATE=1 \
+MDP_FORCE_CLI_UPDATE=1 \
+PATH="$fake_path:$TEST_PATH" \
+  "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-forced.stdout"
+test -x "$forced_bootstrap_dir/mdp"
+grep -F "Installed mdp CLI to $forced_bootstrap_dir/mdp" "$TMP_DIR/bootstrap-forced.stdout" >/dev/null
+
 # Explicit target failure stays strict and produces a truthful terminal summary.
 : > "$LOG_FILE"
 if PATH="$TEST_PATH" MDP_TEST_FAIL_TARGET=codex "$ROOT/scripts/install.sh" --codex -y --base-url "$BASE_URL" >"$TMP_DIR/failure.stdout" 2>"$TMP_DIR/failure.stderr"; then
