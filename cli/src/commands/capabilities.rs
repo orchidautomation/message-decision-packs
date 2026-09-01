@@ -653,15 +653,9 @@ fn argument_contract(command: &Command, argument: &Arg, path: &[String]) -> Valu
         })
         .collect::<Vec<_>>();
     let conflicts = command
-        .get_arg_conflicts_with(argument)
-        .into_iter()
-        .map(|conflict| {
-            conflict
-                .get_long()
-                .map(|name| format!("--{name}"))
-                .or_else(|| conflict.get_short().map(|name| format!("-{name}")))
-                .unwrap_or_else(|| conflict.get_id().to_string())
-        })
+        .get_arguments()
+        .filter(|candidate| arguments_conflict(command, argument, candidate))
+        .map(canonical_argument)
         .collect::<Vec<_>>();
     let human_only = matches!(
         argument.get_action(),
@@ -695,6 +689,30 @@ fn argument_contract(command: &Command, argument: &Arg, path: &[String]) -> Valu
         "classification": if human_only { "human-only" } else { "agent-callable" },
         "human_only_reason": human_only.then_some("Clap display action; it does not execute a product command")
     })
+}
+
+/// Clap accepts conflict declarations from either side of an argument pair,
+/// but its reflection API returns only the edges declared by the inspected
+/// argument. Capability consumers need the effective, symmetric relation that
+/// the parser enforces, so close every reflected pair in both directions.
+fn arguments_conflict(command: &Command, left: &Arg, right: &Arg) -> bool {
+    left.get_id() != right.get_id()
+        && (command
+            .get_arg_conflicts_with(left)
+            .iter()
+            .any(|candidate| candidate.get_id() == right.get_id())
+            || command
+                .get_arg_conflicts_with(right)
+                .iter()
+                .any(|candidate| candidate.get_id() == left.get_id()))
+}
+
+fn canonical_argument(argument: &Arg) -> String {
+    argument
+        .get_long()
+        .map(|name| format!("--{name}"))
+        .or_else(|| argument.get_short().map(|name| format!("-{name}")))
+        .unwrap_or_else(|| argument.get_id().to_string())
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1293,6 +1311,14 @@ mod tests {
             projected_argument(trace, "--receipt")["requires_when_present"],
             json!(["--bundle"])
         );
+        assert_eq!(
+            projected_argument(trace, "--bundle")["conflicts_with"],
+            json!(["--file"])
+        );
+        assert_eq!(
+            projected_argument(trace, "--artifact-root")["conflicts_with"],
+            json!(["--dir", "--prompt-output", "--validation-input"])
+        );
 
         let fit = projected_command(commands, &["fit"]);
         assert_eq!(
@@ -1340,6 +1366,49 @@ mod tests {
             projected_command(commands, &["capabilities"])["subcommand_required"],
             false
         );
+    }
+
+    #[test]
+    fn projected_conflicts_are_the_symmetric_clap_closure() {
+        let result = capabilities();
+        let projected = result["cli"]["commands"].as_array().unwrap();
+        let mut clap = Cli::command();
+        clap.build();
+
+        for command in projected {
+            let path = command["path"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|part| part.as_str().unwrap())
+                .collect::<Vec<_>>();
+            let clap_command = clap_command_at(&clap, &path);
+
+            for argument in clap_command.get_arguments() {
+                let expected = clap_command
+                    .get_arguments()
+                    .filter(|candidate| {
+                        argument.get_id() != candidate.get_id()
+                            && (clap_command
+                                .get_arg_conflicts_with(argument)
+                                .iter()
+                                .any(|conflict| conflict.get_id() == candidate.get_id())
+                                || clap_command
+                                    .get_arg_conflicts_with(candidate)
+                                    .iter()
+                                    .any(|conflict| conflict.get_id() == argument.get_id()))
+                    })
+                    .map(canonical_argument)
+                    .collect::<Vec<_>>();
+                let projected = projected_argument(command, &canonical_argument(argument));
+                assert_eq!(
+                    projected["conflicts_with"],
+                    json!(expected),
+                    "conflict projection drift at {path:?} for {}",
+                    argument.get_id()
+                );
+            }
+        }
     }
 
     #[test]
