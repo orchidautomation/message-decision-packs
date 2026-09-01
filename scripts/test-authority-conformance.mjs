@@ -20,6 +20,7 @@ if (!Array.isArray(corpus.cases) || corpus.cases.length < 10) throw new Error('a
 
 const required = new Set([
   'run-success-allow',
+  'secure-run-success-preserves-authority',
   'lifecycle-success-blocked-decision',
   'preflight-refused-block',
   'runner-failed-unavailable',

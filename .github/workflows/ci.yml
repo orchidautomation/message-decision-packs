@@ -60,6 +60,8 @@ jobs:
               - "scripts/test_skill_packaging.py"
               - "scripts/test-authority-conformance.mjs"
               - "scripts/test-run-mcp-server.mjs"
+              - "scripts/test-run-mcp-queued-cancellation.sh"
+              - "scripts/test-proposal-mcp-queued-cancellation.sh"
               - "scripts/mdp-run-mcp-server.mjs"
               - "scripts/test-temp-workspace.mjs"
               - "scripts/with-temp-workspace.mjs"
@@ -138,6 +140,10 @@ jobs:
           node --test
           --test-name-pattern='maps path-backed identity-bound|completes prepare, run, and verify|prepare refuses request and manifest parent swaps'
           scripts/test-run-mcp-server.mjs
+      - name: Verify typed queued cancellation over stdio
+        run: |
+          bash scripts/test-run-mcp-queued-cancellation.sh
+          bash scripts/test-proposal-mcp-queued-cancellation.sh
       - name: Verify temporary workspace cleanup
         run: node --test scripts/test-temp-workspace.mjs
 
