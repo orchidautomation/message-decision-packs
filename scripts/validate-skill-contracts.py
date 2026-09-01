@@ -20,6 +20,7 @@ REPO_DOC_URL = re.compile(
     r"https://github\.com/orchidautomation/message-decision-packs/(?:blob|tree)/[^\s)]+/docs/"
 )
 MAX_ENTRYPOINT_BYTES = 6000
+MAX_SUPPORTED_DESCRIPTION_CHARS = 250
 IGNORED_SKILL_ROOTS = ("docs/orchid/history/", "dist/", "target/", ".git/")
 LOAD_TIME_HAZARDS = (
     re.compile(r"\bSKILL_DIR\s*=\s*\$\("),
@@ -90,6 +91,24 @@ READINESS_TERMS = (
     "safe-to-draft",
     "no-draft",
 )
+COMPATIBILITY_TERMS = (
+    "mdp CLI",
+    "Node.js 18+",
+    "generative direct-CLI runs",
+    "non-generative CLI paths do not require Node.js",
+    "portable skill",
+    "MCP",
+)
+AUTHORING_CLOSEOUT_GUARDRAILS = {
+    "mdp": (
+        "approved non-mutating `source-plan`",
+        "Planning approved sources or creating/editing `.mdp/`: `$mdp-pack-builder`.",
+    ),
+    "mdp-pack-builder": (
+        "For `source-plan`, return a bounded, non-mutating source inventory",
+        "files were changed and preview/apply was not run",
+    ),
+}
 
 
 def error(errors: list[dict[str, str]], code: str, path: Path | str, message: str) -> None:
@@ -141,9 +160,14 @@ def validate(root: Path, source: Path) -> dict:
         )
         if name != skill_dir.name or not (1 <= len(name) <= 64):
             error(errors, "frontmatter_name_invalid", skill_file, "name must match the directory and be 1-64 characters")
-        if not (20 <= len(description) <= 1024) or "\n" in description:
-            error(errors, "frontmatter_description_invalid", skill_file, "description must be one line and 20-1024 characters")
-        for marker in ("mdp CLI", "Node.js 18+", "portable skill", "MCP"):
+        if not (20 <= len(description) <= MAX_SUPPORTED_DESCRIPTION_CHARS) or "\n" in description:
+            error(
+                errors,
+                "frontmatter_description_invalid",
+                skill_file,
+                f"description must be one line and 20-{MAX_SUPPORTED_DESCRIPTION_CHARS} characters so supported hosts do not truncate it",
+            )
+        for marker in COMPATIBILITY_TERMS:
             if marker not in compatibility:
                 error(errors, "frontmatter_compatibility_invalid", skill_file, f"compatibility must name the runtime boundary: {marker}")
 
@@ -226,6 +250,19 @@ def validate(root: Path, source: Path) -> dict:
                     f"communication_opening_missing:{skill_id}",
                     skill_path,
                     f"skill communication opening is missing: {phrase}",
+                )
+
+    for skill_id, phrases in AUTHORING_CLOSEOUT_GUARDRAILS.items():
+        skill_path = source / skill_id / "SKILL.md"
+        skill_text = skill_path.read_text(encoding="utf-8") if skill_path.is_file() else ""
+        normalized_skill_text = " ".join(skill_text.split())
+        for phrase in phrases:
+            if phrase not in normalized_skill_text:
+                error(
+                    errors,
+                    f"authoring_closeout_missing:{skill_id}",
+                    skill_path,
+                    f"skill is missing truthful source-plan routing/closeout: {phrase}",
                 )
 
     proposal_review = source / "mdp-pack-apply" / "SKILL.md"
