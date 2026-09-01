@@ -266,6 +266,15 @@ const toolCall = (id, name, args = {}) => ({
 })
 const replyById = (replies, id) => replies.find((reply) => reply.id === id)
 
+const assertInvalidToolParameters = (reply) => {
+  assert.equal(reply.jsonrpc, '2.0')
+  assert.equal(reply.result, undefined)
+  assert.equal(reply.error?.code, -32602)
+  assert.equal(reply.error?.data?.contract, 'mdp.mcp-diagnostic.v1')
+  assert.equal(reply.error?.data?.code, 'mcp-arguments-invalid')
+  assert.equal(reply.error?.data?.phase, 'tool-call')
+}
+
 const consentFixture = (root, id, overrides = {}) => {
   const value = { contract: 'mdp.mcp-provider-consent.v1', provider: 'openai', purpose: 'mdp.run', request_sha256: 'a'.repeat(64), source_sha256s: [], output_root: realpathSync(root), expires_at: new Date(Date.now() + 60_000).toISOString(), nonce: `${id}-nonce`, ...overrides }
   value.binding_sha256 = consentBinding({ provider: value.provider, purpose: value.purpose, requestSha256: value.request_sha256, sourceSha256s: value.source_sha256s, outputRoot: value.output_root, expiresAt: value.expires_at, nonce: value.nonce })
@@ -1711,11 +1720,13 @@ test('binds consent to private input and prompt bytes across post-consent source
     output_dir: join(root, 'mismatch-run'),
     consent_id: 'source-race-mismatch',
   })], {
+    TMPDIR: root,
     OPENAI_API_KEY: 'test-key-must-not-be-printed',
     MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
   })
-  assert.equal(mismatch.error.code, -32602)
+  assertInvalidToolParameters(mismatch)
   assert.equal(existsSync(join(root, 'mismatch-run.invocation.json')), false)
+  assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('mdp-owned-run-mcp-freeze-')), [])
   writeFileSync(`${output}.pause-before-read`, '')
 
   const pending = rpc(cli, [toolCall(1, 'mdp_run', {
@@ -1724,6 +1735,7 @@ test('binds consent to private input and prompt bytes across post-consent source
     output_dir: output,
     consent_id: 'source-race',
   })], {
+    TMPDIR: root,
     OPENAI_API_KEY: 'test-key-must-not-be-printed',
     MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
   })
@@ -1742,6 +1754,7 @@ test('binds consent to private input and prompt bytes across post-consent source
   assert.notEqual(invocation.request.prompt.source_path, prompt)
   assert.equal(existsSync(invocation.request.inputs[0].source_path), false)
   assert.equal(existsSync(invocation.request.prompt.source_path), false)
+  assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('mdp-owned-run-mcp-freeze-')), [])
 })
 
 test('fails closed and cleans private state when source materialization is unavailable or oversized', async (t) => {
@@ -1751,19 +1764,24 @@ test('fails closed and cleans private state when source materialization is unava
   const missingRequest = join(root, 'missing-request.json')
   const oversizedRequest = join(root, 'oversized-request.json')
   const oversized = join(root, 'oversized-input.bin')
-  writeFileSync(missingRequest, JSON.stringify({ contract: 'mdp.run-request.v1', inputs: [{ source_path: join(root, 'missing.bin') }] }))
+  writeFileSync(missingRequest, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative', inputs: [{ source_path: join(root, 'missing.bin') }] }))
   writeFileSync(oversized, 'x'.repeat(1_048_577))
-  writeFileSync(oversizedRequest, JSON.stringify({ contract: 'mdp.run-request.v1', inputs: [{ source_path: oversized }] }))
+  writeFileSync(oversizedRequest, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative', inputs: [{ source_path: oversized }] }))
 
   const replies = await rpc(cli, [
     toolCall(1, 'mdp_run', withExactRequestDigest(missingRequest, { output_dir: join(root, 'missing-run') })),
     toolCall(2, 'mdp_run', withExactRequestDigest(oversizedRequest, { output_dir: join(root, 'oversized-run') })),
-  ], { TMPDIR: root })
+  ], {
+    TMPDIR: root,
+    OPENAI_API_KEY: 'test-key-must-not-be-printed',
+    MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
+  })
 
-  assert.equal(replyById(replies, 1).error.code, -32602)
-  assert.equal(replyById(replies, 2).error.code, -32602)
+  assertInvalidToolParameters(replyById(replies, 1))
+  assertInvalidToolParameters(replyById(replies, 2))
   assert.equal(existsSync(join(root, 'missing-run.invocation.json')), false)
   assert.equal(existsSync(join(root, 'oversized-run.invocation.json')), false)
+  assert.equal(JSON.stringify(replies).includes('test-key-must-not-be-printed'), false)
   assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('mdp-owned-run-mcp-freeze-')), [])
 })
 
