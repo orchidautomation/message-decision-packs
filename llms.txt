@@ -12,7 +12,7 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. Rerun the installer to update.
 
-MDP `0.1.101` publicly ships an Agent Plugins v1 artifact built with Pluxx
+MDP `0.1.107` publicly ships an Agent Plugins v1 artifact built with Pluxx
 `0.1.42`. It is exactly the four skills, with no portable MCP, hooks, scripts,
 assets, commands, or agents. Installation requires an explicit non-overlapping
 client-managed path. Cursor documents a local path but real Cursor discovery
