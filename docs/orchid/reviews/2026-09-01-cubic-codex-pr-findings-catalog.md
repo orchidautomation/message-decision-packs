@@ -133,6 +133,55 @@ Across MDP-314 and MDP-318, the five confirmed P1 findings fit three independent
 
 Do not combine these three slices into one implementation PR: cancellation bookkeeping, provider-input authority, and filesystem output authority have different failure modes and regression surfaces.
 
+## MDP-321 current-main verification: skills, documentation, and behavioral evals
+
+> Verified 2026-09-01 against `origin/main` at `b5bbe716525f830f90461b9fc05f1deee9a064b1`. This ledger covers exactly the 15 assigned source URLs from PRs #213, #217, #226, #228, #230, #233, and #264: 3 P1, 8 P2, and 4 P3. Cubic repair prompts were treated as hypotheses and checked against current files, tests, and lineage rather than applied as patches.
+
+### Reconciled result
+
+| Disposition | P1 | P2 | P3 | Total |
+|---|---:|---:|---:|---:|
+| `confirmed` | 1 | 5 | 4 | 10 |
+| `already fixed with regression proof` | 2 | 3 | 0 | 5 |
+| `superseded` | 0 | 0 | 0 | 0 |
+| `false positive` | 0 | 0 | 0 | 0 |
+| `needs product decision` | 0 | 0 | 0 | 0 |
+| **Total** | **3** | **8** | **4** | **15** |
+
+The ten confirmed findings fit five independently reviewable root-cause clusters:
+
+1. **Public/private publication boundary (one P1).** A public execution plan still contains private tracker topology and an unremediated security roadmap. Add a repository publication guard and remove or sanitize the artifact.
+2. **Portable skill entrypoint truth (two P2).** The coordinator cannot close a valid planning-only authoring result, and all four skill entrypoints understate Node.js as a generative direct-CLI prerequisite. Update the authored contract and its output/compatibility assertions together.
+3. **Packaging validator and canonical inventory (one P2, one P3).** Invalid `--source` paths still crash after validation, while the nominal four-skill test derives both sides from the same live inventory. Guard invalid roots and add a mutation that proves unexpected inventory is rejected.
+4. **Behavioral-eval governance (two P2).** High-risk proposal modes no longer enforce safety and human-review assertion categories, and the documentation names a corpus revision different from the committed fixtures. Restore fail-closed coverage and derive or test the documented revision.
+5. **Profile-neutral migration documentation (three P3).** One link names a removed reference and two distribution summaries attribute the four-skill package to `0.1.101` instead of the tagged `0.1.107` migration. Repair the three public claims as one documentation-only slice.
+
+### Per-finding ledger
+
+| Priority | Source URL | Disposition | Current-main proof |
+|---|---|---|---|
+| P1 | [PR #213 r3865417195](https://github.com/orchidautomation/message-decision-packs/pull/213#discussion_r3865417195) | `confirmed` | `docs/orchid/plans/2026-08-26-002-mdp-241-wave-2-commit-to-build-plan.md:1-42` remains public and names private Linear sequencing, execution ownership, and the then-unremediated MCP/provider boundary. No publication validator prevents this class of artifact. Risk: public disclosure of private operational/security roadmap context. Cluster: public/private publication boundary. |
+| P2 | [PR #217 r3867956972](https://github.com/orchidautomation/message-decision-packs/pull/217#discussion_r3867956972) | `already fixed with regression proof` | `plugin/skills/mdp-pack-review/SKILL.md:3,13-15,61-65` now distinguishes unrequested silent repair from an explicit review-plus-repair transition to the builder. `review-gap-handoff-train` requires the read-only finding and explicit builder handoff. Fix lineage: `cb980ec`. |
+| P2 | [PR #226 r3873546679](https://github.com/orchidautomation/message-decision-packs/pull/226#discussion_r3873546679) | `already fixed with regression proof` | `scripts/validate-skill-contracts.py` now scans both Markdown links and bare `references/*.md` tokens, and the former second-hop directives were flattened. `test_entrypoints_stay_bounded_and_references_are_one_level` mutates both syntaxes and observes `nested_skill_reference`. Fix lineage: `57c8e7c`. |
+| P2 | [PR #228 r3873749147](https://github.com/orchidautomation/message-decision-packs/pull/228#discussion_r3873749147) | `confirmed` | `plugin/skills/mdp/SKILL.md:87-94` still says Author and maintain closes only with validated file changes or read-only findings, excluding the supported non-mutating `source-plan` results in `plugin/skill-evals/output-cases.json`. Risk: agents must mislabel or over-execute a valid planning outcome. Cluster: portable skill entrypoint truth. |
+| P2 | [PR #230 r3873825012](https://github.com/orchidautomation/message-decision-packs/pull/230#discussion_r3873825012) | `confirmed` | Every current `plugin/skills/*/SKILL.md:5` says Node.js 18+ is additional only for native plugin helpers and presents portable installs as CLI-only. But `compiler_observe_native_identity` calls `runtime_identity_material`, which resolves and hashes `node`, and direct run execution can return `node-runtime-not-found` (`cli/src/run_runtime.rs:927-960,1299-1317`). Risk: the recommended generative CLI path fails an undeclared prerequisite. Cluster: portable skill entrypoint truth. |
+| P2 | [PR #230 r3873825018](https://github.com/orchidautomation/message-decision-packs/pull/230#discussion_r3873825018) | `confirmed` | `skill_inventory` records and returns from an invalid source, but `main` immediately calls `validate_portable_skill_layout`, whose unguarded `source.iterdir()` raises for both a missing path and a regular file (`scripts/validate-skill-packaging.py:72-78,184-186,426-429`). Temporary reproductions returned a Python traceback in both cases instead of the validator JSON contract. Cluster: packaging validator and canonical inventory. |
+| P1 | [PR #233 r3874064198](https://github.com/orchidautomation/message-decision-packs/pull/233#discussion_r3874064198) | `already fixed with regression proof` | `prompt_for` sends no assertions to the subject (`scripts/run-skill-behavioral-evals.py:135-162`); `grade_response` performs a separate isolated evaluator call (`184-192`). `test_subject_prompt_is_not_coached_by_assertions` proves the subject prompt excludes the criterion and `Assertions:`. Fix lineage: `3b66a9a`. |
+| P1 | [PR #233 r3874064203](https://github.com/orchidautomation/message-decision-packs/pull/233#discussion_r3874064203) | `already fixed with regression proof` | `skill_material` resolves direct reference tokens under the canonical skills root, rejects escapes/missing files, appends their content, and records their hashes (`scripts/run-skill-behavioral-evals.py:73-94`). `test_direct_shared_skill_references_are_loaded` proves the communication and workflow-handoff references enter a trial. Fix lineage: `3b66a9a`. |
+| P2 | [PR #233 r3874064214](https://github.com/orchidautomation/message-decision-packs/pull/233#discussion_r3874064214) | `already fixed with regression proof` | Previous-version records use the explicit `--previous-skill-version`; subject and grader resolved model IDs plus input SHA-256s survive aggregation (`scripts/run-skill-behavioral-evals.py:243-289`). The committed `mdp-262-codex-2026-08-27.json` contains distinct tree identities, resolved `gpt-5.6-sol` identities, and per-mode input hashes. Fix lineage: `6750958`, `3b66a9a`. |
+| P2 | [PR #264 r3902180310](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180310) | `confirmed` | `plugin/skill-evals/coverage.json:68-80` assigns `mdp-pack-apply` high risk and includes bid/no-bid, compliance, proof, and red-team modes, but requires only `evidence`. `validate_outputs` enforces exactly the categories declared at `scripts/skill-eval-harness.py:644-671`, so removal of safety/human-review assertions is no longer fail-closed. Cluster: behavioral-eval governance. |
+| P2 | [PR #264 r3902180324](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180324) | `confirmed` | `docs/skill-progressive-disclosure.md:32-37` claims `mdp-257.v1`, while both `plugin/skill-evals/coverage.json:3` and `trigger-cases.json:3` carry `mdp-249.v1`. The captured Cubic one-line patch is directionally correct but remains only a hypothesis until the corpus authority is fixed/tested. Cluster: behavioral-eval governance. |
+| P3 | [PR #264 r3902180361](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180361) | `confirmed` | `docs/proposal-runner.md:110-113` links `references/evidence-path.md`, which does not exist; the shipped file is `plugin/skills/mdp-pack-apply/references/proposal-evidence-path.md`. Cluster: profile-neutral migration documentation. |
+| P3 | [PR #264 r3902180371](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180371) | `confirmed` | `test_agent_plugins_bundle_accepts_only_four_canonical_skills` copies the live source inventory and passes `self.expected_skills()`, derived from that same inventory (`scripts/test_skill_packaging.py:23-25,153-174`). It proves parity, not a four-skill allowlist; an arbitrary fifth canonical directory would appear on both sides. Cluster: packaging validator and canonical inventory. |
+| P3 | [PR #264 r3902180379](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180379) | `confirmed` | `llms.txt:15-16` still says the `0.1.101` artifact contains exactly four skills. Repository tags, `README.md:35-49`, `cli/Cargo.toml`, and `pluxx.config.ts` identify `0.1.107` as the profile-neutral four-skill migration. Cluster: profile-neutral migration documentation. |
+| P3 | [PR #264 r3902180385](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180385) | `confirmed` | `docs/what-this-repo-is.md:111-115` repeats the same `0.1.101`/four-skill claim despite the tagged `0.1.107` migration. Cluster: profile-neutral migration documentation. |
+
+### Verification notes
+
+- Passed: `python3 -m unittest scripts.test_skill_contracts scripts.test_skill_packaging scripts.test_skill_behavioral_evals scripts.test_skill_eval_harness` (61 tests), `python3 scripts/validate-skill-contracts.py`, `python3 scripts/validate-skill-packaging.py`, and `python3 scripts/skill-eval-harness.py` (84 trigger cases, 53 output cases, 159 assertions, 34 mode/split cells, and 13 CLI cases).
+- Deterministic URL reconciliation found exactly 15 distinct assigned review URLs with the required 3 P1 / 8 P2 / 4 P3 severity mix. The five fixed items have current executable regression or committed observed-report proof; current green validators do not negate the ten confirmed gaps because those gaps are outside or weaken the present assertions.
+- The invalid-source reproductions used disposable temporary missing/file paths and did not mutate repository or user data. No provider or behavioral model trial was invoked during verification.
+
 
 ## Audited PR population
 
