@@ -45,6 +45,22 @@ class SkillPackagingMutationTests(unittest.TestCase):
             check=False,
         )
 
+    def assert_invalid_source_response(
+        self, result: subprocess.CompletedProcess[str], source: Path
+    ) -> None:
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(len(result.stdout), 32_768)
+        payload = json.loads(result.stdout)
+        self.assertIsInstance(payload, dict)
+        self.assertFalse(payload["valid"])
+        self.assertIsInstance(payload["errors"], list)
+        self.assertTrue(
+            all(isinstance(error, str) for error in payload["errors"])
+        )
+        self.assertIn(f"missing skill root: {source}", payload["errors"])
+        self.assertNotIn("Traceback", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_canonical_inventory_is_the_expected_four(self) -> None:
         self.assertEqual(
             self.expected_skills(),
@@ -53,25 +69,16 @@ class SkillPackagingMutationTests(unittest.TestCase):
 
     def test_missing_source_fails_with_json_without_traceback(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-missing-source-") as temp:
-            result = self.run_validator(Path(temp) / "missing")
-        payload = json.loads(result.stdout)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(payload["valid"])
-        self.assertEqual(len(payload["errors"]), 1)
-        self.assertIn("missing skill root", payload["errors"][0])
-        self.assertNotIn("Traceback", result.stderr)
+            source = Path(temp) / "missing"
+            result = self.run_validator(source)
+            self.assert_invalid_source_response(result, source)
 
     def test_regular_file_source_fails_with_json_without_traceback(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-file-source-") as temp:
             source = Path(temp) / "skills"
             source.write_text("not a directory\n", encoding="utf-8")
             result = self.run_validator(source)
-        payload = json.loads(result.stdout)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(payload["valid"])
-        self.assertEqual(len(payload["errors"]), 1)
-        self.assertIn("missing skill root", payload["errors"][0])
-        self.assertNotIn("Traceback", result.stderr)
+            self.assert_invalid_source_response(result, source)
 
     def test_unexpected_fifth_authored_skill_fails_allowlist(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-fifth-skill-") as temp:
