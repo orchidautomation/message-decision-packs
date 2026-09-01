@@ -104,6 +104,7 @@ class PublicArtifactLintTests(unittest.TestCase):
             plan.write_text(
                 "Next Linear task ABC-101 will be handled privately.\n"
                 "ABC-102 must land after ABC-101.\n"
+                "After ABC-103,\nstart ABC-104.\n"
                 "Provider isolation remains deferred.\n"
             )
 
@@ -115,6 +116,7 @@ class PublicArtifactLintTests(unittest.TestCase):
                     )
                 ],
                 [
+                    "private_linear_sequence",
                     "private_linear_sequence",
                     "private_linear_sequence",
                     "private_security_provider_roadmap",
@@ -130,7 +132,7 @@ class PublicArtifactLintTests(unittest.TestCase):
                 "The synthetic lane is not assigned to Orchid.\n"
                 "The fallback lane is not assigned to a Linear agent.\n"
                 "No credentials are available at process scope.\n"
-                "The provider boundary is not planned.\n"
+                "No provider boundary is deferred.\n"
             )
 
             self.assertEqual(
@@ -156,6 +158,21 @@ class PublicArtifactLintTests(unittest.TestCase):
                     )
                 ],
                 ["ambient_credential_roadmap"],
+            )
+
+    def test_sequence_scan_does_not_cross_paragraphs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = root / "docs" / "orchid" / "plans" / "paragraphs.md"
+            plan.parent.mkdir(parents=True)
+            plan.write_text(
+                "After ABC-201, this paragraph ends.\n\n"
+                "Start ABC-202 in an unrelated example.\n"
+            )
+
+            self.assertEqual(
+                MODULE.lint_paths(root, ["docs/orchid/plans/paragraphs.md"]),
+                [],
             )
 
     def test_allows_public_issue_references_and_delivery_evidence(self):

@@ -59,7 +59,8 @@ CONTROL_PLANE_PATTERNS = [
     (
         re.compile(
             r"\b(?:before|after)\s+[A-Z][A-Z0-9]+-\d+\b"
-            r"[^.!?\n]{0,80}\b(?:start|run|land|merge|ship|complete)\s+"
+            r"(?:(?!\n\s*\n)[^.!?]){0,80}"
+            r"\b(?:start|run|land|merge|ship|complete)\s+"
             r"[A-Z][A-Z0-9]+-\d+\b",
             re.I,
         ),
