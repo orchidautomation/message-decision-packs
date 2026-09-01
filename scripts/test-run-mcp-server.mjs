@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { chmodSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { consentBinding, consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
+import { consentBinding, consumeProviderConsent, consumeValidatedProviderConsent, validateProviderConsent } from './lib/mcp-provider-consent.mjs'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { identityBoundDirectoryCandidates } from './lib/identity-bound-directory.mjs'
 import { superviseProcess } from './lib/process-supervisor.mjs'
@@ -24,6 +24,7 @@ const fixtureCli = (root) => {
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { dirname, join } from 'node:path'
 const args = process.argv.slice(2)
 if (args.includes('prepare-run')) {
   const packDir = args[args.indexOf('--dir') + 1]
@@ -74,12 +75,21 @@ if (args.includes('verify-run')) {
   process.exit(0)
 }
 if (args.includes('run-preflight')) {
+  const preflightRequestPath = args[args.indexOf('--request') + 1]
+  const preflightRequest = JSON.parse(readFileSync(preflightRequestPath, 'utf8'))
+  const pinFailureOncePath = preflightRequest.test_pin_failure_once_path
+  if (typeof pinFailureOncePath === 'string' && !existsSync(pinFailureOncePath)) {
+    // Occupying the descriptor receipt forces pinOutputParent to fail after it
+    // opens and verifies the approved parent, without changing production code.
+    writeFileSync(join(dirname(preflightRequestPath), 'run-output-receipt'), 'occupied')
+    writeFileSync(pinFailureOncePath, 'injected')
+  }
   const transportTimeout = Number(args[args.indexOf('--transport-timeout-ms') + 1] || 60000)
   const runtimeTimeout = 60000
   process.stdout.write(JSON.stringify({ ok: true, command: 'run-preflight', data: {
     contract: 'mdp.run-preflight.v1',
-    execution_id: 'exec-fixture',
-    mode: 'deterministic',
+    execution_id: typeof preflightRequest.execution_id === 'string' ? preflightRequest.execution_id : 'exec-fixture',
+    mode: preflightRequest.mode === 'generative' ? 'generative' : 'deterministic',
     recommended_timeout_ms: 60000,
     runtime_configured_ms: 60000,
     transport_configured_ms: transportTimeout,
@@ -97,7 +107,16 @@ if (args.includes('run-preflight')) {
   process.exit(0)
 }
 const requestPath = args[args.indexOf('--request') + 1]
-const outputDir = args[args.indexOf('--out-dir') + 1]
+const secureRun = args.includes('__secure-run')
+const outputDir = secureRun
+  // The real helper uses fchdir(2). The fixture child is already spawned with
+  // the pinned parent as its cwd, which gives the same rename-stable behavior
+  // without relying on the macOS descriptor alias for a child path.
+  ? './' + args[args.indexOf('--output-leaf') + 1]
+  : args[args.indexOf('--out-dir') + 1]
+const reportedOutputDir = secureRun
+  ? args[args.indexOf('--display-output-dir') + 1]
+  : outputDir
 if (existsSync(outputDir + '.pause-before-read')) {
   writeFileSync(outputDir + '.ready', '')
   while (!existsSync(outputDir + '.continue')) {
@@ -151,9 +170,9 @@ const unavailable = request.test_mode === 'unavailable'
 const data = {
   contract: request.test_mode === 'wrong-contract' ? 'wrong.run-contract' : 'mdp.run-execution.v1',
   valid: request.test_mode === 'wrong-contract' ? 'yes' : !blocked && !unavailable,
-  execution_id: 'exec-fixture',
+  execution_id: typeof request.execution_id === 'string' ? request.execution_id : 'exec-fixture',
   terminal_state: blocked ? 'no-draft:decision-invalid' : unavailable ? 'no-draft:runner-failed' : 'success',
-  run_dir: outputDir,
+  run_dir: reportedOutputDir,
   bundle_sha256: 'a'.repeat(64),
   receipt_sha256: 'b'.repeat(64),
   authority: {
@@ -250,6 +269,44 @@ const rpc = (cli, messages, extraEnv = {}) =>
     child.stdin.end()
   })
 
+const rpcSequential = (cli, messages, extraEnv = {}) =>
+  new Promise((resolvePromise, rejectPromise) => {
+    const roots = testRoot(messages)
+    const child = spawn(process.execPath, [server], {
+      env: { ...process.env, MDP_BIN: cli, ...(existsSync(realCli) ? { MDP_SECURE_INSTALL_BIN: realCli } : {}), MDP_MCP_SECRET_MARKER: 'must-not-cross-boundary', ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, roots])), ...extraEnv },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const replies = []
+    let stdout = ''
+    let stderr = ''
+    let next = 0
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+      let newline
+      while ((newline = stdout.indexOf('\n')) >= 0) {
+        const line = stdout.slice(0, newline)
+        stdout = stdout.slice(newline + 1)
+        if (!line.trim()) continue
+        replies.push(JSON.parse(line))
+        if (next < messages.length) {
+          child.stdin.write(`${JSON.stringify(messages[next])}\n`)
+          next += 1
+        } else {
+          child.stdin.end()
+        }
+      }
+    })
+    child.on('error', rejectPromise)
+    child.on('close', (status) => {
+      if (status !== 0) return rejectPromise(new Error(`server exited ${status}: ${stderr}`))
+      if (replies.length !== messages.length) return rejectPromise(new Error(`server returned ${replies.length} of ${messages.length} JSON-RPC responses: ${stderr}`))
+      resolvePromise(replies)
+    })
+    child.stdin.write(`${JSON.stringify(messages[next])}\n`)
+    next += 1
+  })
+
 const exactFileSha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
 
 const withExactRequestDigest = (requestPath, args = {}) => ({
@@ -296,6 +353,19 @@ test('freezes consent records, rejects mismatch/expiry, and consumes each nonce 
     assert.throws(() => consumeProviderConsent({ policy, consentId: 'mismatch', provider: 'openai', purpose: 'mdp.run', requestSha256: 'b'.repeat(64), outputRoot: mismatch.output_root }), /does not match/)
     const ordered = consentFixture(root, 'ordered', { source_sha256s: ['a'.repeat(64), 'b'.repeat(64)] })
     assert.throws(() => consumeProviderConsent({ policy, consentId: 'ordered', provider: 'openai', purpose: 'mdp.run', requestSha256: ordered.request_sha256, sourceSha256s: ['b'.repeat(64), 'a'.repeat(64)], outputRoot: ordered.output_root }), /does not match/)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('validated consent remains reusable until it is explicitly consumed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-handoff-'))
+  try {
+    const policy = createPathPolicy({ MDP_MCP_CONSENT_ROOTS: root }, ['consent'])
+    const record = consentFixture(root, 'deferred')
+    const validated = validateProviderConsent({ policy, consentId: 'deferred', provider: 'openai', purpose: 'mdp.run', requestSha256: record.request_sha256, outputRoot: record.output_root })
+    const retry = validateProviderConsent({ policy, consentId: 'deferred', provider: 'openai', purpose: 'mdp.run', requestSha256: record.request_sha256, outputRoot: record.output_root })
+    assert.equal(retry.nonce, validated.nonce)
+    assert.equal(consumeValidatedProviderConsent(validated).nonce, validated.nonce)
+    assert.throws(() => consumeValidatedProviderConsent(retry), /already been consumed/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -346,6 +416,53 @@ test('denies a generative request without consent before any provider spawn', as
   assert.equal(reply.error.code, -32602)
   assert.match(reply.error.message, /consent/)
   assert.equal(existsSync(join(root, 'run.invocation.json')), false)
+})
+
+test('failed output-parent pin preserves one-shot consent for a valid retry', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-pin-retry-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'request.json')
+  const pinFailureMarker = join(root, 'pin-failure-injected')
+  writeFileSync(request, JSON.stringify({
+    contract: 'mdp.run-request.v1',
+    execution_id: 'exec-consent-pin-retry',
+    mode: 'generative',
+    test_pin_failure_once_path: pinFailureMarker,
+  }))
+  const requestSha256 = exactFileSha256(request)
+  consentFixture(root, 'pin-retry', {
+    request_sha256: requestSha256,
+    output_root: realpathSync(root),
+    nonce: 'pin-retry-nonce',
+  })
+  const env = {
+    OPENAI_API_KEY: 'pin-retry-key-must-not-be-printed',
+    MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
+  }
+
+  const [failedPin, retried, replayed] = await rpcSequential(fixtureCli(root), [
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, {
+      output_dir: join(root, 'run'),
+      consent_id: 'pin-retry',
+    })),
+    toolCall(2, 'mdp_run', withExactRequestDigest(request, {
+      output_dir: join(root, 'run'),
+      consent_id: 'pin-retry',
+    })),
+    toolCall(3, 'mdp_run', withExactRequestDigest(request, {
+      output_dir: join(root, 'replay-run'),
+      consent_id: 'pin-retry',
+    })),
+  ], env)
+  assert.equal(failedPin.result.structuredContent.code, 'mcp-output-parent-changed', JSON.stringify(failedPin))
+  assert.equal(failedPin.result.isError, true)
+  assert.equal(retried.result.isError, false, JSON.stringify(retried))
+  assert.equal(retried.result.structuredContent.execution_id, 'exec-consent-pin-retry')
+  assert.equal(existsSync(join(root, 'run', 'run-bundle.json')), true)
+  assert.equal(replayed.error.code, -32602, JSON.stringify(replayed))
+  assert.match(replayed.error.message, /already been consumed/)
+  assert.equal(existsSync(join(root, 'replay-run.invocation.json')), false)
+  assert.equal(JSON.stringify([failedPin, retried, replayed]).includes('pin-retry-key-must-not-be-printed'), false)
 })
 
 const waitForFile = async (path) => {
@@ -1486,12 +1603,18 @@ test('passes only file paths to a bounded CLI child and returns its authority un
   assert.equal('mcp_assurance' in result, false)
 
   const invocation = JSON.parse(readFileSync(`${output}.invocation.json`, 'utf8'))
-  assert.deepEqual(invocation.args.slice(0, 3), ['--json', 'run', '--request'])
+  assert.deepEqual(invocation.args.slice(0, 3), ['--json', '__secure-run', '--request'])
   assert.notEqual(invocation.args[3], request)
   assert.equal(existsSync(invocation.args[3]), false)
-  assert.deepEqual(invocation.args.slice(4), [
-    '--out-dir',
+  assert.deepEqual(invocation.args.slice(4, 10), [
+    '--output-leaf',
+    'new-run',
+    '--display-output-dir',
     join(realpathSync(root), 'new-run'),
+    '--dir-fd',
+    '3',
+  ])
+  assert.deepEqual(invocation.args.slice(-2), [
     '--transport-timeout-ms',
     '60000',
   ])
@@ -1691,6 +1814,37 @@ test('executes frozen request bytes when the public path is mutated or replaced 
     assert.notEqual(invocation.args[3], request)
     assert.equal(existsSync(invocation.args[3]), false)
   }
+})
+
+test('run stays on the approved output descriptor when its public parent path is swapped', async (t) => {
+  if (!['linux', 'darwin'].includes(process.platform)) return t.skip('directory descriptor aliases require Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-output-parent-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const approvedParent = join(root, 'approved')
+  const renamedParent = join(root, 'approved-renamed')
+  const escapedParent = join(root, 'escaped')
+  mkdirSync(approvedParent)
+  mkdirSync(escapedParent)
+  const request = join(root, 'request.json')
+  const output = join(approvedParent, 'run')
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', execution_id: 'exec-fixture', mode: 'deterministic' }))
+  writeFileSync(`${output}.pause-before-read`, '')
+
+  const pending = rpc(fixtureCli(root), [
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: output })),
+  ])
+  await waitForFile(`${output}.ready`)
+  renameSync(approvedParent, renamedParent)
+  symlinkSync(escapedParent, approvedParent, 'dir')
+  writeFileSync(join(renamedParent, 'run.continue'), '')
+  const [reply] = await pending
+
+  assert.equal(reply.result.structuredContent.code, 'mcp-output-parent-changed')
+  assert.equal(reply.result.structuredContent.diagnostic.contract, 'mdp.mcp-diagnostic.v1')
+  assert.equal(existsSync(join(escapedParent, 'run')), false)
+  assert.equal(existsSync(join(renamedParent, 'run', 'run-bundle.json')), true)
+  assert.equal(existsSync(join(renamedParent, 'run', 'run-receipt.json')), true)
+  assert.equal(JSON.stringify(reply).includes(root), false)
 })
 
 test('binds consent to private input and prompt bytes across post-consent source races', async (t) => {

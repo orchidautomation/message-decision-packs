@@ -18,7 +18,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
-import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
+import { consumeValidatedProviderConsent, validateProviderConsent } from './lib/mcp-provider-consent.mjs'
 import {
   cleanupOwnedTempWorkspace,
   cleanupStaleOwnedTempWorkspaces,
@@ -375,7 +375,7 @@ const childEnvironment = (includeNativeModel = false) =>
       .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined, absoluteDeadlineMs = null) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined, absoluteDeadlineMs = null, inheritedFds = []) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
@@ -388,6 +388,7 @@ const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = f
     signal,
     ...(terminationGraceMs === undefined ? {} : { terminationGraceMs }),
     ...(absoluteDeadlineMs === null ? {} : { absoluteDeadlineMs }),
+    inheritedFds,
   })
 
 const tools = [
@@ -852,9 +853,10 @@ const callRun = async (args, signal = null) => {
     }
     assertOutputOutsidePack(frozenRequest.packDir, outputRequest)
     const outputParent = policy.existing('output', dirname(resolve(outputRequest)), 'directory')
+    let providerConsent = null
     if (providerCapable) {
       const consentId = requiredString(parsed, 'consent_id')
-      consumeProviderConsent({
+      providerConsent = validateProviderConsent({
         policy,
         consentId,
         provider: 'openai',
@@ -901,25 +903,50 @@ const callRun = async (args, signal = null) => {
     finalCheckAuthority()
     policy.finalCheck('output', outputParent.path, outputParent, 'directory')
     const outputReservation = policy.newOutput('output', outputRequest)
+    let pinnedOutput
+    try {
+      pinnedOutput = pinOutputParent(outputReservation, join(frozenRequest.privateDir, 'run-output-receipt'))
+    } catch {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-output-parent-changed' }, true)
+    }
     const outputDir = outputReservation.path
     const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
-    invocation = await invokeCli(
-      ['--json', 'run', '--request', materializedRequest.path, '--out-dir', outputDir, '--transport-timeout-ms', String(timeoutMs)],
-      dirname(outputDir),
-      runBudget,
-      {
-        outputDir,
-        executionId: frozenRequest.executionId,
-        requestSha256: frozenRequest.sha256,
-      },
-      providerCapable,
-      plan,
-      signal,
-    )
+    try {
+      if (providerConsent) consumeValidatedProviderConsent(providerConsent)
+      invocation = await invokeCli(
+        ['--json', '__secure-run', '--request', materializedRequest.path, '--output-leaf', basename(outputDir), '--display-output-dir', outputDir, '--dir-fd', '3', '--expected-dev', pinnedOutput.parentIdentity.dev.toString(), '--expected-ino', pinnedOutput.parentIdentity.ino.toString(), '--transport-timeout-ms', String(timeoutMs)],
+        pinnedOutput.parent,
+        runBudget,
+        {
+          outputDir,
+          executionId: frozenRequest.executionId,
+          requestSha256: frozenRequest.sha256,
+          expectedParentIdentity: pinnedOutput.parentIdentity,
+          outputParentFd: pinnedOutput.fd,
+        },
+        providerCapable,
+        plan,
+        signal,
+        undefined,
+        null,
+        [pinnedOutput.fd],
+      )
+      try {
+        policy.finalCheck('output', outputParent.path, outputParent, 'directory')
+      } catch {
+        invocation.outputParentChanged = true
+      }
+    } finally {
+      closeSync(pinnedOutput.fd)
+      closeSync(pinnedOutput.receiptFd)
+    }
   } finally {
     if (!cleanupOwnedTempWorkspace(frozenRequest.privateDir, { purpose: 'run-mcp-freeze' })) {
       return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-cleanup-incomplete' }, true)
     }
+  }
+  if (invocation.outputParentChanged) {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-output-parent-changed' }, true)
   }
   if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.cancelled
