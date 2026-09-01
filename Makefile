@@ -190,6 +190,7 @@ validate-installers:
 	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh scripts/test-proposal-runner.sh
 	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh scripts/validate-version-sync.sh scripts/test-version-sync.sh scripts/test-authority-mutations.sh
 	node --check scripts/finalize-release-manifest.mjs
+	node --check scripts/patch-agents-installer.mjs
 	node --check scripts/mdp-native-model-openai.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs

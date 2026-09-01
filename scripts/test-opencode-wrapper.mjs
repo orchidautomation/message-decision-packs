@@ -463,6 +463,58 @@ try {
     'Finalized checksums must bind the Pluxx aggregate installer and standalone CLI installer.',
   )
   assert(
+    Number(process.versions.node.split('.')[0]) >= 24,
+    'Generated native installer regression must execute with Node 24 or newer.',
+  )
+  const aggregateInstall = run(
+    'bash',
+    [
+      join(releaseRoot, 'install-agents.sh'),
+      '--codex',
+      '--json',
+      '--quiet',
+      '--yes',
+      '--base-url',
+      `file://${releaseRoot}`,
+    ],
+    {
+      cwd: root,
+      environment: {
+        ...process.env,
+        PATH: `${fakeBin}:${process.env.PATH}`,
+        HOME: codexHome,
+        CODEX_HOME: join(codexHome, '.codex'),
+        MDP_SKIP_CLI_UPDATE: '1',
+        PLUXX_CODEX_BUNDLE_PATH: join(
+          releaseRoot,
+          'message-decision-packs-codex-latest.tar.gz',
+        ),
+        PLUXX_CODEX_CONFIG_PATH: codexConfigPath,
+        PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+        PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
+        PLUXX_CODEX_MARKETPLACE_PATH: codexMarketplacePath,
+        PLUXX_TEST_CODEX_TRACE: join(tempRoot, 'codex-aggregate.trace'),
+        PLUXX_TEST_EXPECTED_SELECTOR: 'message-decision-packs@personal',
+        PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
+        PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
+        PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
+      },
+    },
+  )
+  const aggregateEnvelope = JSON.parse(aggregateInstall.stdout)
+  assert(
+    aggregateEnvelope.schema === 'pluxx.install-results.v1' &&
+      aggregateEnvelope.plugin?.name === 'message-decision-packs' &&
+      aggregateEnvelope.plugin?.version === sourceVersion &&
+      aggregateEnvelope.selectionMode === 'explicit' &&
+      aggregateEnvelope.plan?.length === 1 &&
+      aggregateEnvelope.plan[0]?.target === 'codex' &&
+      aggregateEnvelope.results?.length === 1 &&
+      aggregateEnvelope.results[0]?.target === 'codex' &&
+      aggregateEnvelope.results[0]?.state === 'installed',
+    'Finalized aggregate installer must parse and consume one Node 24 Codex install result.',
+  )
+  assert(
     finalizedChecksums.get('message-decision-packs-agent-plugins-latest.tar.gz') ===
       sha256(join(releaseRoot, 'message-decision-packs-agent-plugins-latest.tar.gz')),
     'Finalized checksums must bind the portable Agent Plugins archive.',

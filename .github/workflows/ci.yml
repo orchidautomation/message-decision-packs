@@ -72,6 +72,7 @@ jobs:
               - "scripts/mdp-proposal-mcp-server.mjs"
               - "scripts/mdp-proposal-runner.mjs"
               - "scripts/test-release-workflow.mjs"
+              - "scripts/patch-agents-installer.mjs"
               - "scripts/patch-codex-installer.mjs"
               - "scripts/test-opencode-wrapper.mjs"
               - "scripts/test-authority-mutations-contract.mjs"
