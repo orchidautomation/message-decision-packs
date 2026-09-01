@@ -379,13 +379,13 @@ try {
       'mdp.agent-plugins-portable-package.v1' &&
       finalizedManifest.portable_packages['agent-plugins'].specification === '1.0.0' &&
       JSON.stringify(finalizedManifest.portable_packages['agent-plugins'].skills) ===
-        JSON.stringify(['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review']) &&
+        JSON.stringify(['mdp', 'mdp-pack-apply', 'mdp-pack-builder', 'mdp-pack-review']) &&
       JSON.stringify(finalizedManifest.portable_packages['agent-plugins'].mcp_servers) === '[]' &&
       finalizedManifest.portable_packages['agent-plugins'].files.every(
         (entry) => !entry.path.startsWith('hooks/') && !entry.path.startsWith('scripts/') && !entry.path.startsWith('mcp.json'),
       ) &&
       /^[a-f0-9]{64}$/.test(finalizedManifest.portable_packages['agent-plugins'].sha256),
-    'Finalized release manifest must bind the strict five-skill Agent Plugins portable package separately from native trees.',
+    'Finalized release manifest must bind the strict four-skill Agent Plugins portable package separately from native trees.',
   )
   assert(
     Object.values(finalizedManifest.plugin_trees).every((tree) =>

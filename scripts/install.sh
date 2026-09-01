@@ -223,7 +223,7 @@ if (existsSync(portableInput)) {
     try {
       manifest = ownedTop ? JSON.parse(readFileSync(join(portableInput, 'plugin.json'), 'utf8')) : undefined
     } catch {}
-    const expectedSkills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
+    const expectedSkills = ['mdp', 'mdp-pack-apply', 'mdp-pack-builder', 'mdp-pack-review'].sort()
     const skillsPath = join(portableInput, 'skills')
     const ownedSkills = existsSync(skillsPath) && !lstatSync(skillsPath).isSymbolicLink() &&
       lstatSync(skillsPath).isDirectory() &&
@@ -366,11 +366,11 @@ if (
   plugin.name !== 'message-decision-packs' ||
   plugin.license !== 'Elastic-2.0'
 ) fail('Portable plugin.json does not match the MDP Agent Plugins contract.')
-const expectedSkills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
+const expectedSkills = ['mdp', 'mdp-pack-apply', 'mdp-pack-builder', 'mdp-pack-review'].sort()
 const skillsRoot = join(root, 'skills')
 const skills = readdirSync(skillsRoot).filter((name) => lstatSync(join(skillsRoot, name)).isDirectory()).sort()
 if (JSON.stringify(skills) !== JSON.stringify(expectedSkills)) {
-  fail(`Portable package does not contain exactly the five supported MDP skills: ${skills.join(', ')}`)
+  fail(`Portable package does not contain exactly the four supported MDP skills: ${skills.join(', ')}`)
 }
 for (const skill of skills) {
   if (!existsSync(join(skillsRoot, skill, 'SKILL.md'))) fail(`Portable package is missing skills/${skill}/SKILL.md.`)

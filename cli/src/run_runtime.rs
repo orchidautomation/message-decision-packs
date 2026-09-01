@@ -5990,7 +5990,7 @@ mod tests {
             contract: crate::model_steps::COMPILED_MODEL_STEP_V1.into(),
             step_id: "model:outbound-copy-review/review".into(),
             job_id: "outbound-copy-review".into(),
-            skill_id: "mdp-gtm-brief".into(),
+            skill_id: "mdp-pack-apply".into(),
             phase: crate::model_steps::ModelStepPhase::Review,
             authority: crate::model_steps::ModelStepAuthorityV1 {
                 kind: "job".into(),
@@ -8139,7 +8139,7 @@ mod tests {
             contract: crate::model_steps::COMPILED_MODEL_STEP_V1.into(),
             step_id: "model:prospect-fit-or-brief/normalization".into(),
             job_id: "prospect-fit-or-brief".into(),
-            skill_id: "mdp-gtm-brief".into(),
+            skill_id: "mdp-pack-apply".into(),
             phase: crate::model_steps::ModelStepPhase::Normalization,
             authority: crate::model_steps::ModelStepAuthorityV1 {
                 kind: "decision_input_contract".into(),
@@ -8285,7 +8285,7 @@ mod tests {
                     "requirements_sha256": "a".repeat(64),
                     "taxonomy_set_sha256": "b".repeat(64),
                     "pack": {"id": "runtime-test-pack", "version": "0.1.0", "sha256": "c".repeat(64)},
-                    "job": {"id": "prospect-fit-or-brief", "skill_id": "mdp-gtm-brief"},
+                    "job": {"id": "prospect-fit-or-brief", "skill_id": "mdp-pack-apply"},
                     "collection_specification": {"contract": "mdp.source-attempt-request.v2", "attributes": []},
                     "classification_specification": {"taxonomies": [{
                         "id": "buyer-persona", "version": "1", "output_attribute": "persona",

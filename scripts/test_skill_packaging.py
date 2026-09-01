@@ -49,8 +49,7 @@ class SkillPackagingMutationTests(unittest.TestCase):
             self.assertIn(marker, reference)
         for relative_path in (
             "plugin/skills/mdp/SKILL.md",
-            "plugin/skills/mdp-gtm-brief/SKILL.md",
-            "plugin/skills/mdp-proposal-review/SKILL.md",
+            "plugin/skills/mdp-pack-apply/SKILL.md",
             "plugin/skills/mdp-pack-review/SKILL.md",
         ):
             text = (ROOT / relative_path).read_text()
@@ -122,7 +121,7 @@ class SkillPackagingMutationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="mdp-shared-") as temp:
             skills = Path(temp) / "skills"
             shutil.copytree(ROOT / "plugin/skills", skills)
-            projected = skills / "mdp-gtm-brief/references/communication-contract.md"
+            projected = skills / "mdp-pack-apply/references/communication-contract.md"
             projected.write_text(projected.read_text() + "\ndrift\n")
             errors: list[str] = []
             PACKAGING.validate_shared_reference_parity(skills, errors)
@@ -151,7 +150,7 @@ class SkillPackagingMutationTests(unittest.TestCase):
             )
         self.assertTrue(any("missing referenced helper" in error for error in errors))
 
-    def test_agent_plugins_bundle_accepts_only_five_canonical_skills(self) -> None:
+    def test_agent_plugins_bundle_accepts_only_four_canonical_skills(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-agent-plugins-") as temp:
             dist = Path(temp) / "dist"
             portable = dist / "agent-plugins"

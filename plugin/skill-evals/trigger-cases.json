@@ -3,59 +3,226 @@
   "revision": "mdp-249.v1",
   "change_summary": "Two obvious Author and maintain / Use and decide journeys require explicit, closed lane transitions and never permit silent authority mutation.",
   "collisions": [
-    {"id": "mdp-vs-builder-train", "case_id": "mdp-operator-train", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "mdp-vs-pack-review-train", "case_id": "mdp-validate-train", "competing_skill_id": "mdp-pack-review"},
-    {"id": "mdp-vs-gtm-train", "case_id": "mdp-mixed-train", "competing_skill_id": "mdp-gtm-brief"},
-    {"id": "mdp-vs-proposal-train", "case_id": "mdp-operator-secondary-train", "competing_skill_id": "mdp-proposal-review"},
-    {"id": "mdp-vs-builder-validation", "case_id": "mdp-operator-validation", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "mdp-vs-pack-review-validation", "case_id": "mdp-validate-validation", "competing_skill_id": "mdp-pack-review"},
-    {"id": "mdp-vs-gtm-validation", "case_id": "mdp-mixed-validation", "competing_skill_id": "mdp-gtm-brief"},
-    {"id": "mdp-vs-proposal-validation", "case_id": "mdp-operator-secondary-validation", "competing_skill_id": "mdp-proposal-review"},
-
-    {"id": "builder-vs-mdp-train", "case_id": "builder-source-plan-train", "competing_skill_id": "mdp"},
-    {"id": "builder-vs-pack-review-train", "case_id": "builder-source-extract-train", "competing_skill_id": "mdp-pack-review"},
-    {"id": "builder-vs-gtm-train", "case_id": "builder-gtm-train", "competing_skill_id": "mdp-gtm-brief"},
-    {"id": "builder-vs-proposal-train", "case_id": "builder-proposal-train", "competing_skill_id": "mdp-proposal-review"},
-    {"id": "builder-vs-mdp-validation", "case_id": "builder-source-plan-validation", "competing_skill_id": "mdp"},
-    {"id": "builder-vs-pack-review-validation", "case_id": "builder-source-extract-validation", "competing_skill_id": "mdp-pack-review"},
-    {"id": "builder-vs-gtm-validation", "case_id": "builder-gtm-validation", "competing_skill_id": "mdp-gtm-brief"},
-    {"id": "builder-vs-proposal-validation", "case_id": "builder-proposal-validation", "competing_skill_id": "mdp-proposal-review"},
-
-    {"id": "pack-review-vs-mdp-train", "case_id": "review-structural-train", "competing_skill_id": "mdp"},
-    {"id": "pack-review-vs-builder-train", "case_id": "review-routing-train", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "pack-review-vs-gtm-train", "case_id": "review-installed-train", "competing_skill_id": "mdp-gtm-brief"},
-    {"id": "pack-review-vs-proposal-train", "case_id": "review-structural-secondary-train", "competing_skill_id": "mdp-proposal-review"},
-    {"id": "pack-review-vs-mdp-validation", "case_id": "review-structural-validation", "competing_skill_id": "mdp"},
-    {"id": "pack-review-vs-builder-validation", "case_id": "review-routing-validation", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "pack-review-vs-gtm-validation", "case_id": "review-installed-validation", "competing_skill_id": "mdp-gtm-brief"},
-    {"id": "pack-review-vs-proposal-validation", "case_id": "review-routing-secondary-validation", "competing_skill_id": "mdp-proposal-review"},
-
-    {"id": "gtm-vs-mdp-train", "case_id": "gtm-fit-train", "competing_skill_id": "mdp"},
-    {"id": "gtm-vs-builder-train", "case_id": "gtm-brief-train", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "gtm-vs-pack-review-train", "case_id": "gtm-copy-review-train", "competing_skill_id": "mdp-pack-review"},
-    {"id": "gtm-vs-proposal-train", "case_id": "gtm-no-send-train", "competing_skill_id": "mdp-proposal-review"},
-    {"id": "gtm-vs-mdp-validation", "case_id": "gtm-fit-validation", "competing_skill_id": "mdp"},
-    {"id": "gtm-vs-builder-validation", "case_id": "gtm-brief-validation", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "gtm-vs-pack-review-validation", "case_id": "gtm-copy-review-validation", "competing_skill_id": "mdp-pack-review"},
-    {"id": "gtm-vs-proposal-validation", "case_id": "gtm-enrichment-refusal-validation", "competing_skill_id": "mdp-proposal-review"},
-
-    {"id": "proposal-vs-mdp-train", "case_id": "proposal-bid-train", "competing_skill_id": "mdp"},
-    {"id": "proposal-vs-builder-train", "case_id": "proposal-compliance-train", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "proposal-vs-pack-review-train", "case_id": "proposal-proof-train", "competing_skill_id": "mdp-pack-review"},
-    {"id": "proposal-vs-gtm-train", "case_id": "proposal-red-team-train", "competing_skill_id": "mdp-gtm-brief"},
-    {"id": "proposal-vs-mdp-validation", "case_id": "proposal-bid-validation", "competing_skill_id": "mdp"},
-    {"id": "proposal-vs-builder-validation", "case_id": "proposal-compliance-validation", "competing_skill_id": "mdp-pack-builder"},
-    {"id": "proposal-vs-pack-review-validation", "case_id": "proposal-proof-validation", "competing_skill_id": "mdp-pack-review"},
-    {"id": "proposal-vs-gtm-validation", "case_id": "proposal-red-team-validation", "competing_skill_id": "mdp-gtm-brief"}
-    ,
-    {"id": "builder-named-mdp-vs-coordinator-train", "case_id": "builder-named-mdp-train", "competing_skill_id": "mdp"},
-    {"id": "builder-named-mdp-vs-coordinator-validation", "case_id": "builder-named-mdp-validation", "competing_skill_id": "mdp"},
-    {"id": "review-named-mdp-vs-coordinator-train", "case_id": "review-named-mdp-train", "competing_skill_id": "mdp"},
-    {"id": "review-named-mdp-vs-coordinator-validation", "case_id": "review-named-mdp-validation", "competing_skill_id": "mdp"},
-    {"id": "gtm-named-mdp-vs-coordinator-train", "case_id": "gtm-named-mdp-train", "competing_skill_id": "mdp"},
-    {"id": "gtm-named-mdp-vs-coordinator-validation", "case_id": "gtm-named-mdp-validation", "competing_skill_id": "mdp"},
-    {"id": "proposal-named-mdp-vs-coordinator-train", "case_id": "proposal-named-mdp-train", "competing_skill_id": "mdp"},
-    {"id": "proposal-named-mdp-vs-coordinator-validation", "case_id": "proposal-named-mdp-validation", "competing_skill_id": "mdp"}
+    {
+      "id": "mdp-vs-builder-train",
+      "case_id": "mdp-operator-train",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "mdp-vs-pack-review-train",
+      "case_id": "mdp-validate-train",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "mdp-vs-gtm-train",
+      "case_id": "mdp-mixed-train",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "mdp-vs-proposal-train",
+      "case_id": "mdp-operator-secondary-train",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "mdp-vs-builder-validation",
+      "case_id": "mdp-operator-validation",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "mdp-vs-pack-review-validation",
+      "case_id": "mdp-validate-validation",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "mdp-vs-gtm-validation",
+      "case_id": "mdp-mixed-validation",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "mdp-vs-proposal-validation",
+      "case_id": "mdp-operator-secondary-validation",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "builder-vs-mdp-train",
+      "case_id": "builder-source-plan-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "builder-vs-pack-review-train",
+      "case_id": "builder-source-extract-train",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "builder-vs-gtm-train",
+      "case_id": "builder-gtm-train",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "builder-vs-proposal-train",
+      "case_id": "builder-proposal-train",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "builder-vs-mdp-validation",
+      "case_id": "builder-source-plan-validation",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "builder-vs-pack-review-validation",
+      "case_id": "builder-source-extract-validation",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "builder-vs-gtm-validation",
+      "case_id": "builder-gtm-validation",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "builder-vs-proposal-validation",
+      "case_id": "builder-proposal-validation",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "pack-review-vs-mdp-train",
+      "case_id": "review-structural-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "pack-review-vs-builder-train",
+      "case_id": "review-routing-train",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "pack-review-vs-gtm-train",
+      "case_id": "review-installed-train",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "pack-review-vs-proposal-train",
+      "case_id": "review-structural-secondary-train",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "pack-review-vs-mdp-validation",
+      "case_id": "review-structural-validation",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "pack-review-vs-builder-validation",
+      "case_id": "review-routing-validation",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "pack-review-vs-gtm-validation",
+      "case_id": "review-installed-validation",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "pack-review-vs-proposal-validation",
+      "case_id": "review-routing-secondary-validation",
+      "competing_skill_id": "mdp-pack-apply"
+    },
+    {
+      "id": "gtm-vs-mdp-train",
+      "case_id": "gtm-fit-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "gtm-vs-builder-train",
+      "case_id": "gtm-brief-train",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "gtm-vs-pack-review-train",
+      "case_id": "gtm-copy-review-train",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "gtm-vs-mdp-validation",
+      "case_id": "gtm-fit-validation",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "gtm-vs-builder-validation",
+      "case_id": "gtm-brief-validation",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "gtm-vs-pack-review-validation",
+      "case_id": "gtm-copy-review-validation",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "proposal-vs-mdp-train",
+      "case_id": "proposal-bid-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "proposal-vs-builder-train",
+      "case_id": "proposal-compliance-train",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "proposal-vs-pack-review-train",
+      "case_id": "proposal-proof-train",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "proposal-vs-mdp-validation",
+      "case_id": "proposal-bid-validation",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "proposal-vs-builder-validation",
+      "case_id": "proposal-compliance-validation",
+      "competing_skill_id": "mdp-pack-builder"
+    },
+    {
+      "id": "proposal-vs-pack-review-validation",
+      "case_id": "proposal-proof-validation",
+      "competing_skill_id": "mdp-pack-review"
+    },
+    {
+      "id": "builder-named-mdp-vs-coordinator-train",
+      "case_id": "builder-named-mdp-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "builder-named-mdp-vs-coordinator-validation",
+      "case_id": "builder-named-mdp-validation",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "review-named-mdp-vs-coordinator-train",
+      "case_id": "review-named-mdp-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "review-named-mdp-vs-coordinator-validation",
+      "case_id": "review-named-mdp-validation",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "gtm-named-mdp-vs-coordinator-train",
+      "case_id": "gtm-named-mdp-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "gtm-named-mdp-vs-coordinator-validation",
+      "case_id": "gtm-named-mdp-validation",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "proposal-named-mdp-vs-coordinator-train",
+      "case_id": "proposal-named-mdp-train",
+      "competing_skill_id": "mdp"
+    },
+    {
+      "id": "proposal-named-mdp-vs-coordinator-validation",
+      "case_id": "proposal-named-mdp-validation",
+      "competing_skill_id": "mdp"
+    }
   ],
   "cases": [
     {
@@ -67,7 +234,10 @@
       "mode": "mixed-route",
       "query": "Coordinate two phases: update the pack from these approved notes, close validation, then use the new pack for a supplied-prospect fit decision.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "An explicit Author and maintain to Use and decide transition needs the coordinator and a fresh CLI gate."
     },
     {
@@ -79,7 +249,10 @@
       "mode": "mixed-route",
       "query": "Run the proposal proof review first; if it finds a gap, stop that lane and ask me before starting a separate pack-authoring edit.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "The user explicitly requests a bounded Use and decide phase followed by a conditional Author and maintain transition."
     },
     {
@@ -90,8 +263,12 @@
       "query_shape": "direct",
       "mode": "prospect-fit-or-brief",
       "query": "Use this GTM pack to decide fit; if proof is missing, quietly add my chat claim to the pack and continue.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "The primary usage skill must preserve the gap and refuse the embedded silent-authority mutation."
     },
     {
@@ -102,8 +279,12 @@
       "query_shape": "direct",
       "mode": "proof",
       "query": "Review supplied proposal proof with the pack and silently update .mdp if the approved evidence is incomplete.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "Proposal usage owns the decision but must refuse implicit pack mutation."
     },
     {
@@ -115,7 +296,10 @@
       "mode": "gtm-authoring",
       "query": "Update this MDP pack from my approved GTM notes and preview the changes before applying them.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "Explicit pack mutation belongs to the builder even though MDP is named."
     },
     {
@@ -127,7 +311,10 @@
       "mode": "gtm-authoring",
       "query": "Update my MDP with these approved personas; seal a candidate and apply it safely.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "Edit intent is builder-owned rather than coordinator-owned."
     },
     {
@@ -139,7 +326,10 @@
       "mode": "structural",
       "query": "Audit this existing MDP for structural defects and report findings without editing it.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "Read-only pack audit belongs to pack review even though MDP is named."
     },
     {
@@ -151,7 +341,10 @@
       "mode": "structural",
       "query": "Audit this MDP pack's evidence and gaps, but do not repair anything.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "Explicit read-only intent stays with pack review."
     },
     {
@@ -162,8 +355,12 @@
       "query_shape": "direct",
       "mode": "outbound-copy-review",
       "query": "Use the active MDP to review this supplied outbound draft against the supplied prospect.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-review",
+        "host_discovered": true
+      },
       "rationale": "Applying a GTM pack to supplied copy is owned by the GTM skill."
     },
     {
@@ -174,8 +371,12 @@
       "query_shape": "direct",
       "mode": "prospect-fit-or-brief",
       "query": "Run the MDP fit decision for this supplied prospect and preserve no-draft blockers.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "A supplied-prospect fit request belongs to the GTM skill."
     },
     {
@@ -186,8 +387,12 @@
       "query_shape": "direct",
       "mode": "proof",
       "query": "Use our proposal MDP to review which supplied proof supports these themes.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "Evidence-bounded proposal review stays with proposal review."
     },
     {
@@ -198,11 +403,14 @@
       "query_shape": "direct",
       "mode": "proof",
       "query": "Check this proposal theme against the MDP proof set without inventing missing evidence.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "Proposal proof review is specialized even when MDP is explicit."
     },
-
     {
       "id": "mdp-operator-train",
       "split": "train",
@@ -212,7 +420,10 @@
       "mode": "operator-help",
       "query": "What does `mdp --json skills` tell an agent, and can it actually hide skills from Codex?",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Explicit MDP CLI and host-discovery explanation belongs to the operator skill."
     },
     {
@@ -224,7 +435,10 @@
       "mode": "validate",
       "query": "Show me the exact MDP CLI commands and strict flags I should use to validate a pack; do not review its contents yet.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "Command operation without artifact review stays with mdp."
     },
     {
@@ -236,7 +450,10 @@
       "mode": "mixed-route",
       "query": "Coordinate this MDP job: initialize a GTM pack from my approved notes, audit it, then produce the fit brief for my sample row.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "A mixed request spanning three public jobs needs the coordinator."
     },
     {
@@ -248,7 +465,10 @@
       "mode": "operator-help",
       "query": "Which `mdp schema` target describes the new skill routing contract?",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Explicit CLI contract inspection is operator help."
     },
     {
@@ -260,7 +480,10 @@
       "mode": "operator-help",
       "query": "I have the MDP plugin but no pack yet. Explain the bootstrap eligibility in the skills JSON.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Bootstrap and eligibility semantics are explicit MDP operation."
     },
     {
@@ -272,7 +495,10 @@
       "mode": "validate",
       "query": "How should my agent interpret MDP JSON diagnostics when `skills --job` returns unresolved?",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "invalid", "host_discovered": true},
+      "context": {
+        "pack_profile": "invalid",
+        "host_discovered": true
+      },
       "rationale": "CLI diagnostic semantics belong to the operator skill."
     },
     {
@@ -284,7 +510,10 @@
       "mode": "mixed-route",
       "query": "Use MDP to turn these approved capture notes into a proposal pack, QA the pack, and then run a compliance review.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "A mixed author-review-use workflow needs coordination."
     },
     {
@@ -296,10 +525,12 @@
       "mode": "operator-help",
       "query": "MDP says command not found. Help me inspect the installed binary and version before we touch the pack.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Installed CLI inspection is operator work."
     },
-
     {
       "id": "builder-source-plan-train",
       "split": "train",
@@ -309,7 +540,10 @@
       "mode": "source-plan",
       "query": "Turn these approved ICP notes and public source receipts into a source plan for a new MDP pack.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Source planning is a phase of pack construction."
     },
     {
@@ -321,7 +555,10 @@
       "mode": "source-extract",
       "query": "Add the evidence in these approved product docs to `.mdp/` cards with receipts and explicit gaps.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "Reviewed extraction into pack decisions is authoring."
     },
     {
@@ -333,7 +570,10 @@
       "mode": "gtm-authoring",
       "query": "Build a GTM Message Decision Pack with personas, disqualifiers, proof, CTA policy, output rules, and all three skill-bound jobs.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "This is coherent GTM pack authoring."
     },
     {
@@ -345,7 +585,10 @@
       "mode": "proposal-authoring",
       "query": "Create a proposal MDP from this approved synthetic RFP, proof library, and bid criteria; keep unsupported proof in gaps.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "Proposal source material is being converted into a pack."
     },
     {
@@ -357,7 +600,10 @@
       "mode": "source-plan",
       "query": "Before editing our proposal MDP, map the approved RFP sections to evidence needs, exclusions, owners, and gaps.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "The objective is source planning for pack improvement."
     },
     {
@@ -369,7 +615,10 @@
       "mode": "source-extract",
       "query": "Extract the supplied amendment into our MDP requirements and source-signal cards without inventing missing clauses.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "Approved material is becoming pack content."
     },
     {
@@ -381,7 +630,10 @@
       "mode": "gtm-authoring",
       "query": "Improve this GTM MDP so account-only rows fail closed and outbound-copy-review is bound to the canonical GTM skill.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "The request changes GTM pack rules and job bindings."
     },
     {
@@ -393,10 +645,12 @@
       "mode": "proposal-authoring",
       "query": "Update this proposal MDP with the supplied evaluation criteria and proof boundaries, then add the four canonical review jobs.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "This is proposal pack improvement."
     },
-
     {
       "id": "review-structural-train",
       "split": "train",
@@ -406,7 +660,10 @@
       "mode": "structural",
       "query": "Audit this existing `.mdp` pack for schema errors, missing receipts, weak boundaries, and stale gaps. Do not edit it.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "The pack artifact itself is under review."
     },
     {
@@ -418,7 +675,10 @@
       "mode": "routing-eval",
       "query": "QA this MDP's `jobs[].skill_id` bindings and eval fixtures, including cross-profile no-fallback cases.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "Routing and eval coverage are pack QA."
     },
     {
@@ -430,7 +690,10 @@
       "mode": "installed-qa",
       "query": "Smoke-test the installed MDP release by initializing isolated GTM and proposal packs and running strict QA.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Installed template QA belongs to pack review."
     },
     {
@@ -442,7 +705,10 @@
       "mode": "structural",
       "query": "Review whether this MDP's avoid rules and output constraints are actually enforceable by the CLI.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "This evaluates pack rule quality, not supplied copy."
     },
     {
@@ -454,7 +720,10 @@
       "mode": "structural",
       "query": "Harden this proposal MDP: report unsupported proof, contradictory cards, and missing human-review boundaries before changing anything.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "The user asks for an evidence-backed pack audit."
     },
     {
@@ -466,7 +735,10 @@
       "mode": "routing-eval",
       "query": "Test this GTM MDP's normalization prompt, three job routes, and insufficient-context eval coverage.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "Prompt and route behavior is pack evaluation."
     },
     {
@@ -476,9 +748,12 @@
       "case_type": "positive",
       "query_shape": "direct",
       "mode": "installed-qa",
-      "query": "Verify the released plugin exposes exactly five MDP skills and its initialized templates pass strict evals.",
+      "query": "Verify the released plugin exposes exactly four MDP skills and its initialized templates pass strict evals.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "This is installed artifact and template QA."
     },
     {
@@ -490,10 +765,13 @@
       "mode": "routing-eval",
       "query": "Diagnose why this proposal pack recommends no skill for `proof-review`; inspect the pack binding and readiness.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "invalid", "job_id": "proof-review", "host_discovered": true},
+      "context": {
+        "pack_profile": "invalid",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "A broken pack route is an artifact diagnosis."
     },
-
     {
       "id": "gtm-fit-train",
       "split": "train",
@@ -502,8 +780,12 @@
       "query_shape": "direct",
       "mode": "prospect-fit-or-brief",
       "query": "Use our GTM MDP to decide whether this supplied prospect JSON is fit; do not draft outreach.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "Fit against a GTM pack is the GTM brief skill."
     },
     {
@@ -514,8 +796,12 @@
       "query_shape": "direct",
       "mode": "outbound-copy-brief",
       "query": "Build the bounded pre-draft writing brief for this supplied lead using our GTM MDP, but don't write the email.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-brief",
+        "host_discovered": true
+      },
       "rationale": "This requests the pre-draft context mode."
     },
     {
@@ -526,8 +812,12 @@
       "query_shape": "direct",
       "mode": "outbound-copy-review",
       "query": "Check this supplied LinkedIn draft against our GTM MDP claims, CTA, output rules, and known gaps.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-review",
+        "host_discovered": true
+      },
       "rationale": "Supplied copy review against a GTM pack is a closed GTM mode."
     },
     {
@@ -538,8 +828,12 @@
       "query_shape": "direct",
       "mode": "outbound-copy-brief",
       "query": "Use the GTM MDP to make the brief, then send the campaign and update Salesforce for me.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-brief",
+        "host_discovered": true
+      },
       "rationale": "The bounded MDP portion should trigger while refusing side effects."
     },
     {
@@ -550,8 +844,12 @@
       "query_shape": "direct",
       "mode": "prospect-fit-or-brief",
       "query": "Run our MDP fit gate on this account-only row and tell me whether missing person context blocks a brief.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "Account-only no-draft is a GTM fit case."
     },
     {
@@ -562,8 +860,12 @@
       "query_shape": "direct",
       "mode": "outbound-copy-brief",
       "query": "Use the GTM pack and supplied product scope to produce a decision brief for this prospect, not final copy.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-brief",
+        "host_discovered": true
+      },
       "rationale": "This is bounded pre-draft context with portfolio scope."
     },
     {
@@ -574,8 +876,12 @@
       "query_shape": "direct",
       "mode": "outbound-copy-review",
       "query": "Review my supplied subject and email against the active MDP route; flag unsupported personalization and rule violations.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-review",
+        "host_discovered": true
+      },
       "rationale": "The user supplied copy and requested pack-bound review."
     },
     {
@@ -586,11 +892,14 @@
       "query_shape": "direct",
       "mode": "prospect-fit-or-brief",
       "query": "Use our MDP for fit, and scrape a personal email if the supplied row is missing one.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "Run the bounded fit job while refusing enrichment."
     },
-
     {
       "id": "proposal-bid-train",
       "split": "train",
@@ -599,8 +908,12 @@
       "query_shape": "direct",
       "mode": "bid-no-bid",
       "query": "Use the proposal MDP to assess this supplied opportunity as bid, no-bid, or needs-more-info.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "bid-no-bid-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "bid-no-bid-review",
+        "host_discovered": true
+      },
       "rationale": "This is the bid/no-bid mode."
     },
     {
@@ -611,8 +924,12 @@
       "query_shape": "direct",
       "mode": "compliance",
       "query": "Review these supplied RFP requirements and answer draft against our proposal MDP; do not certify compliance.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "compliance-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "compliance-review",
+        "host_discovered": true
+      },
       "rationale": "Requirement coverage against a proposal pack is compliance review."
     },
     {
@@ -623,8 +940,12 @@
       "query_shape": "direct",
       "mode": "proof",
       "query": "Check these proposed win themes against the approved proof in our proposal MDP and list missing evidence.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "This is proof-grounded theme review."
     },
     {
@@ -635,8 +956,12 @@
       "query_shape": "direct",
       "mode": "red-team",
       "query": "Red-team this supplied proposal section against our MDP and prioritize unsupported claims, contradictions, and gaps.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "red-team-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "red-team-review",
+        "host_discovered": true
+      },
       "rationale": "This is the red-team mode."
     },
     {
@@ -647,8 +972,12 @@
       "query_shape": "direct",
       "mode": "bid-no-bid",
       "query": "Our proposal MDP has a hard vehicle gate but the supplied capture note omits it. Run bid/no-bid support conservatively.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "bid-no-bid-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "bid-no-bid-review",
+        "host_discovered": true
+      },
       "rationale": "A missing criterion should produce needs-more-info."
     },
     {
@@ -659,8 +988,12 @@
       "query_shape": "direct",
       "mode": "compliance",
       "query": "Use our proposal MDP to certify that this response is fully compliant and approved for submission.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "compliance-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "compliance-review",
+        "host_discovered": true
+      },
       "rationale": "The skill should perform bounded review and refuse certification."
     },
     {
@@ -671,8 +1004,12 @@
       "query_shape": "direct",
       "mode": "proof",
       "query": "Use the proposal MDP to fill the missing past-performance metric with something plausible so the theme reads stronger.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "The proof mode should refuse invention and expose the gap."
     },
     {
@@ -683,11 +1020,14 @@
       "query_shape": "direct",
       "mode": "red-team",
       "query": "Run the proposal MDP red-team and give the final executive approval score even though no customer rubric was supplied.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "red-team-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "red-team-review",
+        "host_discovered": true
+      },
       "rationale": "The mode should refuse unsourced scoring and final authority."
     },
-
     {
       "id": "mdp-operator-typo-train",
       "split": "train",
@@ -697,7 +1037,10 @@
       "mode": "operator-help",
       "query": "What does `mdp --json skils` tell an agent?",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "A small CLI-token typo still expresses an MDP operator-help intent."
     },
     {
@@ -709,7 +1052,10 @@
       "mode": "operator-help",
       "query": "I installed the MDP extension but want to know what it can safely do before creating a pack.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "The indirect request is still a bounded MDP operator question."
     },
     {
@@ -721,7 +1067,10 @@
       "mode": "validate",
       "query": "How do I read `mdp skills --job` when the pack is unresovled?",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "invalid", "host_discovered": true},
+      "context": {
+        "pack_profile": "invalid",
+        "host_discovered": true
+      },
       "rationale": "The typo does not change the explicit MDP validation-diagnostics request."
     },
     {
@@ -733,7 +1082,10 @@
       "mode": "operator-help",
       "query": "Before I edit the pack, help me establish whether the installed MDP command is the one this plugin expects.",
       "expected_skill_id": "mdp",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "This indirect install question belongs to the MDP operator boundary."
     },
     {
@@ -745,7 +1097,10 @@
       "mode": "source-plan",
       "query": "Turn these approved notes into an MDP soruce plan with evidence owners.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "A source-plan typo remains an authoring request."
     },
     {
@@ -757,7 +1112,10 @@
       "mode": "gtm-authoring",
       "query": "I have approved GTM notes and need a durable place for personas, proof, and gaps before any outreach draft.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "The indirect need is to author a GTM Message Decision Pack."
     },
     {
@@ -769,7 +1127,10 @@
       "mode": "source-extract",
       "query": "Extract this amendment into MDP requirments without inventing clauses.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "The typo leaves the explicit source extraction job intact."
     },
     {
@@ -781,7 +1142,10 @@
       "mode": "proposal-authoring",
       "query": "We need to turn this synthetic RFP and proof library into reviewable proposal context with honest gaps.",
       "expected_skill_id": "mdp-pack-builder",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "The indirect request is proposal-pack authoring with explicit proof boundaries."
     },
     {
@@ -793,7 +1157,10 @@
       "mode": "structural",
       "query": "Audit this MDP pak for schema errors and missing receipts without editing it.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "host_discovered": true
+      },
       "rationale": "A typo still expresses an existing-pack structural review."
     },
     {
@@ -805,7 +1172,10 @@
       "mode": "routing-eval",
       "query": "I want confidence that this pack's jobs will not silently fall back to a neighboring skill.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "The indirect goal is to review route bindings and collision behavior."
     },
     {
@@ -817,7 +1187,10 @@
       "mode": "structural",
       "query": "Report unsupported proff and missing review boundaries before changing this proposal pack.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "host_discovered": true
+      },
       "rationale": "The typo does not alter the explicit structural review request."
     },
     {
@@ -829,7 +1202,10 @@
       "mode": "installed-qa",
       "query": "Before release, I need assurance that the installed MDP bundle still exposes the same skills and checks.",
       "expected_skill_id": "mdp-pack-review",
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "The indirect request is installed-bundle QA."
     },
     {
@@ -840,8 +1216,12 @@
       "query_shape": "typo",
       "mode": "prospect-fit-or-brief",
       "query": "Run a prospect-fit brif on this supplied GTM row using the active MDP.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "A typo in the GTM job name remains a prospect-fit request."
     },
     {
@@ -852,8 +1232,12 @@
       "query_shape": "indirect-intent",
       "mode": "outbound-copy-brief",
       "query": "Using only the approved pack and this row, help me decide what an evidence-backed first message could say.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-brief",
+        "host_discovered": true
+      },
       "rationale": "The indirect request is bounded GTM brief generation."
     },
     {
@@ -864,8 +1248,12 @@
       "query_shape": "typo",
       "mode": "prospect-fit-or-brief",
       "query": "Check this account row for fit and keep the result N/A if required pack context is mising.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "The typo still requests the GTM fit gate and its no-draft boundary."
     },
     {
@@ -876,8 +1264,12 @@
       "query_shape": "indirect-intent",
       "mode": "outbound-copy-review",
       "query": "Tell me whether this supplied draft respects the active GTM pack before anyone sends it.",
-      "expected_skill_id": "mdp-gtm-brief",
-      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "outbound-copy-review",
+        "host_discovered": true
+      },
       "rationale": "The indirect request is a bounded GTM copy review."
     },
     {
@@ -888,8 +1280,12 @@
       "query_shape": "typo",
       "mode": "bid-no-bid",
       "query": "Review this proposal for bid or no-bid using the supplied proof, but do not invent certifcations.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "bid-no-bid-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "bid-no-bid-review",
+        "host_discovered": true
+      },
       "rationale": "A typo leaves the explicit proposal bid decision and safety boundary."
     },
     {
@@ -900,8 +1296,12 @@
       "query_shape": "indirect-intent",
       "mode": "proof",
       "query": "I need to know which proposal themes are actually supported by the evidence before a human approves them.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "The indirect request is evidence-bounded proposal proof review."
     },
     {
@@ -912,8 +1312,12 @@
       "query_shape": "typo",
       "mode": "compliance",
       "query": "Check proposal compliance claims and flag missing audit reciepts without certifying them.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "compliance-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "compliance-review",
+        "host_discovered": true
+      },
       "rationale": "The typo does not change the proposal compliance review boundary."
     },
     {
@@ -924,8 +1328,12 @@
       "query_shape": "indirect-intent",
       "mode": "red-team",
       "query": "Surface the unresolved risks a reviewer should challenge in this proposal before final approval.",
-      "expected_skill_id": "mdp-proposal-review",
-      "context": {"pack_profile": "proposal", "job_id": "red-team-review", "host_discovered": true},
+      "expected_skill_id": "mdp-pack-apply",
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "red-team-review",
+        "host_discovered": true
+      },
       "rationale": "The indirect request is proposal red-team review with human approval preserved."
     },
     {
@@ -937,7 +1345,10 @@
       "mode": null,
       "query": "Write a cold email for a VP of Marketing at a SaaS company.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Generic copywriting has no MDP objective."
     },
     {
@@ -949,7 +1360,10 @@
       "mode": null,
       "query": "Research the top five competitors in customer support software.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Generic research is outside MDP."
     },
     {
@@ -961,7 +1375,10 @@
       "mode": null,
       "query": "Write the executive summary for this RFP response from scratch.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Generic proposal writing is not MDP review."
     },
     {
@@ -973,7 +1390,10 @@
       "mode": null,
       "query": "Upload these leads to the sequencer and launch the campaign.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Execution infrastructure is outside MDP."
     },
     {
@@ -985,7 +1405,11 @@
       "mode": null,
       "query": "Run `prospect-fit-or-brief` against this proposal-profile MDP.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "proposal", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "prospect-fit-or-brief",
+        "host_discovered": true
+      },
       "rationale": "A GTM job cannot route on a proposal pack."
     },
     {
@@ -997,7 +1421,11 @@
       "mode": null,
       "query": "Run `compliance-review` against this GTM-profile MDP.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "gtm", "job_id": "compliance-review", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "compliance-review",
+        "host_discovered": true
+      },
       "rationale": "A proposal job cannot route on a GTM pack."
     },
     {
@@ -1009,7 +1437,10 @@
       "mode": null,
       "query": "Give me three punchier LinkedIn opening lines for this message.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "No MDP context or objective is present."
     },
     {
@@ -1021,7 +1452,10 @@
       "mode": null,
       "query": "Find work emails and mobile numbers for these prospects.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "Contact enrichment is outside MDP."
     },
     {
@@ -1033,7 +1467,10 @@
       "mode": null,
       "query": "Certify our policy as NIST compliant. There is no MDP pack or evidence set.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "There is no proposal pack review objective and certification is unsupported."
     },
     {
@@ -1045,7 +1482,10 @@
       "mode": null,
       "query": "Update all open opportunities in our CRM with next steps.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "none", "host_discovered": true},
+      "context": {
+        "pack_profile": "none",
+        "host_discovered": true
+      },
       "rationale": "CRM mutation is outside MDP."
     },
     {
@@ -1057,7 +1497,11 @@
       "mode": null,
       "query": "Use `outbound-copy-review` with this active proposal MDP to check a sales email.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "proposal", "job_id": "outbound-copy-review", "host_discovered": true},
+      "context": {
+        "pack_profile": "proposal",
+        "job_id": "outbound-copy-review",
+        "host_discovered": true
+      },
       "rationale": "The profile/job pair is closed and incompatible."
     },
     {
@@ -1069,8 +1513,13 @@
       "mode": null,
       "query": "Use `proof-review` with this active GTM MDP to approve a proposal theme.",
       "expected_skill_id": null,
-      "context": {"pack_profile": "gtm", "job_id": "proof-review", "host_discovered": true},
+      "context": {
+        "pack_profile": "gtm",
+        "job_id": "proof-review",
+        "host_discovered": true
+      },
       "rationale": "The profile/job pair is closed and incompatible."
     }
-  ]
+  ],
+  "comparisons": []
 }

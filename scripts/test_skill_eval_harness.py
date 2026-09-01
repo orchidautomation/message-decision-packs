@@ -137,7 +137,7 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
             self.definitions,
             errors,
         )
-        self.assertEqual(summary["indexes"], 5)
+        self.assertEqual(summary["indexes"], 4)
         self.assertEqual(errors, [])
 
     def test_communication_assertions_cover_every_skill_split(self) -> None:
@@ -338,7 +338,7 @@ if __name__ == "__main__":
         if index + 1 >= len(sys.argv):
             raise SystemExit("--skill requires a skill id")
         skill_id = sys.argv[index + 1]
-        if skill_id not in {"mdp", "mdp-gtm-brief", "mdp-proposal-review", "mdp-pack-review"}:
+        if skill_id not in {"mdp", "mdp-pack-apply", "mdp-pack-review"}:
             raise SystemExit(f"unknown skill: {skill_id}")
         del sys.argv[index : index + 2]
     unittest.main()

@@ -111,7 +111,7 @@ Pluxx is what makes the agent layer portable.
 This repo uses `pluxx.config.ts` as one maintained distribution source. In the
 released MDP `0.1.101` distribution, Pluxx emits:
 
-- one Agent Plugins v1 portable package containing exactly the five MDP skills;
+- one Agent Plugins v1 portable package containing exactly the four MDP skills;
 - no portable MCP declaration, hooks, scripts, assets, commands, or agents; and
 - native bundles for:
 
@@ -224,13 +224,12 @@ The plugin is the agent-facing workflow layer.
 
 It contains skills that teach supported agents how to create, inspect, improve, route, and use Message Decision Packs.
 
-The public skill surface is intentionally limited to five coherent user jobs:
+The public skill surface is intentionally limited to four coherent user jobs:
 
 - `mdp`: explicit CLI/operator help and mixed MDP coordination
 - `mdp-pack-builder`: evidence-grounded GTM or proposal pack creation and improvement
 - `mdp-pack-review`: structural, routing, prompt, gap, output-rule, and eval review of the pack artifact
-- `mdp-gtm-brief`: GTM prospect fit/brief, pre-draft context, and supplied-copy review
-- `mdp-proposal-review`: proposal bid/no-bid, compliance, proof, and red-team review support
+- `mdp-pack-apply`: apply the exact CLI-selected GTM, proposal, or future profile job to supplied inputs
 
 Specialized card authoring and review stages are modes or shallow references inside those skills, not additional discovery entries. The CLI owns exact eligibility and job-to-skill routing; the agent host owns skill discovery.
 

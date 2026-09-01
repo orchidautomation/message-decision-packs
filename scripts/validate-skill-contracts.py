@@ -76,7 +76,7 @@ COLD_MODEL_GUARDRAILS = {
         "intermediate_not_report": "A behavioral evaluation alone is intermediate, never report authority.",
         "privacy": "provider/session identifiers, evaluator rationale,",
     },
-    "mdp-gtm-brief": {
+    "mdp-pack-apply": {
         "compile_first": "require a passing `conformance compile` before handing anything to the external host",
         "sole_authority": "assemble `mdp.job-conformance.v1`",
         "no_draft": "`not-sufficient-for-job` and `not-qualified-for-job-under-envelope` remain no-draft",
@@ -228,7 +228,7 @@ def validate(root: Path, source: Path) -> dict:
                     f"skill communication opening is missing: {phrase}",
                 )
 
-    proposal_review = source / "mdp-proposal-review" / "SKILL.md"
+    proposal_review = source / "mdp-pack-apply" / "SKILL.md"
     proposal_text = proposal_review.read_text(encoding="utf-8") if proposal_review.is_file() else ""
     for guardrail, phrase in PROPOSAL_GUARDRAILS.items():
         if phrase not in proposal_text:

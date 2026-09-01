@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Pack Apply"
+  short_description: "Apply the selected pack job"
+  default_prompt: "Use $mdp-pack-apply to apply the exact CLI-selected profile job to these supplied inputs without editing the pack."

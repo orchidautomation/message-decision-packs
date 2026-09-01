@@ -18,7 +18,7 @@ The Pluxx source config packages this behavior as bundled command hooks for supp
 ## Portable package boundary
 
 The Agent Plugins v1 artifact released with MDP `0.1.101` is a portable skills
-floor, not a hook overlay. It contains exactly five skills and no hooks,
+floor, not a hook overlay. It contains exactly four skills and no hooks,
 scripts, assets, native commands, or portable MCP declaration. Hook behavior
 described below belongs only to the Pluxx-generated native bundles and must be
 proved per host. Copying or validating the portable package does not prove a

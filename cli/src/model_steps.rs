@@ -621,7 +621,7 @@ mod tests {
         let manifest = read_manifest(&root).unwrap();
         let job = ProfileJob {
             id: "looks-like-normalization".into(),
-            skill_id: "mdp-gtm-brief".into(),
+            skill_id: "mdp-pack-apply".into(),
             ..ProfileJob::default()
         };
         assert!(

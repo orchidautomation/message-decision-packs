@@ -137,8 +137,8 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn("preserves every byte", skill, relative_path)
 
     def test_gtm_brief_preserves_decision_input_and_legacy_normalization_paths(self):
-        skill = Path("plugin/skills/mdp-gtm-brief/references/governed-execution.md").read_text()
-        mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
+        skill = Path("plugin/skills/mdp-pack-apply/references/gtm-governed-execution.md").read_text()
+        mode = Path("plugin/skills/mdp-pack-apply/references/gtm-prospect-fit-or-brief.md").read_text()
         for text in [skill, mode]:
             normalized = " ".join(text.split())
             self.assertIn("data.available", text)
@@ -153,7 +153,7 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", text)
 
     def test_gtm_brief_constructs_and_hashes_attempts_before_normalization(self):
-        mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
+        mode = Path("plugin/skills/mdp-pack-apply/references/gtm-prospect-fit-or-brief.md").read_text()
         requirements = mode.index("mdp --json requirements")
         missing = mode.index("If any artifact is missing")
         handoff = mode.index("complete `mdp --json requirements` result")
@@ -176,7 +176,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertLess(resume, validate)
 
     def test_gtm_brief_requires_host_supplied_attempt_ledger(self):
-        skill = Path("plugin/skills/mdp-gtm-brief/references/governed-execution.md").read_text()
+        skill = Path("plugin/skills/mdp-pack-apply/references/gtm-governed-execution.md").read_text()
         self.assertIn("do not collect or normalize inside this skill", skill)
         self.assertIn("complete `mdp --json requirements` result", skill)
         self.assertIn("`data.source_attempt_request_schema`", skill)
@@ -205,8 +205,8 @@ class SkillContractTests(unittest.TestCase):
 
     def test_gtm_brief_validates_resumed_artifacts_without_rehandoff(self):
         for path in [
-            "plugin/skills/mdp-gtm-brief/references/governed-execution.md",
-            "plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md",
+            "plugin/skills/mdp-pack-apply/references/gtm-governed-execution.md",
+            "plugin/skills/mdp-pack-apply/references/gtm-prospect-fit-or-brief.md",
         ]:
             text = Path(path).read_text()
             supplied = text.index("If all four artifacts")
@@ -325,7 +325,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("load_time_shell_hazard", self.codes())
 
     def test_each_high_risk_proposal_guardrail_is_enforced(self):
-        path = self.root / "plugin/skills/mdp-proposal-review/SKILL.md"
+        path = self.root / "plugin/skills/mdp-pack-apply/SKILL.md"
         original = path.read_text()
         for guardrail, phrase in module.PROPOSAL_GUARDRAILS.items():
             with self.subTest(guardrail=guardrail):
@@ -334,7 +334,7 @@ class SkillContractTests(unittest.TestCase):
                 path.write_text(original)
 
     def test_stale_runner_name_fails(self):
-        review = self.root / "plugin/skills/mdp-proposal-review/SKILL.md"
+        review = self.root / "plugin/skills/mdp-pack-apply/SKILL.md"
         review.write_text(review.read_text() + "\n`scripts/mdp-missing-runner.mjs`\n")
         self.assertIn("runner_script_reference_stale", self.codes())
 

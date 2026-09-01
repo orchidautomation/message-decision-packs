@@ -254,7 +254,7 @@ fi
 if [ "$run_skill_evals" -eq 1 ]; then
   if [ -f "scripts/skill-eval-harness.py" ] && [ -f "cli/Cargo.toml" ] && command -v python3 >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
     run_check "build source CLI for skill evals" cargo build --manifest-path cli/Cargo.toml
-    run_check "five-skill semantic evals" python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
+    run_check "four-skill semantic evals" python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
   else
     echo "MDP validation warning: skill eval files changed but Python, Cargo, or required files are unavailable."
     failed=1

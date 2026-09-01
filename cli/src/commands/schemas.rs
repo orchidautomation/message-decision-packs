@@ -7071,8 +7071,7 @@ mod tests {
                 "mdp",
                 "mdp-pack-builder",
                 "mdp-pack-review",
-                "mdp-gtm-brief",
-                "mdp-proposal-review"
+                "mdp-pack-apply"
             ])
         );
         assert_eq!(
