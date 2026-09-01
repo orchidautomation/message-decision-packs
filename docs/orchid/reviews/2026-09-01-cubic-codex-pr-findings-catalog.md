@@ -7,13 +7,14 @@
 - Audited **58 PRs**: 56 merged and 2 closed without merge.
 - Cataloged **208 inline findings** across **25 PRs**: **200 Codex** and **8 Cubic**.
 - Severity mix: **53 P1**, **150 P2**, and **5 P3**.
+- Preserved **all 8 Cubic AI repair prompts**, their confidence metadata and embedded file context, plus **2 suggested patches**.
 - GitHub thread state at snapshot: **6 resolved** and **202 unresolved**; **111** comments point at outdated diffs and **97** remain on current diff locations.
 - Only thread state is asserted here. A resolved thread is not proof that the fix remains correct, and an unresolved or outdated thread is not proof that the defect still exists on `main`.
 - The highest-volume hotspots are README ownership/refresh, transactional authoring and temporary-workspace safety, MCP path/lifecycle security, and CLI schema/capability parity.
 
 ## What counts as a finding
 
-This catalog includes every inline review comment authored by `chatgpt-codex-connector[bot]` or `cubic-dev-ai[bot]` in the audit window. It records priority, location, reviewer explanation, source URL, and GitHub thread state. Top-level clean-review, task-summary, duplicate-review, and failed-review comments are logged separately and are not included in the 208-finding total.
+This catalog includes every inline review comment authored by `chatgpt-codex-connector[bot]` or `cubic-dev-ai[bot]` in the audit window. It records priority, location, reviewer explanation, source URL, and GitHub thread state. For Cubic findings it also preserves the reviewer confidence, complete “Prompt for AI agents,” embedded file context, and any suggested patch. Top-level clean-review, task-summary, duplicate-review, and failed-review comments are logged separately and are not included in the 208-finding total.
 
 GitHub marks a comment **outdated** when its diff location no longer matches the PR head. That status says nothing by itself about whether the underlying bug was fixed. Each remediation item therefore starts in **needs current-main verification** unless a dedicated regression test proves otherwise.
 
@@ -599,23 +600,177 @@ Recommended order: Wave A and Wave B first because they contain filesystem/secur
 
 1. **P2 · Cubic · unresolved; current diff** — [When an unfiltered route-budget result has no assessed budget, the summary still fails validation because null-field omission removes tightest_headroom, which remains required](https://github.com/orchidautomation/message-decision-packs/pull/263#discussion_r3899997818) at `cli/src/commands/schemas.rs:4083`
    - Reviewer explanation: When an unfiltered route-budget result has no assessed budget, the summary still fails validation because null-field omission removes `tightest_headroom`, which remains required. Make nullable summary fields optional under the omission policy, or preserve the required field before validating the summary.
+   - Cubic confidence: `9/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At cli/src/commands/schemas.rs, line 4083:
+
+     <comment>When an unfiltered route-budget result has no assessed budget, the summary still fails validation because null-field omission removes `tightest_headroom`, which remains required. Make nullable summary fields optional under the omission policy, or preserve the required field before validating the summary.</comment>
+
+     <file context>
+     @@ -4067,7 +4080,7 @@ fn route_budget_summary_schema() -> Value {
+                  "strict": route_budget_strict_schema(),
+                  "pack_id": {"type": "string", "minLength": 1},
+     -            "query": route_budget_query_schema(),
+     +            "query": route_budget_summary_query_schema(),
+                  "route_count": {"type": "integer", "minimum": 0},
+                  "route_status_counts": {"type": "object", "required": ["ready", "blocked", "unassessed"], "properties": {"ready": {"type": "integer", "minimum": 0}, "blocked": {"type": "integer", "minimum": 0}, "unassessed": {"type": "integer", "minimum": 0}}, "additionalProperties": false},
+     </file context>
+     ```
 2. **P3 · Cubic · unresolved; current diff** — [route_budget_summary_query_schema fully duplicates route_budget_query_schema; only the required array differs](https://github.com/orchidautomation/message-decision-packs/pull/263#discussion_r3899997823) at `cli/src/commands/schemas.rs:3849`
    - Reviewer explanation: `route_budget_summary_query_schema` fully duplicates `route_budget_query_schema`; only the `required` array differs. Extract the shared `properties`/`additionalProperties` into one helper and have both functions set only their differing `required` array, so the relaxed and strict query contracts cannot drift apart.
+   - Cubic confidence: `7/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At cli/src/commands/schemas.rs, line 3849:
+
+     <comment>`route_budget_summary_query_schema` fully duplicates `route_budget_query_schema`; only the `required` array differs. Extract the shared `properties`/`additionalProperties` into one helper and have both functions set only their differing `required` array, so the relaxed and strict query contracts cannot drift apart.</comment>
+
+     <file context>
+     @@ -3846,6 +3846,19 @@ fn route_budget_query_schema() -> Value {
+          })
+      }
+
+     +fn route_budget_summary_query_schema() -> Value {
+     +    json!({
+     +        "type": "object",
+     </file context>
+     ```
 
 ### [PR #264: MDP-308: Ship profile-neutral agent skills](https://github.com/orchidautomation/message-decision-packs/pull/264)
 
 1. **P2 · Cubic · unresolved; current diff** — [Consolidating the high-risk proposal modes (bid-no-bid, compliance, proof, red-team) into mdp-pack-apply lowered required_assertion_categories from ["evidence","safety","human-review"] to just ["evidence"]](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180310) at `plugin/skill-evals/coverage.json:78`
    - Reviewer explanation: skill-eval-harness.py (lines ~667-672) errors unless every output case for a skill includes assertions in ALL of that skill's required categories, so this is an enforceable per-case gate. Dropping "safety" and "human-review" means the harness no longer rejects a regression that strips the safety/human-review assertions from these human-review-authority modes; the output corpus still carries them today, so only the enforcement guarantee is lost. Keep per-skill category enforcement for the high-risk modes (for example by requiring safety and human-review, or adding per-mode category coverage) so proposal-mode authority coverage stays fail-closed.
+   - Cubic confidence: `8/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At plugin/skill-evals/coverage.json, line 78:
+
+     <comment>Consolidating the high-risk proposal modes (bid-no-bid, compliance, proof, red-team) into mdp-pack-apply lowered required_assertion_categories from ["evidence","safety","human-review"] to just ["evidence"]. skill-eval-harness.py (lines ~667-672) errors unless every output case for a skill includes assertions in ALL of that skill's required categories, so this is an enforceable per-case gate. Dropping "safety" and "human-review" means the harness no longer rejects a regression that strips the safety/human-review assertions from these human-review-authority modes; the output corpus still carries them today, so only the enforcement guarantee is lost. Keep per-skill category enforcement for the high-risk modes (for example by requiring safety and human-review, or adding per-mode category coverage) so proposal-mode authority coverage stays fail-closed.</comment>
+
+     <file context>
+     @@ -5,42 +5,84 @@
+     +        "red-team"
+     +      ],
+     +      "required_assertion_categories": [
+     +        "evidence"
+     +      ],
+     +      "eval_index": "plugin/skills/mdp-pack-apply/evals/index.json",
+     </file context>
+     ```
 2. **P2 · Cubic · unresolved; current diff** — [The claimed corpus revision does not match the shipped corpus](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180324) at `docs/skill-progressive-disclosure.md:35`
    - Reviewer explanation: This sentence says `plugin/skill-evals/trigger-cases.json` and `coverage.json` carry revision `mdp-257.v1`, but both files carry `mdp-249.v1` (coverage.json line 3 and trigger-cases.json line 3). The surrounding sentence was rewritten to describe the current four-skill corpus, so the retained `mdp-257.v1` label is stale and cannot be used to correlate the documented eval delta with the actual fixtures.
+   - Cubic confidence: `8/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At docs/skill-progressive-disclosure.md, line 35:
+
+     <comment>The claimed corpus revision does not match the shipped corpus. This sentence says `plugin/skill-evals/trigger-cases.json` and `coverage.json` carry revision `mdp-257.v1`, but both files carry `mdp-249.v1` (coverage.json line 3 and trigger-cases.json line 3). The surrounding sentence was rewritten to describe the current four-skill corpus, so the retained `mdp-257.v1` label is stale and cannot be used to correlate the documented eval delta with the actual fixtures.</comment>
+
+     <file context>
+     @@ -26,17 +25,13 @@ one direct hop from the entrypoint.
+     -specialized owner even when the request names MDP. Each new case records an
+     -explicit collision against the `mdp` coordinator. Existing authoritative job
+     -mappings and output assertions are unchanged.
+     +`mdp-257.v1`. The current corpus retains distinct GTM and proposal modes but
+     +expects the same neutral `mdp-pack-apply` owner. Explicit builder, read-only
+     +pack-review, and apply intent remain distinct from the `mdp` coordinator.
+     </file context>
+     ```
+   - Captured Cubic suggested patch:
+
+     ```suggestion
+     `mdp-249.v1`. The current corpus retains distinct GTM and proposal modes but
+     ```
 3. **P3 · Cubic · unresolved; current diff** — [The Skill Routing Decision section points to plugin/skills/mdp-pack-apply/references/evidence-path.md, but that file does not exist under the new location](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180361) at `docs/proposal-runner.md:113`
    - Reviewer explanation: The Skill Routing Decision section points to `plugin/skills/mdp-pack-apply/references/evidence-path.md`, but that file does not exist under the new location. The migrated file is `plugin/skills/mdp-pack-apply/references/proposal-evidence-path.md` (the old `evidence-path.md` was renamed to `proposal-evidence-path.md` during the profile-neutral migration). Update the reference so the decision tree link resolves.
+   - Cubic confidence: `9/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At docs/proposal-runner.md, line 113:
+
+     <comment>The Skill Routing Decision section points to `plugin/skills/mdp-pack-apply/references/evidence-path.md`, but that file does not exist under the new location. The migrated file is `plugin/skills/mdp-pack-apply/references/proposal-evidence-path.md` (the old `evidence-path.md` was renamed to `proposal-evidence-path.md` during the profile-neutral migration). Update the reference so the decision tree link resolves.</comment>
+
+     <file context>
+     @@ -110,7 +110,7 @@ an MCP tool error.
+
+      Proposal-facing agents use the decision tree packaged at
+     -`plugin/skills/mdp-proposal-review/references/evidence-path.md`:
+     +`plugin/skills/mdp-pack-apply/references/evidence-path.md`:
+
+      1. require explicit local source files and human approval of their exact hashes;
+     </file context>
+     ```
+   - Captured Cubic suggested patch:
+
+     ```suggestion
+     `plugin/skills/mdp-pack-apply/references/proposal-evidence-path.md`:
+     ```
 4. **P3 · Cubic · unresolved; current diff** — [The renamed test claims the bundle "accepts only four canonical skills," but it never verifies that count: expected_skills() derives from the live plugin/skills inventory, and the bundle is built by copying that same inventory, so actual == expected is always satisfied and a fifth skill would not be rejected](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180371) at `scripts/test_skill_packaging.py:153`
    - Reviewer explanation: The renamed test claims the bundle "accepts only four canonical skills," but it never verifies that count: `expected_skills()` derives from the live `plugin/skills` inventory, and the bundle is built by copying that same inventory, so `actual == expected` is always satisfied and a fifth skill would not be rejected. Add a non-canonical skill (or force the expected list) and assert the validation reports the inventory drift, matching the test title.
+   - Cubic confidence: `7/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At scripts/test_skill_packaging.py, line 153:
+
+     <comment>The renamed test claims the bundle "accepts only four canonical skills," but it never verifies that count: `expected_skills()` derives from the live `plugin/skills` inventory, and the bundle is built by copying that same inventory, so `actual == expected` is always satisfied and a fifth skill would not be rejected. Add a non-canonical skill (or force the expected list) and assert the validation reports the inventory drift, matching the test title.</comment>
+
+     <file context>
+     @@ -151,7 +150,7 @@ def test_native_bundle_requires_referenced_helpers(self) -> None:
+              self.assertTrue(any("missing referenced helper" in error for error in errors))
+
+     -    def test_agent_plugins_bundle_accepts_only_five_canonical_skills(self) -> None:
+     +    def test_agent_plugins_bundle_accepts_only_four_canonical_skills(self) -> None:
+              with tempfile.TemporaryDirectory(prefix="mdp-agent-plugins-") as temp:
+                  dist = Path(temp) / "dist"
+     </file context>
+     ```
 5. **P3 · Cubic · unresolved; current diff** — [The changed line claims the four-skill surface ships in MDP 0.1.101, but the CLI version is 0.1.107 and README says the 0.1.107 migration replaced mdp-gtm-brief/mdp-proposal-review with mdp-pack-apply](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180379) at `llms.txt:16`
    - Reviewer explanation: The changed line claims the four-skill surface ships in MDP `0.1.101`, but the CLI version is `0.1.107` and README says the `0.1.107` migration replaced `mdp-gtm-brief`/`mdp-proposal-review` with `mdp-pack-apply`. `0.1.101` still shipped five skills, so the new count is attributed to the wrong version. Bump the version on the unchanged `0.1.101` line to `0.1.107` so the updated skill count matches the release that actually ships it.
+   - Cubic confidence: `8/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At llms.txt, line 16:
+
+     <comment>The changed line claims the four-skill surface ships in MDP `0.1.101`, but the CLI version is `0.1.107` and README says the `0.1.107` migration replaced `mdp-gtm-brief`/`mdp-proposal-review` with `mdp-pack-apply`. `0.1.101` still shipped five skills, so the new count is attributed to the wrong version. Bump the version on the unchanged `0.1.101` line to `0.1.107` so the updated skill count matches the release that actually ships it.</comment>
+
+     <file context>
+     @@ -13,7 +13,7 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+
+      MDP `0.1.101` publicly ships an Agent Plugins v1 artifact built with Pluxx
+     -`0.1.42`. It is exactly the five skills, with no portable MCP, hooks, scripts,
+     +`0.1.42`. It is exactly the four skills, with no portable MCP, hooks, scripts,
+      assets, commands, or agents. Installation requires an explicit non-overlapping
+      client-managed path. Cursor documents a local path but real Cursor discovery
+     </file context>
+     ```
 6. **P3 · Cubic · unresolved; current diff** — [The enclosing paragraph says the released 0.1.101 distribution emits exactly the four skills, but this four-skill migration is part of the unreleased PR and ships in 0.1.107 (current version per cli/Cargo.toml and pluxx.config.ts; README.md line 35 attributes the four-skill package to 0.1.107)](https://github.com/orchidautomation/message-decision-packs/pull/264#discussion_r3902180385) at `docs/what-this-repo-is.md:114`
    - Reviewer explanation: The enclosing paragraph says the released `0.1.101` distribution emits exactly the four skills, but this four-skill migration is part of the unreleased PR and ships in `0.1.107` (current version per `cli/Cargo.toml` and `pluxx.config.ts`; `README.md` line 35 attributes the four-skill package to 0.1.107). Reference the upcoming release instead of the already-released `0.1.101` so the claim is accurate.
+   - Cubic confidence: `7/10`
+   - Captured Cubic AI repair prompt:
+
+     ```text
+     Check if this issue is valid — if so, understand the root cause and fix it. At docs/what-this-repo-is.md, line 114:
+
+     <comment>The enclosing paragraph says the released `0.1.101` distribution emits exactly the four skills, but this four-skill migration is part of the unreleased PR and ships in `0.1.107` (current version per `cli/Cargo.toml` and `pluxx.config.ts`; `README.md` line 35 attributes the four-skill package to 0.1.107). Reference the upcoming release instead of the already-released `0.1.101` so the claim is accurate.</comment>
+
+     <file context>
+     @@ -111,7 +111,7 @@ Pluxx is what makes the agent layer portable.
+      released MDP `0.1.101` distribution, Pluxx emits:
+
+     -- one Agent Plugins v1 portable package containing exactly the five MDP skills;
+     +- one Agent Plugins v1 portable package containing exactly the four MDP skills;
+      - no portable MCP declaration, hooks, scripts, assets, commands, or agents; and
+      - native bundles for:
+     </file context>
+     ```
 
 ## Non-finding automation comments
 
