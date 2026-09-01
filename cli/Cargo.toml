@@ -1,6 +1,6 @@
 [package]
 name = "mdp"
-version = "0.1.106"
+version = "0.1.107"
 edition = "2024"
 license = "Elastic-2.0"
 

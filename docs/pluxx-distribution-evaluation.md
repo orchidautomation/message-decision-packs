@@ -38,7 +38,7 @@ release asset, and an isolated installation reports `mdp 0.1.101`.
 The Agent Plugins archive is a deliberately narrow floor:
 
 - 77,084 compressed bytes, 231,142 raw bytes, and 57 files;
-- exactly five immediate-child skills;
+- exactly four immediate-child skills;
 - `mcp_servers=[]`, with no hooks, scripts, assets, or native manifests; and
 - archive-tree SHA-256
   `b374aa7412b80ea5325b0f6144365269e62130c5603169b6aa132747d9fda964`.
@@ -74,7 +74,7 @@ packaging and equivalent safety/parity proof.
 
 | Consumer/path | Current policy | Evidence boundary |
 | --- | --- | --- |
-| Agent Plugins v1 package | Keep the exact five-skill portable floor | Public archive, manifest, checksum, and isolated install proof |
+| Agent Plugins v1 package | Keep the exact four-skill portable floor | Public archive, manifest, checksum, and isolated install proof |
 | Cursor portable import | Candidate only; do not claim support yet | Documented local path exists, but real Cursor discovery was not observed |
 | Codex portable import | Do not claim; keep Codex native-only | No documented generic root import path and no real portable discovery |
 | Other conformant clients | No support promise without an acceptance gate | Format conformance is not installed behavior |

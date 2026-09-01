@@ -1,6 +1,6 @@
 ---
 name: mdp
-description: Use for MDP CLI/operator questions, contract inspection, validation-command guidance, or an explicitly mixed workflow spanning multiple MDP skills. Do not use merely because a specialized builder, pack-review, GTM, or proposal request names MDP.
+description: Use for MDP CLI/operator questions, contract inspection, validation-command guidance, or an explicitly mixed workflow spanning multiple MDP skills. Do not use merely because a specialized builder, pack-review, or pack-apply request names MDP.
 metadata:
   compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
 ---
@@ -20,24 +20,21 @@ gates, blockers, and decisions.
 
 ## Route Before Loading Detail
 
-Present MDP as two product journeys, not as five skills the user must learn:
+Present MDP as two product journeys, not as a catalog the user must learn:
 
 - **Author and maintain** creates, explicitly edits, validates, and reviews
   durable pack authority. Route mutations to `$mdp-pack-builder`; route
   read-only pack QA to `$mdp-pack-review`.
 - **Use and decide** selects an existing pack, exact job, and supplied input,
   then returns a bounded decision or workflow bundle without changing pack
-  authority. Route GTM work to `$mdp-gtm-brief` and proposal work to
-  `$mdp-proposal-review`.
+  authority. Route every exact profile job to `$mdp-pack-apply`.
 
 Ask which journey is intended only when the request is genuinely ambiguous.
 Absent explicit edit intent, default to Use and decide or read-only review.
 
 - Creating or editing `.mdp/`: `$mdp-pack-builder`.
 - Read-only pack audit, hardening, or installed QA: `$mdp-pack-review`.
-- Supplied-prospect fit, bounded GTM context, or supplied-copy review:
-  `$mdp-gtm-brief`.
-- Supplied proposal-material review: `$mdp-proposal-review`.
+- Applying any exact profile job to supplied inputs: `$mdp-pack-apply`.
 - Stay here only for operator help, validation-command guidance, or a request
   that explicitly spans two or more of those owners.
 

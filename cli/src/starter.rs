@@ -400,7 +400,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
     vec![
         ProfileJob {
             id: "prospect-fit-or-brief".to_string(),
-            skill_id: "mdp-gtm-brief".to_string(),
+            skill_id: "mdp-pack-apply".to_string(),
             label: Some("Prospect row to fit decision or brief".to_string()),
             description: Some(
                 "Normalize supplied row context, check fit, and route a bounded local brief."
@@ -436,7 +436,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
-            skill_id: "mdp-gtm-brief".to_string(),
+            skill_id: "mdp-pack-apply".to_string(),
             label: Some("Outbound copy brief".to_string()),
             description: Some(
                 "Produce grounded copy guidance after fit, proof, guardrails, and output contracts are loaded."
@@ -481,7 +481,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
-            skill_id: "mdp-gtm-brief".to_string(),
+            skill_id: "mdp-pack-apply".to_string(),
             label: Some("Supplied outbound copy review".to_string()),
             description: Some(
                 "Evaluate a supplied copy draft against fit, proof, guardrails, and output rules."

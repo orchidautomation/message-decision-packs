@@ -429,7 +429,7 @@ input_contracts:
   - relationship
 jobs:
 - id: prospect-fit-or-brief
-  skill_id: mdp-gtm-brief
+  skill_id: mdp-pack-apply
   label: Prospect row to fit decision or brief
   description: Normalize supplied row context, check fit, and route a bounded local brief.
   required_primitives:
@@ -444,7 +444,7 @@ jobs:
   input_contracts:
   - prospect
 - id: outbound-copy-brief
-  skill_id: mdp-gtm-brief
+  skill_id: mdp-pack-apply
   label: Outbound copy brief
   description: Produce grounded copy guidance after fit, proof, guardrails, CTA policy, and output rules are loaded.
   required_primitives:
@@ -466,7 +466,7 @@ jobs:
       pains: 8
       ctas: 4
 - id: outbound-copy-review
-  skill_id: mdp-gtm-brief
+  skill_id: mdp-pack-apply
   label: Supplied outbound copy review
   description: Evaluate a supplied copy draft against fit, proof, guardrails, and output rules.
   required_primitives:

@@ -218,7 +218,7 @@ for host_root in \
     echo "Installed agent plugin root not found: $host_root" >&2
     exit 1
   fi
-  for skill in mdp mdp-gtm-brief mdp-pack-builder mdp-pack-review mdp-proposal-review; do
+  for skill in mdp mdp-pack-apply mdp-pack-builder mdp-pack-review; do
     if [ ! -f "$host_root/skills/$skill/SKILL.md" ]; then
       echo "Installed plugin is missing canonical skill $skill: $host_root" >&2
       exit 1
@@ -234,7 +234,7 @@ for host_root in \
       exit 1
     fi
   done
-  for skill in mdp mdp-gtm-brief mdp-pack-builder mdp-pack-review mdp-proposal-review; do
+  for skill in mdp mdp-pack-apply mdp-pack-builder mdp-pack-review; do
     if [ ! -f "$host_root/skills/$skill/evals/index.json" ]; then
       echo "Installed plugin is missing eval index for $skill: $host_root" >&2
       exit 1
@@ -254,7 +254,7 @@ const { createHash } = require('crypto')
 const { lstatSync, readFileSync, readdirSync } = require('fs')
 const { join, relative } = require('path')
 const roots = process.argv.slice(2)
-const expectedSkills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
+const expectedSkills = ['mdp', 'mdp-pack-apply', 'mdp-pack-builder', 'mdp-pack-review'].sort()
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const inspect = (root) => {
   const top = readdirSync(root).sort()
@@ -398,7 +398,7 @@ for required in \
   "$codex_plugin_root/scripts/lib/proposal-readiness-report.mjs" \
   "$codex_plugin_root/scripts/mdp-activate.sh" \
   "$codex_plugin_root/skills/mdp/SKILL.md" \
-  "$codex_plugin_root/skills/mdp-proposal-review/SKILL.md"; do
+  "$codex_plugin_root/skills/mdp-pack-apply/SKILL.md"; do
   if [ ! -f "$required" ]; then
     echo "Installed plugin is missing required file: $required" >&2
     exit 1

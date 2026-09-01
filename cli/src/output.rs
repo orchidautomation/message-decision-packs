@@ -1677,10 +1677,10 @@ mod tests {
                 "status": "ready",
                 "valid": true,
                 "profile": {"id": "gtm"},
-                "packaged_skill_ids": ["mdp", "mdp-gtm-brief"],
-                "eligibility": {"eligible_skill_ids": ["mdp", "mdp-gtm-brief"]},
+                "packaged_skill_ids": ["mdp", "mdp-pack-apply"],
+                "eligibility": {"eligible_skill_ids": ["mdp", "mdp-pack-apply"]},
                 "requested_job": "prospect-fit-or-brief",
-                "recommendation": {"job_id": "prospect-fit-or-brief", "skill_id": "mdp-gtm-brief"},
+                "recommendation": {"job_id": "prospect-fit-or-brief", "skill_id": "mdp-pack-apply"},
                 "job_routes": [{"job_id": "prospect-fit-or-brief"}],
                 "diagnostics": []
             }),
@@ -1689,7 +1689,7 @@ mod tests {
         assert_eq!(summary["contract"], "mdp.skills.v1");
         assert_eq!(summary["profile_id"], "gtm");
         assert_eq!(summary["route_count"], 1);
-        assert_eq!(summary["recommendation"]["skill_id"], "mdp-gtm-brief");
+        assert_eq!(summary["recommendation"]["skill_id"], "mdp-pack-apply");
     }
 
     #[test]

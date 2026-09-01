@@ -415,8 +415,7 @@ mod tests {
                 "mdp",
                 "mdp-pack-builder",
                 "mdp-pack-review",
-                "mdp-gtm-brief",
-                "mdp-proposal-review"
+                "mdp-pack-apply"
             ])
         );
         assert_eq!(
@@ -439,13 +438,13 @@ mod tests {
         assert_eq!(result["profile"]["id"], "gtm");
         assert_eq!(result["job_routes"].as_array().map(Vec::len), Some(1));
         assert_eq!(result["job_routes"][0]["job_id"], "prospect-fit-or-brief");
-        assert_eq!(result["job_routes"][0]["skill_id"], "mdp-gtm-brief");
+        assert_eq!(result["job_routes"][0]["skill_id"], "mdp-pack-apply");
         assert_eq!(result["job_routes"][0]["pack_ready"], true);
         assert_eq!(
             result["job_routes"][0]["product_foundation"]["status"],
             "ready"
         );
-        assert_eq!(result["recommendation"]["skill_id"], "mdp-gtm-brief");
+        assert_eq!(result["recommendation"]["skill_id"], "mdp-pack-apply");
         jsonschema::draft202012::validate(
             &crate::commands::schemas::schema(crate::cli::SchemaTarget::Skills),
             &result,
@@ -678,17 +677,14 @@ mod tests {
                 .as_array()
                 .expect("routes")
                 .iter()
-                .all(|route| route["skill_id"] == "mdp-proposal-review")
+                .all(|route| route["skill_id"] == "mdp-pack-apply")
         );
 
         let selected = skills(Some(&root), Some("compliance-review"));
         assert_eq!(selected["valid"], true);
         assert_eq!(selected["job_routes"].as_array().map(Vec::len), Some(1));
         assert_eq!(selected["recommendation"]["job_id"], "compliance-review");
-        assert_eq!(
-            selected["recommendation"]["skill_id"],
-            "mdp-proposal-review"
-        );
+        assert_eq!(selected["recommendation"]["skill_id"], "mdp-pack-apply");
     }
 
     #[test]
@@ -727,7 +723,7 @@ mod tests {
         assert_eq!(result["valid"], false);
         assert_eq!(
             result["packaged_skill_ids"].as_array().map(Vec::len),
-            Some(5)
+            Some(4)
         );
         assert_eq!(result["job_routes"], json!([]));
         assert!(

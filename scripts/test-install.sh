@@ -78,7 +78,7 @@ const walk = (directory) => {
   }
 }
 walk(root)
-const skills = ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'].sort()
+const skills = ['mdp', 'mdp-pack-apply', 'mdp-pack-builder', 'mdp-pack-review'].sort()
 writeFileSync(output, `${JSON.stringify({
   plugin: { version: '0.1.101', license: 'Elastic-2.0' },
   assets: { archives: [{ platform: 'agent-plugins', latestAsset: 'message-decision-packs-agent-plugins-latest.tar.gz' }] },
@@ -165,7 +165,7 @@ cursor args:--yes skip:1
 opencode args:--yes skip:1
 EOF
 )"
-for skill in mdp mdp-gtm-brief mdp-pack-builder mdp-pack-review mdp-proposal-review; do
+for skill in mdp mdp-pack-apply mdp-pack-builder mdp-pack-review; do
   test -f "$portable_install/skills/$skill/SKILL.md"
 done
 test -f "$portable_install/plugin.json"

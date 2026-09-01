@@ -168,7 +168,7 @@ writeFileSync(output, `${JSON.stringify({
   portable_packages: { 'agent-plugins': {
     contract: 'mdp.agent-plugins-portable-package.v1',
     specification: '1.0.0',
-    skills: ['mdp', 'mdp-gtm-brief', 'mdp-pack-builder', 'mdp-pack-review', 'mdp-proposal-review'],
+    skills: ['mdp', 'mdp-pack-apply', 'mdp-pack-builder', 'mdp-pack-review'],
     mcp_servers: [],
     files: portableRecords,
     sha256: sha256(Buffer.from(`${JSON.stringify(portableRecords)}\n`)),

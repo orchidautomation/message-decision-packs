@@ -21,7 +21,7 @@ A canonical generation or review job opts in with one explicit binding:
 ```yaml
 jobs:
 - id: outbound-copy-brief
-  skill_id: mdp-gtm-brief
+  skill_id: mdp-pack-apply
   model_task:
     kind: generation
     prompt: generate-outbound-copy-v1

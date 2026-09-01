@@ -623,7 +623,7 @@ input_contracts:
   - proposal.opportunity-context
 jobs:
 - id: bid-no-bid-review
-  skill_id: mdp-proposal-review
+  skill_id: mdp-pack-apply
   label: Bid/no-bid review
   description: Evaluate whether supplied opportunity context supports bid, no-bid, pause, or escalation.
   required_primitives:
@@ -656,7 +656,7 @@ jobs:
     prompt: review-bid-no-bid-v1
   context_budget: {max_entries: 64, max_bytes: 65536}
 - id: compliance-review
-  skill_id: mdp-proposal-review
+  skill_id: mdp-pack-apply
   label: Compliance review
   description: Review requirements, compliance-sensitive boundaries, unsupported claims, and required escalation points.
   required_primitives:
@@ -689,7 +689,7 @@ jobs:
     prompt: review-proposal-compliance-v1
   context_budget: {max_entries: 64, max_bytes: 65536}
 - id: proof-review
-  skill_id: mdp-proposal-review
+  skill_id: mdp-pack-apply
   label: Proof or win theme review
   description: Check proposed proof and win themes against approved synthetic proof patterns and gaps.
   required_primitives:
@@ -724,7 +724,7 @@ jobs:
     prompt: review-proposal-proof-v1
   context_budget: {max_entries: 64, max_bytes: 65536}
 - id: red-team-review
-  skill_id: mdp-proposal-review
+  skill_id: mdp-pack-apply
   label: Red-team gap review
   description: Surface unsupported proof, missing requirements, risky assumptions, and review gates.
   required_primitives:

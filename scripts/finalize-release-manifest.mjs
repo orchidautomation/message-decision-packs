@@ -108,10 +108,9 @@ if (!existsSync(portableRoot)) {
 {
   const expectedSkills = [
     'mdp',
-    'mdp-gtm-brief',
+    'mdp-pack-apply',
     'mdp-pack-builder',
     'mdp-pack-review',
-    'mdp-proposal-review',
   ]
   const topLevel = readdirSync(portableRoot).sort()
   const allowedTopLevel = ['plugin.json', 'skills']
@@ -138,7 +137,7 @@ if (!existsSync(portableRoot)) {
     .filter((name) => lstatSync(join(skillsRoot, name)).isDirectory())
     .sort()
   if (JSON.stringify(skills) !== JSON.stringify([...expectedSkills].sort())) {
-    throw new Error(`Agent Plugins package skill inventory is not the five supported MDP skills: ${skills.join(', ')}.`)
+    throw new Error(`Agent Plugins package skill inventory is not the four supported MDP skills: ${skills.join(', ')}.`)
   }
   for (const skill of skills) {
     if (!existsSync(join(skillsRoot, skill, 'SKILL.md'))) {

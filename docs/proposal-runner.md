@@ -110,7 +110,7 @@ an MCP tool error.
 ## Skill Routing Decision
 
 Proposal-facing agents use the decision tree packaged at
-`plugin/skills/mdp-proposal-review/references/evidence-path.md`:
+`plugin/skills/mdp-pack-apply/references/evidence-path.md`:
 
 1. require explicit local source files and human approval of their exact hashes;
 2. if audit-grade is requested, require a callable local runner/MCP plus a

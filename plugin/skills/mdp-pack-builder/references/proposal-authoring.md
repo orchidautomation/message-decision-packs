@@ -17,13 +17,13 @@ When supplied PDFs/docs are extracted before `normalize-opportunity`, preserve a
 ```yaml
 jobs:
   - id: bid-no-bid-review
-    skill_id: mdp-proposal-review
+    skill_id: mdp-pack-apply
   - id: compliance-review
-    skill_id: mdp-proposal-review
+    skill_id: mdp-pack-apply
   - id: proof-review
-    skill_id: mdp-proposal-review
+    skill_id: mdp-pack-apply
   - id: red-team-review
-    skill_id: mdp-proposal-review
+    skill_id: mdp-pack-apply
 ```
 
 Each job must declare the relevant universal primitives and `opportunity` input contract.

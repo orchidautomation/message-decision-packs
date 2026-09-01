@@ -214,9 +214,8 @@ def validate_shared_reference_parity(source: Path, errors: list[str]) -> None:
         "runtime-compatibility.md": set(skill_inventory(source, [])),
         "workflow-bundle-handoff.md": {
             "mdp",
-            "mdp-gtm-brief",
+            "mdp-pack-apply",
             "mdp-pack-review",
-            "mdp-proposal-review",
         },
     }
     for filename, skill_ids in projections.items():

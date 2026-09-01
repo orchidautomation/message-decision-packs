@@ -46,7 +46,7 @@ Bind facets to one exact canonical `jobs[].id`:
 ```yaml
 jobs:
   - id: outbound-copy-brief
-    skill_id: mdp-gtm-brief
+    skill_id: mdp-pack-apply
     product_foundation:
       required:
         - product-identity

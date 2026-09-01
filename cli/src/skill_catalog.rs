@@ -1,11 +1,10 @@
 use crate::decision_input::AdapterKind;
 
-pub(crate) const PACKAGED_SKILL_IDS: [&str; 5] = [
+pub(crate) const PACKAGED_SKILL_IDS: [&str; 4] = [
     "mdp",
     "mdp-pack-builder",
     "mdp-pack-review",
-    "mdp-gtm-brief",
-    "mdp-proposal-review",
+    "mdp-pack-apply",
 ];
 pub(crate) const BOOTSTRAP_SKILL_IDS: [&str; 3] = ["mdp", "mdp-pack-builder", "mdp-pack-review"];
 
@@ -26,33 +25,33 @@ pub(crate) struct ProfileDescriptor<'a> {
 const GTM_JOBS: &[JobRouteSpec] = &[
     JobRouteSpec {
         job_id: "prospect-fit-or-brief",
-        skill_id: "mdp-gtm-brief",
+        skill_id: "mdp-pack-apply",
     },
     JobRouteSpec {
         job_id: "outbound-copy-brief",
-        skill_id: "mdp-gtm-brief",
+        skill_id: "mdp-pack-apply",
     },
     JobRouteSpec {
         job_id: "outbound-copy-review",
-        skill_id: "mdp-gtm-brief",
+        skill_id: "mdp-pack-apply",
     },
 ];
 const PROPOSAL_JOBS: &[JobRouteSpec] = &[
     JobRouteSpec {
         job_id: "bid-no-bid-review",
-        skill_id: "mdp-proposal-review",
+        skill_id: "mdp-pack-apply",
     },
     JobRouteSpec {
         job_id: "compliance-review",
-        skill_id: "mdp-proposal-review",
+        skill_id: "mdp-pack-apply",
     },
     JobRouteSpec {
         job_id: "proof-review",
-        skill_id: "mdp-proposal-review",
+        skill_id: "mdp-pack-apply",
     },
     JobRouteSpec {
         job_id: "red-team-review",
-        skill_id: "mdp-proposal-review",
+        skill_id: "mdp-pack-apply",
     },
 ];
 
@@ -187,11 +186,11 @@ mod tests {
         const DUPLICATE_JOBS: &[JobRouteSpec] = &[
             JobRouteSpec {
                 job_id: "duplicate",
-                skill_id: "mdp-gtm-brief",
+                skill_id: "mdp-pack-apply",
             },
             JobRouteSpec {
                 job_id: "duplicate",
-                skill_id: "mdp-gtm-brief",
+                skill_id: "mdp-pack-apply",
             },
         ];
         let mut duplicate = PROFILE_DESCRIPTORS[0];

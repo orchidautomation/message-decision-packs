@@ -27,11 +27,11 @@ Keep account context distinct from person/persona readiness. Account-only eviden
 ```yaml
 jobs:
   - id: prospect-fit-or-brief
-    skill_id: mdp-gtm-brief
+    skill_id: mdp-pack-apply
   - id: outbound-copy-brief
-    skill_id: mdp-gtm-brief
+    skill_id: mdp-pack-apply
   - id: outbound-copy-review
-    skill_id: mdp-gtm-brief
+    skill_id: mdp-pack-apply
 ```
 
 Each full job entry must also declare required primitives and the `prospect` input contract. Do not add authoring or pack-validation jobs; shared skills handle those intents directly.

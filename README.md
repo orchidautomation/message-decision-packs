@@ -32,14 +32,20 @@ The installer uses the latest
 [GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 so the CLI and agent instructions remain version-aligned.
 
-MDP `0.1.106` now ships a Pluxx-emitted Agent Plugins v1 portable skills
+MDP `0.1.107` now ships a Pluxx-emitted Agent Plugins v1 portable skills
 package alongside the four native bundles. The portable package has exactly
-the five MDP skills and no portable MCP or hooks. It requires an explicit,
+the four MDP skills and no portable MCP or hooks. It requires an explicit,
 non-overlapping client-managed destination; MDP does not guess an undocumented
 generic Codex import path. Publication and isolated installation are verified;
 real client discovery remains a separate host-specific proof. See
 [Distribution](docs/distribution.md) for the evidence matrix and install
 contract.
+
+The `0.1.107` skill migration replaces the profile-named
+`mdp-gtm-brief` and `mdp-proposal-review` entrypoints with
+`mdp-pack-apply`. After upgrading, let the host rediscover the four-skill
+package and use `mdp --json skills --dir PACK_ROOT --job JOB_ID` to select the
+exact job. The old names are not packaged as aliases.
 
 ## Quick Start
 

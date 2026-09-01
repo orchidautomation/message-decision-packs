@@ -1,0 +1,88 @@
+{
+  "model": "mdp.skill-eval-index.v1",
+  "skill_id": "mdp-pack-apply",
+  "corpus_root": "skill-evals",
+  "trigger_case_ids": [
+    "gtm-fit-train",
+    "gtm-brief-train",
+    "gtm-copy-review-train",
+    "gtm-no-send-train",
+    "gtm-fit-validation",
+    "gtm-brief-validation",
+    "gtm-copy-review-validation",
+    "gtm-enrichment-refusal-validation",
+    "gtm-fit-typo-train",
+    "gtm-brief-indirect-train",
+    "gtm-fit-typo-validation",
+    "gtm-review-indirect-validation",
+    "gtm-named-mdp-train",
+    "gtm-named-mdp-validation",
+    "gtm-silent-mutation-refusal-train",
+    "proposal-bid-train",
+    "proposal-compliance-train",
+    "proposal-proof-train",
+    "proposal-red-team-train",
+    "proposal-bid-validation",
+    "proposal-compliance-validation",
+    "proposal-proof-validation",
+    "proposal-red-team-validation",
+    "proposal-bid-typo-train",
+    "proposal-proof-indirect-train",
+    "proposal-compliance-typo-validation",
+    "proposal-red-team-indirect-validation",
+    "proposal-named-mdp-train",
+    "proposal-named-mdp-validation",
+    "proposal-silent-mutation-refusal-validation"
+  ],
+  "output_case_ids": [
+    "gtm-fit-train",
+    "gtm-brief-train",
+    "gtm-copy-review-train",
+    "gtm-fit-validation",
+    "gtm-brief-validation",
+    "gtm-managed-cleanup-validation",
+    "gtm-copy-review-validation",
+    "gtm-silent-authority-mutation-train",
+    "proposal-bid-train",
+    "proposal-compliance-train",
+    "proposal-proof-train",
+    "proposal-red-team-train",
+    "proposal-bid-validation",
+    "proposal-compliance-validation",
+    "proposal-proof-validation",
+    "proposal-red-team-validation",
+    "proposal-audit-path-missing-train",
+    "proposal-ambient-advisory-validation",
+    "proposal-chat-fact-gap-train",
+    "proposal-ocr-mismatch-validation",
+    "proposal-tampered-resume-validation",
+    "proposal-silent-authority-mutation-validation"
+  ],
+  "supported_modes": [
+    "prospect-fit-or-brief",
+    "outbound-copy-brief",
+    "outbound-copy-review",
+    "bid-no-bid",
+    "compliance",
+    "proof",
+    "red-team"
+  ],
+  "required_assertion_categories": [
+    "evidence"
+  ],
+  "required_trigger_query_shapes": [
+    "direct",
+    "typo",
+    "indirect-intent"
+  ],
+  "required_trigger_case_types": [
+    "positive",
+    "near-miss",
+    "unsafe-request"
+  ],
+  "comparison_modes": [
+    "with-skill",
+    "baseline",
+    "previous-version"
+  ]
+}

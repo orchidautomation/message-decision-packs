@@ -875,7 +875,7 @@ input_contracts:
   - clay.audiences.self_serve_enterprise_expansion
 jobs:
 - id: prospect-fit-or-brief
-  skill_id: mdp-gtm-brief
+  skill_id: mdp-pack-apply
   label: Prospect row to fit decision or brief
   description: Normalize supplied prospect context and check fit against reviewed Synthetic Expansion Product evidence.
   required_primitives:
@@ -892,7 +892,7 @@ jobs:
   decision_input_contracts:
   - clay.audiences.self_serve_enterprise_expansion
 - id: outbound-copy-brief
-  skill_id: mdp-gtm-brief
+  skill_id: mdp-pack-apply
   label: Outbound copy brief
   description: Produce grounded Synthetic Expansion Product copy guidance only after fit, proof, and boundaries are supported.
   required_primitives:
@@ -907,7 +907,7 @@ jobs:
   input_contracts:
   - prospect
 - id: outbound-copy-review
-  skill_id: mdp-gtm-brief
+  skill_id: mdp-pack-apply
   label: Supplied outbound copy review
   description: Review supplied copy against approved Synthetic Expansion Product claims, proof, boundaries, and output rules.
   required_primitives:

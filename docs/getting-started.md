@@ -44,13 +44,18 @@ curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
 
 The installer fetches the latest GitHub Release. `--cli` installs only the `mdp` binary for your platform. `--agents` installs the CLI once, then installs Pluxx-generated bundles for supported agent hosts. Single-host flags are also available: `--codex`, `--cursor`, `--claude-code`, and `--opencode`.
 
-MDP `0.1.106` also ships a separate Agent Plugins v1 skills package. Set
+MDP `0.1.107` also ships a separate Agent Plugins v1 skills package. Set
 `MDP_AGENT_PLUGINS_INSTALL_DIR` to an explicit absolute client-managed
 destination and pass `--agent-plugins`. The installer refuses native-tree
 overlaps and unknown nonempty destinations. There is no guessed generic Codex
 import path. Cursor's documented local path can be used only in portable-only
 mode, not together with `--agents` or `--cursor`. See
 [Distribution](distribution.md) for the exact boundary and evidence matrix.
+
+In `0.1.107`, `mdp-pack-apply` replaces the former `mdp-gtm-brief` and
+`mdp-proposal-review` discovery entries. Rediscover the installed skills after
+upgrade, then resolve an exact job with `mdp --json skills --dir PACK_ROOT
+--job JOB_ID`; the removed names are not compatibility aliases.
 
 ## Verify
 

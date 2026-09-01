@@ -9175,16 +9175,16 @@ expect_load_order_contains:
             "  id: ''\n  unknown_profile_field: ignored\n  label: GTM Messaging",
         );
         raw = raw.replace(
-            "- id: prospect-fit-or-brief\n  skill_id: mdp-gtm-brief",
+            "- id: prospect-fit-or-brief\n  skill_id: mdp-pack-apply",
             "- id: prospect-fit-or-brief\n  skill_id: ''",
         );
         raw = raw.replace(
-            "- id: outbound-copy-brief\n  skill_id: mdp-gtm-brief",
+            "- id: outbound-copy-brief\n  skill_id: mdp-pack-apply",
             "- id: outbound-copy-brief\n  skill_id: unknown-skill",
         );
         raw = raw.replace(
-            "- id: outbound-copy-review\n  skill_id: mdp-gtm-brief",
-            "- id: outbound-copy-review\n  skill_id: mdp-proposal-review",
+            "- id: outbound-copy-review\n  skill_id: mdp-pack-apply",
+            "- id: outbound-copy-review\n  skill_id: mdp-pack-review",
         );
         raw = raw.replace(
             "profile_eval:",

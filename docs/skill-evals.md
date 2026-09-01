@@ -3,7 +3,7 @@
 MDP has two separate eval surfaces:
 
 - Pack evals under `.mdp/evals/` exercise CLI and pack behavior.
-- The catalog corpus under `plugin/skill-evals/` evaluates the five public skill boundaries, modes, safety contracts, and CLI eligibility.
+- The catalog corpus under `plugin/skill-evals/` evaluates the four public skill boundaries, modes, safety contracts, and CLI eligibility.
 
 Skill evals are verification resources, not runtime instructions or CLI route authority. The shared corpus is shipped at the bundle root so an installed artifact can be checked without duplicating fixture bodies inside every skill directory.
 
@@ -18,7 +18,7 @@ plugin/skill-evals/
 plugin/skills/<skill-id>/evals/index.json  # exact ownership reference for that skill
 ```
 
-Each of the five public skills owns one index. Indexes reference the shared
+Each of the four public skills owns one index. Indexes reference the shared
 `skill-evals/` corpus by case ID; they do not copy prompts or expected outputs.
 The indexes are a complete, disjoint partition of owned trigger and output
 cases. Null routes remain corpus-level cases and are intentionally not assigned
@@ -62,7 +62,7 @@ python3 scripts/skill-eval-harness.py \
 
 The gate requires:
 
-- exact equality among the coverage manifest and canonical five-skill source inventory;
+- exact equality among the coverage manifest and canonical four-skill source inventory;
 - no TODO scaffolds or missing descriptions;
 - complete train/validation trigger and mode coverage;
 - null-route and GTM/proposal profile-crossing cases;

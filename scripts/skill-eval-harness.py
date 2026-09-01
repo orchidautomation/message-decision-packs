@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate MDP's five-skill catalog, eval corpus, and CLI eligibility contract."""
+"""Validate MDP's four-skill catalog, eval corpus, and CLI eligibility contract."""
 
 from __future__ import annotations
 
@@ -85,15 +85,15 @@ PACK_PROFILES = {"none", "gtm", "proposal", "invalid"}
 SHARED_SKILLS = ["mdp", "mdp-pack-builder", "mdp-pack-review"]
 PROFILE_JOBS = {
     "gtm": {
-        "prospect-fit-or-brief": "mdp-gtm-brief",
-        "outbound-copy-brief": "mdp-gtm-brief",
-        "outbound-copy-review": "mdp-gtm-brief",
+        "prospect-fit-or-brief": "mdp-pack-apply",
+        "outbound-copy-brief": "mdp-pack-apply",
+        "outbound-copy-review": "mdp-pack-apply",
     },
     "proposal": {
-        "bid-no-bid-review": "mdp-proposal-review",
-        "compliance-review": "mdp-proposal-review",
-        "proof-review": "mdp-proposal-review",
-        "red-team-review": "mdp-proposal-review",
+        "bid-no-bid-review": "mdp-pack-apply",
+        "compliance-review": "mdp-pack-apply",
+        "proof-review": "mdp-pack-apply",
+        "red-team-review": "mdp-pack-apply",
     },
 }
 

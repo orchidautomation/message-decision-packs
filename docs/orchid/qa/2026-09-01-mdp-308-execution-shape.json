@@ -1,0 +1,59 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "codex/mdp-308-profile-neutral-skills",
+  "sourceCommit": "e7f8064beef5e37262e20bc64d1865f5faa23f4a",
+  "plan": {
+    "path": "docs/orchid/plans/2026-09-01-mdp-308-profile-neutral-agent-skills.md",
+    "sha256": "d37e8c9e049664e325ef4c03cfc14363a2a6f8bcd536e2a538085431f72d9220",
+    "sourceRef": "codex/mdp-308-profile-neutral-skills",
+    "sourceCommit": "e7f8064beef5e37262e20bc64d1865f5faa23f4a"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "sol-implementation-exception",
+  "delivery": {
+    "shape": "cumulative-pr",
+    "sourceRef": "codex/mdp-308-profile-neutral-skills",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    "docs/orchid/plans"
+  ],
+  "lunaLanes": [],
+  "exceptionReason": "unsafe-delegation",
+  "exceptionPaths": [
+    ".github/workflows/ci.yml",
+    "assets/templates",
+    "cli",
+    "docs/agent-hook-guidance.md",
+    "docs/decisions",
+    "docs/distribution.md",
+    "docs/getting-started.md",
+    "docs/job-prompt-contracts.md",
+    "docs/pluxx-distribution-evaluation.md",
+    "docs/product-foundations.md",
+    "docs/proposal-runner.md",
+    "docs/skill-evals.md",
+    "docs/skill-progressive-disclosure.md",
+    "docs/what-this-repo-is.md",
+    "examples",
+    "llms.txt",
+    "llms-full.txt",
+    "plugin",
+    "pluxx.config.ts",
+    "README.md",
+    "scripts"
+  ],
+  "exceptionJustification": "Brandon explicitly prohibited Orchid Relay and hosted-agent delegation for this project after provider issues. Direct implementation stayed isolated in the issue-bound worktree and followed the committed plan; the CI inventory line is an affected packaging assertion.",
+  "validation": [
+    "cargo test --manifest-path cli/Cargo.toml: passed (856 unit tests plus integration suites)",
+    "skill contract, eval, and packaging suites: passed",
+    "Pluxx native and Agent Plugins skill inventory: exactly four",
+    "installer and route-budget installed parity: passed before the known MCP lifecycle test-process hang",
+    "MCP source inventory unchanged at four tools"
+  ],
+  "verdict": "valid",
+  "observedAt": "2026-09-01T08:00:00Z"
+}

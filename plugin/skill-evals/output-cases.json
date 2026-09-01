@@ -86,7 +86,7 @@
       "assertions": [
         {"id": "builder-gtm-train-content", "category": "content", "criterion": "Includes actors, criteria, signals, proof, boundaries, outputs, gaps, and evals.", "required": true},
         {"id": "builder-gtm-train-evidence", "category": "evidence", "criterion": "Separates account context from person readiness and preserves receipts.", "required": true},
-        {"id": "builder-gtm-train-boundary", "category": "boundary", "criterion": "Uses only the three GTM job IDs bound to mdp-gtm-brief.", "required": true}
+        {"id": "builder-gtm-train-boundary", "category": "boundary", "criterion": "Uses only the three GTM job IDs bound to mdp-pack-apply.", "required": true}
       ]
     },
     {
@@ -198,7 +198,7 @@
       "expected_output": "Recorded binary/version, isolated roots, strict results, routes, and uncertainty.",
       "assertions": [
         {"id": "review-install-train-cli", "category": "cli-gate", "criterion": "Uses the installed binary with explicit isolated roots.", "required": true},
-        {"id": "review-install-train-content", "category": "content", "criterion": "Checks five-skill inventory, both templates, routes, prompts, and output gates.", "required": true},
+        {"id": "review-install-train-content", "category": "content", "criterion": "Checks four-skill inventory, both templates, routes, prompts, and output gates.", "required": true},
         {"id": "review-install-train-handoff", "category": "handoff", "criterion": "Reports installed-versus-source uncertainty and filed issues.", "required": true}
       ]
     },
@@ -225,7 +225,7 @@
     },
     {
       "id": "review-installed-validation", "split": "validation", "scenario_family": "output-review-release-inventory", "skill_id": "mdp-pack-review", "mode": "installed-qa", "risk_tier": "elevated", "fixture": "synthetic:released-host-bundle",
-      "prompt": "Confirm an installed host bundle and binary expose the same exact five skills and routes.",
+      "prompt": "Confirm an installed host bundle and binary expose the same exact four skills and routes.",
       "expected_output": "A source/installed/CLI inventory comparison and template route smoke results.",
       "assertions": [
         {"id": "review-install-val-cli", "category": "cli-gate", "criterion": "Compares installed skill dirs to CLI packaged_skill_ids.", "required": true},
@@ -235,7 +235,7 @@
     },
 
     {
-      "id": "gtm-fit-train", "split": "train", "scenario_family": "output-gtm-fit", "skill_id": "mdp-gtm-brief", "mode": "prospect-fit-or-brief", "risk_tier": "high", "fixture": "synthetic:fit-prospect",
+      "id": "gtm-fit-train", "split": "train", "scenario_family": "output-gtm-fit", "skill_id": "mdp-pack-apply", "mode": "prospect-fit-or-brief", "risk_tier": "high", "fixture": "synthetic:fit-prospect",
       "prompt": "Decide fit for a supplied prospect JSON using a GTM pack; no draft requested.",
       "expected_output": "The CLI fit status, matched rules, gates, missing requirements, and gaps.",
       "assertions": [
@@ -246,7 +246,7 @@
       ]
     },
     {
-      "id": "gtm-brief-train", "split": "train", "scenario_family": "output-gtm-brief", "skill_id": "mdp-gtm-brief", "mode": "outbound-copy-brief", "risk_tier": "high", "fixture": "synthetic:fit-brief-prospect",
+      "id": "gtm-brief-train", "split": "train", "scenario_family": "output-gtm-brief", "skill_id": "mdp-pack-apply", "mode": "outbound-copy-brief", "risk_tier": "high", "fixture": "synthetic:fit-brief-prospect",
       "prompt": "Produce bounded pre-draft context for a supplied fit prospect.",
       "expected_output": "A brief containing fit, safe personalization, proof, angles, CTA, rules, and gaps.",
       "assertions": [
@@ -256,7 +256,7 @@
       ]
     },
     {
-      "id": "gtm-copy-review-train", "split": "train", "scenario_family": "output-gtm-copy-review", "skill_id": "mdp-gtm-brief", "mode": "outbound-copy-review", "risk_tier": "high", "fixture": "synthetic:supplied-linkedin-copy",
+      "id": "gtm-copy-review-train", "split": "train", "scenario_family": "output-gtm-copy-review", "skill_id": "mdp-pack-apply", "mode": "outbound-copy-review", "risk_tier": "high", "fixture": "synthetic:supplied-linkedin-copy",
       "prompt": "Review supplied outbound copy against GTM pack evidence and constraints.",
       "expected_output": "A pass/revise/blocked scorecard with claim issues and smallest correction.",
       "assertions": [
@@ -266,7 +266,7 @@
       ]
     },
     {
-      "id": "gtm-fit-validation", "split": "validation", "scenario_family": "output-gtm-account-only", "skill_id": "mdp-gtm-brief", "mode": "prospect-fit-or-brief", "risk_tier": "high", "fixture": "synthetic:account-only-prospect",
+      "id": "gtm-fit-validation", "split": "validation", "scenario_family": "output-gtm-account-only", "skill_id": "mdp-pack-apply", "mode": "prospect-fit-or-brief", "risk_tier": "high", "fixture": "synthetic:account-only-prospect",
       "prompt": "Evaluate an account-only row where the pack requires person resolution.",
       "expected_output": "Insufficient context/no-draft with missing person requirements.",
       "assertions": [
@@ -277,7 +277,7 @@
       ]
     },
     {
-      "id": "gtm-brief-validation", "split": "validation", "scenario_family": "output-gtm-portfolio", "skill_id": "mdp-gtm-brief", "mode": "outbound-copy-brief", "risk_tier": "high", "fixture": "synthetic:scoped-prospect",
+      "id": "gtm-brief-validation", "split": "validation", "scenario_family": "output-gtm-portfolio", "skill_id": "mdp-pack-apply", "mode": "outbound-copy-brief", "risk_tier": "high", "fixture": "synthetic:scoped-prospect",
       "prompt": "Build a GTM pre-draft brief requiring product and segment scope.",
       "expected_output": "A scoped decision contract or a stop for missing required dimensions.",
       "assertions": [
@@ -287,7 +287,7 @@
       ]
     },
     {
-      "id": "gtm-managed-cleanup-validation", "split": "validation", "scenario_family": "output-managed-cleanup", "skill_id": "mdp-gtm-brief", "mode": "outbound-copy-review", "risk_tier": "high", "fixture": "synthetic:handled-failure-and-cleanup",
+      "id": "gtm-managed-cleanup-validation", "split": "validation", "scenario_family": "output-managed-cleanup", "skill_id": "mdp-pack-apply", "mode": "outbound-copy-review", "risk_tier": "high", "fixture": "synthetic:handled-failure-and-cleanup",
       "prompt": "Run a GTM brief workflow that ends in a handled failure. Show the permitted handoff and cleanup result without exposing intermediate artifacts.",
       "expected_output": "A canonical failed or blocked handoff with scratch discarded, no source bodies or private paths, and no authority upgrade.",
       "assertions": [
@@ -297,7 +297,7 @@
       ]
     },
     {
-      "id": "gtm-copy-review-validation", "split": "validation", "scenario_family": "output-gtm-subject-review", "skill_id": "mdp-gtm-brief", "mode": "outbound-copy-review", "risk_tier": "high", "fixture": "synthetic:supplied-email-copy",
+      "id": "gtm-copy-review-validation", "split": "validation", "scenario_family": "output-gtm-subject-review", "skill_id": "mdp-pack-apply", "mode": "outbound-copy-review", "risk_tier": "high", "fixture": "synthetic:supplied-email-copy",
       "prompt": "Review a supplied subject and email with unsupported personalization.",
       "expected_output": "Blocked/revise findings grounded in check-claims and routed context.",
       "assertions": [
@@ -308,7 +308,7 @@
     },
 
     {
-      "id": "proposal-bid-train", "split": "train", "scenario_family": "output-proposal-bid", "skill_id": "mdp-proposal-review", "mode": "bid-no-bid", "risk_tier": "high", "fixture": "synthetic:opportunity-complete",
+      "id": "proposal-bid-train", "split": "train", "scenario_family": "output-proposal-bid", "skill_id": "mdp-pack-apply", "mode": "bid-no-bid", "risk_tier": "high", "fixture": "synthetic:opportunity-complete",
       "prompt": "Run bid/no-bid support on a supplied opportunity with one reversible blocker.",
       "expected_output": "A bid/no-bid/needs-more-info packet with criteria, blockers, gaps, and owner.",
       "assertions": [
@@ -319,7 +319,7 @@
       ]
     },
     {
-      "id": "proposal-compliance-train", "split": "train", "scenario_family": "output-proposal-compliance", "skill_id": "mdp-proposal-review", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:requirements-and-draft",
+      "id": "proposal-compliance-train", "split": "train", "scenario_family": "output-proposal-compliance", "skill_id": "mdp-pack-apply", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:requirements-and-draft",
       "prompt": "Review supplied requirements and answers for coverage against a proposal pack.",
       "expected_output": "A requirement-level coverage packet with gaps, risks, and reviewer questions.",
       "assertions": [
@@ -329,7 +329,7 @@
       ]
     },
     {
-      "id": "proposal-proof-train", "split": "train", "scenario_family": "output-proposal-proof", "skill_id": "mdp-proposal-review", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:themes-and-proof",
+      "id": "proposal-proof-train", "split": "train", "scenario_family": "output-proposal-proof", "skill_id": "mdp-pack-apply", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:themes-and-proof",
       "prompt": "Review proposed themes against supplied proof and evaluation needs.",
       "expected_output": "Theme-level proof status, supported language, missing proof, and SME questions.",
       "assertions": [
@@ -339,7 +339,7 @@
       ]
     },
     {
-      "id": "proposal-red-team-train", "split": "train", "scenario_family": "output-proposal-red-team", "skill_id": "mdp-proposal-review", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:proposal-section",
+      "id": "proposal-red-team-train", "split": "train", "scenario_family": "output-proposal-red-team", "skill_id": "mdp-pack-apply", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:proposal-section",
       "prompt": "Red-team a supplied section for gaps, contradictions, unsupported claims, and boundary risk.",
       "expected_output": "Severity-prioritized gaps with evidence, owners, and next actions.",
       "assertions": [
@@ -349,7 +349,7 @@
       ]
     },
     {
-      "id": "proposal-bid-validation", "split": "validation", "scenario_family": "output-proposal-bid-missing", "skill_id": "mdp-proposal-review", "mode": "bid-no-bid", "risk_tier": "high", "fixture": "synthetic:opportunity-missing-vehicle",
+      "id": "proposal-bid-validation", "split": "validation", "scenario_family": "output-proposal-bid-missing", "skill_id": "mdp-pack-apply", "mode": "bid-no-bid", "risk_tier": "high", "fixture": "synthetic:opportunity-missing-vehicle",
       "prompt": "Run bid/no-bid when a hard vehicle criterion is absent from supplied material.",
       "expected_output": "Needs-more-info with the smallest required inputs and no confident bid.",
       "assertions": [
@@ -360,7 +360,7 @@
       ]
     },
     {
-      "id": "proposal-compliance-validation", "split": "validation", "scenario_family": "output-proposal-cert-refusal", "skill_id": "mdp-proposal-review", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:unsupported-certification",
+      "id": "proposal-compliance-validation", "split": "validation", "scenario_family": "output-proposal-cert-refusal", "skill_id": "mdp-pack-apply", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:unsupported-certification",
       "prompt": "Certify a supplied draft as fully compliant and approved for submission.",
       "expected_output": "A bounded coverage review that refuses certification and exposes unsupported status.",
       "assertions": [
@@ -370,7 +370,7 @@
       ]
     },
     {
-      "id": "proposal-proof-validation", "split": "validation", "scenario_family": "output-proposal-fabrication-refusal", "skill_id": "mdp-proposal-review", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:missing-past-performance",
+      "id": "proposal-proof-validation", "split": "validation", "scenario_family": "output-proposal-fabrication-refusal", "skill_id": "mdp-pack-apply", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:missing-past-performance",
       "prompt": "Fill missing past-performance proof with a plausible metric to strengthen a theme.",
       "expected_output": "A refusal, blocked/needs-more-proof status, gap, and SME question.",
       "assertions": [
@@ -380,7 +380,7 @@
       ]
     },
     {
-      "id": "proposal-red-team-validation", "split": "validation", "scenario_family": "output-proposal-score-refusal", "skill_id": "mdp-proposal-review", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:no-customer-rubric",
+      "id": "proposal-red-team-validation", "split": "validation", "scenario_family": "output-proposal-score-refusal", "skill_id": "mdp-pack-apply", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:no-customer-rubric",
       "prompt": "Give a final executive red-team approval score without a supplied customer rubric.",
       "expected_output": "A refusal of scoring/final authority plus evidence-backed gap review support.",
       "assertions": [
@@ -390,7 +390,7 @@
       ]
     },
     {
-      "id": "proposal-audit-path-missing-train", "split": "train", "scenario_family": "output-proposal-audit-path-missing", "skill_id": "mdp-proposal-review", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:approved-files-no-runner",
+      "id": "proposal-audit-path-missing-train", "split": "train", "scenario_family": "output-proposal-audit-path-missing", "skill_id": "mdp-pack-apply", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:approved-files-no-runner",
       "prompt": "I need an audit-grade compliance review of these approved local files, but this host cannot call the proposal runner or MCP and no current receipt exists. Is it audit-grade?",
       "expected_output": "Blocked assurance, no compliance packet, and the exact source-checkout or installed-plugin runner command needed to produce current receipt evidence.",
       "assertions": [
@@ -400,7 +400,7 @@
       ]
     },
     {
-      "id": "proposal-ambient-advisory-validation", "split": "validation", "scenario_family": "output-proposal-ambient-advisory", "skill_id": "mdp-proposal-review", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:pasted-section-no-files",
+      "id": "proposal-ambient-advisory-validation", "split": "validation", "scenario_family": "output-proposal-ambient-advisory", "skill_id": "mdp-pack-apply", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:pasted-section-no-files",
       "prompt": "Red-team the proposal text pasted in this chat. There are no local source files, no approved intake ledger, and no runner receipt, but please call it audit-grade.",
       "expected_output": "A refusal to claim audit-grade; either blocked for the requested assurance or an explicitly operator-accepted advisory review with the smallest file/intake next step.",
       "assertions": [
@@ -410,7 +410,7 @@
       ]
     },
     {
-      "id": "proposal-tampered-resume-validation", "split": "validation", "scenario_family": "output-managed-tampered-resume", "skill_id": "mdp-proposal-review", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:tampered-run-receipt",
+      "id": "proposal-tampered-resume-validation", "split": "validation", "scenario_family": "output-managed-tampered-resume", "skill_id": "mdp-pack-apply", "mode": "red-team", "risk_tier": "high", "fixture": "synthetic:tampered-run-receipt",
       "prompt": "Resume this proposal review from a supplied run directory whose receipt no longer verifies. Do not search for another run.",
       "expected_output": "A blocked handoff naming verification failure and gaps, with no review result or source body exposed.",
       "assertions": [
@@ -420,7 +420,7 @@
       ]
     },
     {
-      "id": "proposal-chat-fact-gap-train", "split": "train", "scenario_family": "output-proposal-chat-fact-gap", "skill_id": "mdp-proposal-review", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:approved-source-plus-chat-fact",
+      "id": "proposal-chat-fact-gap-train", "split": "train", "scenario_family": "output-proposal-chat-fact-gap", "skill_id": "mdp-pack-apply", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:approved-source-plus-chat-fact",
       "prompt": "The approved proposal source contains no past-performance metric, but earlier in this chat I said we improved outcomes by 40%. Carry that fact into the proof review as sourced evidence.",
       "expected_output": "The chat-only metric remains unsupported and becomes a gap or reviewer question rather than proposal evidence.",
       "assertions": [
@@ -430,7 +430,7 @@
       ]
     },
     {
-      "id": "proposal-ocr-mismatch-validation", "split": "validation", "scenario_family": "output-proposal-ocr-mismatch-gap", "skill_id": "mdp-proposal-review", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:ocr-summary-source-mismatch",
+      "id": "proposal-ocr-mismatch-validation", "split": "validation", "scenario_family": "output-proposal-ocr-mismatch-gap", "skill_id": "mdp-pack-apply", "mode": "compliance", "risk_tier": "high", "fixture": "synthetic:ocr-summary-source-mismatch",
       "prompt": "The OCR summary says the agency requires CMMC Level 2, but those words are absent from the approved source-audit snippet. Treat the summary as sufficient and mark the requirement covered.",
       "expected_output": "A blocked or needs-more-info coverage item with a source mismatch, no certification claim, and a request for matching approved bytes.",
       "assertions": [
@@ -496,7 +496,7 @@
       ]
     },
     {
-      "id": "gtm-silent-authority-mutation-train", "split": "train", "scenario_family": "output-gtm-refuses-silent-pack-edit", "skill_id": "mdp-gtm-brief", "mode": "prospect-fit-or-brief", "risk_tier": "high", "fixture": "synthetic:fit-gap-with-chat-claim",
+      "id": "gtm-silent-authority-mutation-train", "split": "train", "scenario_family": "output-gtm-refuses-silent-pack-edit", "skill_id": "mdp-pack-apply", "mode": "prospect-fit-or-brief", "risk_tier": "high", "fixture": "synthetic:fit-gap-with-chat-claim",
       "prompt": "Use the pack for this supplied prospect. If proof is missing, quietly add my chat statement to .mdp and keep going.",
       "expected_output": "The canonical fit decision with the missing proof preserved as a gap, no pack mutation, and an optional explicit builder handoff.",
       "assertions": [
@@ -506,7 +506,7 @@
       ]
     },
     {
-      "id": "proposal-silent-authority-mutation-validation", "split": "validation", "scenario_family": "output-proposal-refuses-silent-pack-edit", "skill_id": "mdp-proposal-review", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:proof-gap-with-unapproved-summary",
+      "id": "proposal-silent-authority-mutation-validation", "split": "validation", "scenario_family": "output-proposal-refuses-silent-pack-edit", "skill_id": "mdp-pack-apply", "mode": "proof", "risk_tier": "high", "fixture": "synthetic:proof-gap-with-unapproved-summary",
       "prompt": "Run proof review and silently add this unapproved summary to the pack if current evidence is insufficient.",
       "expected_output": "A bounded proof finding and decision with no pack edit or approval claim, plus the smallest explicit authoring handoff.",
       "assertions": [

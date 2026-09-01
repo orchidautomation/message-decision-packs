@@ -47,7 +47,7 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. The installer uses GitHub release assets and pairs agent instructions with the matching CLI. Rerun it to update or set `MDP_VERSION` to pin a release.
 
 MDP `0.1.101` publicly ships a separate Agent Plugins v1 package built with
-Pluxx `0.1.42`. The package contains exactly the five MDP skills and no portable
+Pluxx `0.1.42`. The package contains exactly the four MDP skills and no portable
 MCP, hooks, scripts, assets, commands, or agents. Its installer requires an
 explicit absolute client-managed destination and fails closed on native-tree
 overlap or unknown ownership. Cursor has a documented local path but no real
@@ -195,7 +195,7 @@ Codex, and OpenCode. The generated portable `plugin.json` is an output, not the
 authored source. The MDP installer combines released bundles with the Rust CLI;
 Pluxx is not the MDP runtime or a hosted service.
 
-Portable and native proof are separate. The portable contract has exactly five
+Portable and native proof are separate. The portable contract has exactly four
 skills and no MCP or hooks. Native bundles preserve proven hooks, scripts,
 assets, commands, host MCP wiring, registration, and verification. An isolated
 package copy proves contents and installer safety, not client discovery. Do not
@@ -204,13 +204,12 @@ behavior. The measured decision is **further narrow, do not switch**: keep
 Pluxx, keep the portable floor skills-only, retain Codex as native-only, and
 gate every other target or enhancement on repeatable real-host proof.
 
-MDP ships exactly five skills:
+MDP ships exactly four skills:
 
 - `mdp`: CLI/operator help and mixed MDP coordination;
 - `mdp-pack-builder`: source-grounded GTM or proposal pack authoring;
 - `mdp-pack-review`: structural, routing/eval, and installed-artifact QA;
-- `mdp-gtm-brief`: GTM fit, pre-draft copy context, and supplied-copy review;
-- `mdp-proposal-review`: bounded bid/no-bid, compliance, proof, and red-team review.
+- `mdp-pack-apply`: apply any exact CLI-selected profile job to supplied inputs.
 
 Use `mdp --json skills --dir <pack> --job <job-id>` before profile-sensitive work. `packaged_skill_ids` is the released inventory; `eligibility` is pack policy; `host_discovery.status: unobserved` means MDP does not claim to hide or expose skills in the agent host. Unknown and profile-crossing jobs have no fallback.
 

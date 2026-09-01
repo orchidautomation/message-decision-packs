@@ -101,7 +101,7 @@ paths. A v0 `audit-grade` label does not silently become v1 assurance. Demo,
 fixture, mock, or synthetic evidence may only be used for walkthroughs/tests.
 
 If the user asks whether proposal work is audit-grade, route the answer to
-`$mdp-proposal-review` even when the request sounds like general MDP help. That
+`$mdp-pack-apply` even when the request sounds like general MDP help. That
 skill owns the source/runner/MCP decision tree. Do not answer from tool
 availability or confidence: without a current audit-grade receipt, report
 `advisory` or `blocked` and hand off the exact missing evidence step.
@@ -285,8 +285,8 @@ instructions implied by this skill.
 
 Closed v1 pairs:
 
-- `mdp-gtm-brief`: `prospect-fit-or-brief`, `outbound-copy-brief`, `outbound-copy-review`
-- `mdp-proposal-review`: `bid-no-bid-review`, `compliance-review`, `proof-review`, `red-team-review`
+- `mdp-pack-apply`: `prospect-fit-or-brief`, `outbound-copy-brief`, `outbound-copy-review`
+- `mdp-pack-apply`: `bid-no-bid-review`, `compliance-review`, `proof-review`, `red-team-review`
 
 ## Core Operator Loop
 

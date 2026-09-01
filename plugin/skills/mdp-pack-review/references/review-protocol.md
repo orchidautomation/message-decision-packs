@@ -244,7 +244,7 @@ applicability does not bypass scope, policy, caps, or budgets.
 - For new native QA, exercise one selected declared model step through `mdp run` and the profile-neutral `scripts/mdp-run-mcp-server.mjs` path. Confirm the MCP accepts paths only, can inherit `OPENAI_API_KEY` and `MDP_ALLOW_NATIVE_MODEL_CALLS` only from server startup for a parsed generative request, and adds no assurance. Use synthetic key-free mock fixtures; do not claim real provider verification. Treat the proposal runner/MCP, `mdp run-receipt`, and `scripts/mdp-native-normalize-openai.mjs` as v0 compatibility surfaces with their existing audit rules.
 - When QA asks whether a live proposal review is audit-grade, do not answer from
   pack validity or MCP availability. Route the live evidence decision to
-  `$mdp-proposal-review`; this skill reports whether the pack and its fixtures
+  `$mdp-pack-apply`; this skill reports whether the pack and its fixtures
   can support the path, not whether an invocation crossed it. For MCP fixture
   QA, assert the strict `mode`, `decision`, `audit_grade_eligible`,
   `runner_assurance`, timeout, and exit fields rather than parsing response
