@@ -105,12 +105,17 @@ if (existsSync(outputDir + '.pause-before-read')) {
   }
 }
 const request = JSON.parse(readFileSync(requestPath, 'utf8'))
+const sourcePaths = [
+  ...request.inputs?.map((input) => typeof input === 'string' ? input.slice(input.indexOf('=') + 1) : input.source_path) ?? [],
+  ...(request.prompt?.source_path ? [request.prompt.source_path] : []),
+]
 mkdirSync(outputDir)
 writeFileSync(outputDir + '/run-bundle.json', '{}')
 writeFileSync(outputDir + '/run-receipt.json', JSON.stringify({ valid: true }))
 writeFileSync(outputDir + '.invocation.json', JSON.stringify({
   args,
   request,
+  source_contents: sourcePaths.map((path) => readFileSync(path, 'utf8')),
   secret_seen: Boolean(process.env.MDP_MCP_SECRET_MARKER),
   credential_canary_seen: [
     'test-key-must-not-be-printed',
@@ -1256,7 +1261,10 @@ sys.stdout.write(json.dumps({
     const requestBytes = readFileSync(profile.request)
     assert.equal(prepared[index].result.structuredContent.request_sha256, createHash('sha256').update(requestBytes).digest('hex'))
     const request = JSON.parse(requestBytes)
-    const sourceSha256s = request.inputs.map((input) => createHash('sha256').update(readFileSync(input.source_path)).digest('hex'))
+    const sourceSha256s = [
+      ...request.inputs.map((input) => input.source_path),
+      ...(request.prompt?.source_path ? [request.prompt.source_path] : []),
+    ].map((path) => createHash('sha256').update(readFileSync(path)).digest('hex'))
     const expiresAt = new Date(Date.now() + 60_000).toISOString()
     const consent = {
       contract: 'mdp.mcp-provider-consent.v1',
@@ -1674,6 +1682,89 @@ test('executes frozen request bytes when the public path is mutated or replaced 
     assert.notEqual(invocation.args[3], request)
     assert.equal(existsSync(invocation.args[3]), false)
   }
+})
+
+test('binds consent to private input and prompt bytes across post-consent source races', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-source-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const cli = fixtureCli(root)
+  const input = join(root, 'input.json')
+  const prompt = join(root, 'prompt.txt')
+  const request = join(root, 'request.json')
+  const output = join(root, 'run')
+  writeFileSync(input, 'input-before-consent')
+  writeFileSync(prompt, 'prompt-before-consent')
+  writeFileSync(request, JSON.stringify({
+    contract: 'mdp.run-request.v1',
+    execution_id: 'exec-fixture',
+    mode: 'generative',
+    inputs: [{ logical_name: 'source', source_path: input }],
+    prompt: { logical_name: 'prompt', source_path: prompt },
+  }))
+  const requestSha256 = exactFileSha256(request)
+  const sourceSha256s = [input, prompt].map(exactFileSha256)
+  consentFixture(root, 'source-race', { request_sha256: requestSha256, source_sha256s: sourceSha256s, nonce: 'source-race-nonce' })
+  consentFixture(root, 'source-race-mismatch', { request_sha256: requestSha256, source_sha256s: sourceSha256s.slice(0, 1), nonce: 'source-race-mismatch-nonce' })
+  const [mismatch] = await rpc(cli, [toolCall(1, 'mdp_run', {
+    request_path: request,
+    request_sha256: requestSha256,
+    output_dir: join(root, 'mismatch-run'),
+    consent_id: 'source-race-mismatch',
+  })], {
+    OPENAI_API_KEY: 'test-key-must-not-be-printed',
+    MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
+  })
+  assert.equal(mismatch.error.code, -32602)
+  assert.equal(existsSync(join(root, 'mismatch-run.invocation.json')), false)
+  writeFileSync(`${output}.pause-before-read`, '')
+
+  const pending = rpc(cli, [toolCall(1, 'mdp_run', {
+    request_path: request,
+    request_sha256: requestSha256,
+    output_dir: output,
+    consent_id: 'source-race',
+  })], {
+    OPENAI_API_KEY: 'test-key-must-not-be-printed',
+    MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
+  })
+  await waitForFile(`${output}.ready`)
+  writeFileSync(input, 'input-after-consent')
+  const replacement = join(root, 'replacement-prompt.txt')
+  writeFileSync(replacement, 'prompt-after-consent')
+  renameSync(replacement, prompt)
+  writeFileSync(`${output}.continue`, '')
+
+  const [reply] = await pending
+  assert.equal(reply.result.isError, false, JSON.stringify(reply))
+  const invocation = JSON.parse(readFileSync(`${output}.invocation.json`, 'utf8'))
+  assert.deepEqual(invocation.source_contents, ['input-before-consent', 'prompt-before-consent'])
+  assert.notEqual(invocation.request.inputs[0].source_path, input)
+  assert.notEqual(invocation.request.prompt.source_path, prompt)
+  assert.equal(existsSync(invocation.request.inputs[0].source_path), false)
+  assert.equal(existsSync(invocation.request.prompt.source_path), false)
+})
+
+test('fails closed and cleans private state when source materialization is unavailable or oversized', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-source-denial-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const cli = fixtureCli(root)
+  const missingRequest = join(root, 'missing-request.json')
+  const oversizedRequest = join(root, 'oversized-request.json')
+  const oversized = join(root, 'oversized-input.bin')
+  writeFileSync(missingRequest, JSON.stringify({ contract: 'mdp.run-request.v1', inputs: [{ source_path: join(root, 'missing.bin') }] }))
+  writeFileSync(oversized, 'x'.repeat(1_048_577))
+  writeFileSync(oversizedRequest, JSON.stringify({ contract: 'mdp.run-request.v1', inputs: [{ source_path: oversized }] }))
+
+  const replies = await rpc(cli, [
+    toolCall(1, 'mdp_run', withExactRequestDigest(missingRequest, { output_dir: join(root, 'missing-run') })),
+    toolCall(2, 'mdp_run', withExactRequestDigest(oversizedRequest, { output_dir: join(root, 'oversized-run') })),
+  ], { TMPDIR: root })
+
+  assert.equal(replyById(replies, 1).error.code, -32602)
+  assert.equal(replyById(replies, 2).error.code, -32602)
+  assert.equal(existsSync(join(root, 'missing-run.invocation.json')), false)
+  assert.equal(existsSync(join(root, 'oversized-run.invocation.json')), false)
+  assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('mdp-owned-run-mcp-freeze-')), [])
 })
 
 test('fails closed without returning CLI stderr, partial stdout, paths, or source bodies', async (t) => {
