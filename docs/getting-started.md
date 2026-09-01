@@ -44,7 +44,7 @@ curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
 
 The installer fetches the latest GitHub Release. `--cli` installs only the `mdp` binary for your platform. `--agents` installs the CLI once, then installs Pluxx-generated bundles for supported agent hosts. Single-host flags are also available: `--codex`, `--cursor`, `--claude-code`, and `--opencode`.
 
-MDP `0.1.104` also ships a separate Agent Plugins v1 skills package. Set
+MDP `0.1.105` also ships a separate Agent Plugins v1 skills package. Set
 `MDP_AGENT_PLUGINS_INSTALL_DIR` to an explicit absolute client-managed
 destination and pass `--agent-plugins`. The installer refuses native-tree
 overlaps and unknown nonempty destinations. There is no guessed generic Codex
