@@ -38,6 +38,7 @@ import {
   MCP_PROTOCOL_VERSION,
   createBoundedToolScheduler,
   mcpDiagnostic,
+  mcpRequestKey,
   safeMcpMessage,
   toolErrorDiagnostic,
   validateProtocolVersion,
@@ -255,6 +256,68 @@ const freezeRequestFile = (value) => {
   } finally {
     if (descriptor !== undefined) closeSync(descriptor)
   }
+}
+
+const withinDirectory = (root, candidate) => {
+  const path = relative(root, candidate)
+  return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !path.startsWith(sep))
+}
+
+const materializeRequestSources = (frozenRequest, policy, approvedPack = null) => {
+  const parsed = frozenRequest.parsed
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { path: frozenRequest.path, sourceSha256s: [] }
+  }
+
+  const rewritten = JSON.parse(JSON.stringify(parsed))
+  const frozenSources = []
+  let totalBytes = 0
+  const materialize = (sourcePath, leaf, role = 'input') => {
+    const source = policy.freeze(role, sourcePath, MAX_REQUEST_FILE_BYTES)
+    if (role === 'pack' && (!approvedPack || !withinDirectory(approvedPack.path, source.path))) {
+      throw Object.assign(new Error('prompt path is outside the active pack'), { code: 'mcp-path-denied' })
+    }
+    totalBytes += source.bytes.length
+    if (totalBytes > MAX_REQUEST_FILE_BYTES) {
+      throw Object.assign(new Error(`request sources exceed ${MAX_REQUEST_FILE_BYTES} bytes`), { code: 'mcp-file-denied' })
+    }
+    const snapshotPath = join(frozenRequest.privateDir, leaf)
+    writeFileSync(snapshotPath, source.bytes, { flag: 'wx', mode: 0o400 })
+    frozenSources.push(source)
+    return snapshotPath
+  }
+
+  if (Array.isArray(rewritten.inputs)) {
+    rewritten.inputs = rewritten.inputs.map((mapping, index) => {
+      if (typeof mapping === 'string') {
+        const separator = mapping.indexOf('=')
+        if (separator <= 0 || separator === mapping.length - 1) throw new Error('request inputs must declare source paths')
+        const snapshotPath = materialize(mapping.slice(separator + 1), `input-${index}.bin`)
+        return `${mapping.slice(0, separator)}=${snapshotPath}`
+      }
+      if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping) || typeof mapping.source_path !== 'string' || mapping.source_path.trim() === '') {
+        throw new Error('request inputs must declare source paths')
+      }
+      return { ...mapping, source_path: materialize(mapping.source_path, `input-${index}.bin`) }
+    })
+  }
+  if (rewritten.prompt !== null && rewritten.prompt !== undefined) {
+    if (!rewritten.prompt || typeof rewritten.prompt !== 'object' || Array.isArray(rewritten.prompt) || typeof rewritten.prompt.source_path !== 'string' || rewritten.prompt.source_path.trim() === '') {
+      throw new Error('request prompt must declare a source path')
+    }
+    let promptPath
+    try {
+      promptPath = materialize(rewritten.prompt.source_path, 'prompt.bin')
+    } catch (error) {
+      if (!approvedPack || error?.code !== 'mcp-path-denied') throw error
+      promptPath = materialize(rewritten.prompt.source_path, 'prompt.bin', 'pack')
+    }
+    rewritten.prompt = { ...rewritten.prompt, source_path: promptPath }
+  }
+
+  const path = join(frozenRequest.privateDir, 'materialized-request.json')
+  writeFileSync(path, JSON.stringify(rewritten), { flag: 'wx', mode: 0o400 })
+  return { path, sourceSha256s: frozenSources.map((source) => source.sha256) }
 }
 
 const canonicalExistingDir = (value, label) => {
@@ -784,18 +847,9 @@ const callRun = async (args, signal = null) => {
       ? policy.existing('pack', frozenRequest.packDir, 'directory')
       : null
     const providerCapable = frozenRequest.usesNativeModel && providerCapabilityAvailable()
-    const frozenInputs = Array.isArray(frozenRequest.parsed?.inputs)
-      ? frozenRequest.parsed.inputs.map((mapping) => {
-          const sourcePath = typeof mapping === 'string'
-            ? mapping.slice(mapping.indexOf('=') + 1)
-            : mapping && typeof mapping.source_path === 'string' ? mapping.source_path : null
-          if (!sourcePath || (typeof mapping === 'string' && mapping.indexOf('=') <= 0)) throw new Error('request inputs must declare source paths')
-          return policy.freeze('input', sourcePath)
-        })
-      : []
-    const finalCheckInputs = () => {
+    const materializedRequest = materializeRequestSources(frozenRequest, policy, approvedPack)
+    const finalCheckAuthority = () => {
       if (approvedPack) policy.finalCheck('pack', approvedPack.path, approvedPack, 'directory')
-      for (const input of frozenInputs) policy.finalCheck('input', input.path, input)
     }
     assertOutputOutsidePack(frozenRequest.packDir, outputRequest)
     const outputParent = policy.existing('output', dirname(resolve(outputRequest)), 'directory')
@@ -808,16 +862,16 @@ const callRun = async (args, signal = null) => {
         provider: 'openai',
         purpose: 'mdp.run',
         requestSha256: frozenRequest.sha256,
-        sourceSha256s: frozenInputs.map((input) => input.sha256),
+        sourceSha256s: materializedRequest.sourceSha256s,
         outputRoot: outputParent.root,
       })
     }
-    finalCheckInputs()
+    finalCheckAuthority()
     policy.finalCheck('output', outputParent.path, outputParent, 'directory')
     const parentDeadline = performance.now() + timeoutMs
     const preflightBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     const preflight = await invokeCli(
-      ['--json', 'run-preflight', '--request', frozenRequest.path, '--transport-timeout-ms', String(timeoutMs)],
+      ['--json', 'run-preflight', '--request', materializedRequest.path, '--transport-timeout-ms', String(timeoutMs)],
       outputParent.path,
       preflightBudget,
       null,
@@ -846,7 +900,7 @@ const callRun = async (args, signal = null) => {
     if (!validateDeadlinePlan(plan, timeoutMs, frozenRequest.executionId)) {
       return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'run-preflight-malformed' }, true)
     }
-    finalCheckInputs()
+    finalCheckAuthority()
     policy.finalCheck('output', outputParent.path, outputParent, 'directory')
     const outputReservation = policy.newOutput('output', outputRequest)
     let pinnedOutput
@@ -860,7 +914,7 @@ const callRun = async (args, signal = null) => {
     try {
       if (providerConsent) consumeValidatedProviderConsent(providerConsent)
       invocation = await invokeCli(
-        ['--json', '__secure-run', '--request', frozenRequest.path, '--output-leaf', basename(outputDir), '--display-output-dir', outputDir, '--dir-fd', '3', '--expected-dev', pinnedOutput.parentIdentity.dev.toString(), '--expected-ino', pinnedOutput.parentIdentity.ino.toString(), '--transport-timeout-ms', String(timeoutMs)],
+        ['--json', '__secure-run', '--request', materializedRequest.path, '--output-leaf', basename(outputDir), '--display-output-dir', outputDir, '--dir-fd', '3', '--expected-dev', pinnedOutput.parentIdentity.dev.toString(), '--expected-ino', pinnedOutput.parentIdentity.ino.toString(), '--transport-timeout-ms', String(timeoutMs)],
         pinnedOutput.parent,
         runBudget,
         {
@@ -1036,12 +1090,11 @@ const handleToolCall = async (params, signal = null) => {
 }
 
 const activeRequests = new Map()
-const pendingCancellations = new Set()
 
 const cancelActiveRequest = (requestId) => {
-  const controller = activeRequests.get(String(requestId))
+  const controller = activeRequests.get(mcpRequestKey(requestId))
   if (controller) controller.abort()
-  else if (toolScheduler?.isQueued(requestId)) pendingCancellations.add(String(requestId))
+  else toolScheduler?.cancelQueued(requestId)
 }
 
 let toolScheduler = null
@@ -1090,15 +1143,15 @@ const handleRequest = async (message) => {
       case 'tools/call': {
         if (notification) return null
         const controller = new AbortController()
-        activeRequests.set(String(message.id), controller)
-        if (pendingCancellations.delete(String(message.id))) controller.abort()
+        const requestKey = mcpRequestKey(message.id)
+        activeRequests.set(requestKey, controller)
         try {
           if (controller.signal.aborted) {
             return response(message.id, toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'cli-cancelled' }, true))
           }
           return response(message.id, await handleToolCall(message.params, controller.signal))
         } finally {
-          activeRequests.delete(String(message.id))
+          activeRequests.delete(requestKey)
         }
       }
       default:
@@ -1159,6 +1212,7 @@ toolScheduler = createBoundedToolScheduler({
     retryable: true,
     nextAction: 'Retry after an active tool call completes.',
   })),
+  cancelledResponse: (id) => response(id, toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'cli-cancelled' }, true)),
 })
 
 const dispatchRequest = (message) => {
