@@ -3846,6 +3846,19 @@ fn route_budget_query_schema() -> Value {
     })
 }
 
+fn route_budget_summary_query_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["matched_route_count"],
+        "additionalProperties": false,
+        "properties": {
+            "job_id": {"type": ["string", "null"], "minLength": 1},
+            "persona": {"type": ["string", "null"], "minLength": 1},
+            "matched_route_count": {"type": "integer", "minimum": 0}
+        }
+    })
+}
+
 fn route_budget_strict_schema() -> Value {
     json!({
         "type": "object",
@@ -4067,7 +4080,7 @@ fn route_budget_summary_schema() -> Value {
             "valid": {"type": "boolean"},
             "strict": route_budget_strict_schema(),
             "pack_id": {"type": "string", "minLength": 1},
-            "query": route_budget_query_schema(),
+            "query": route_budget_summary_query_schema(),
             "route_count": {"type": "integer", "minimum": 0},
             "route_status_counts": {"type": "object", "required": ["ready", "blocked", "unassessed"], "properties": {"ready": {"type": "integer", "minimum": 0}, "blocked": {"type": "integer", "minimum": 0}, "unassessed": {"type": "integer", "minimum": 0}}, "additionalProperties": false},
             "overflow_count": {"type": "integer", "minimum": 0},

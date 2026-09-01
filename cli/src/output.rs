@@ -1612,6 +1612,7 @@ mod tests {
             "valid": true,
             "strict": {"enabled": false, "warnings_fail": true, "warning_count": 0},
             "pack_id": "synthetic-pack",
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
             "route_count": 1,
             "overflow_count": 0,
             "route_card_cap_exclusion_count": 0,
@@ -1619,6 +1620,7 @@ mod tests {
             "unassessed_generation_count": 0,
             "routes": [{
                 "persona": "PMM",
+                "job_id": "outbound-copy-brief",
                 "job": "outbound-copy-brief",
                 "status": "ready",
                 "budget": {"max_entries": 8, "max_bytes": 4096, "actual_entries": 3, "actual_bytes": 1024},
@@ -1632,9 +1634,14 @@ mod tests {
                 "route_card_cap": {"status": "ready"}
             }]
         });
-        let summary = summarize("route-budget", &raw);
+        let summary = omit_null_object_fields(summarize("route-budget", &raw));
+        crate::commands::schemas::validate_route_budget_summary_output(&summary)
+            .expect("null-omitting route-budget summary should satisfy its schema");
 
         assert_eq!(summary["contract"], "mdp.route-budget-summary.v1");
+        assert_eq!(summary["query"]["matched_route_count"], 1);
+        assert!(summary["query"].get("job_id").is_none());
+        assert!(summary["query"].get("persona").is_none());
         assert_eq!(summary["route_status_counts"]["ready"], 1);
         assert!(summary.get("routes").is_none());
         assert!(!summary.to_string().contains("entry body"));
