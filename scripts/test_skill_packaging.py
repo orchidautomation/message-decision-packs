@@ -6,6 +6,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,7 +24,73 @@ SPEC.loader.exec_module(PACKAGING)
 
 class SkillPackagingMutationTests(unittest.TestCase):
     def expected_skills(self) -> list[str]:
-        return PACKAGING.skill_inventory(ROOT / "plugin/skills", [])
+        errors: list[str] = []
+        skills = PACKAGING.canonical_skill_inventory(
+            ROOT / "plugin/skill-inventory.json", errors
+        )
+        self.assertEqual(errors, [])
+        return skills
+
+    def run_validator(self, source: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/validate-skill-packaging.py"),
+                "--source",
+                str(source),
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_canonical_inventory_is_the_expected_four(self) -> None:
+        self.assertEqual(
+            self.expected_skills(),
+            ["mdp", "mdp-pack-apply", "mdp-pack-builder", "mdp-pack-review"],
+        )
+
+    def test_missing_source_fails_with_json_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-missing-source-") as temp:
+            result = self.run_validator(Path(temp) / "missing")
+        payload = json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["valid"])
+        self.assertEqual(len(payload["errors"]), 1)
+        self.assertIn("missing skill root", payload["errors"][0])
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_regular_file_source_fails_with_json_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-file-source-") as temp:
+            source = Path(temp) / "skills"
+            source.write_text("not a directory\n", encoding="utf-8")
+            result = self.run_validator(source)
+        payload = json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["valid"])
+        self.assertEqual(len(payload["errors"]), 1)
+        self.assertIn("missing skill root", payload["errors"][0])
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_unexpected_fifth_authored_skill_fails_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-fifth-skill-") as temp:
+            source = Path(temp) / "skills"
+            shutil.copytree(ROOT / "plugin/skills", source)
+            extra = source / "unexpected-skill"
+            extra.mkdir()
+            (extra / "SKILL.md").write_text(
+                "---\nname: unexpected-skill\ndescription: mutation fixture\n---\n",
+                encoding="utf-8",
+            )
+            result = self.run_validator(source)
+        payload = json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(payload["valid"])
+        self.assertTrue(
+            any("authored skill inventory drift" in error for error in payload["errors"])
+        )
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_source_eval_indexes_are_valid(self) -> None:
         errors: list[str] = []
@@ -114,7 +182,9 @@ class SkillPackagingMutationTests(unittest.TestCase):
 
     def test_shared_portable_references_match_canonical_bytes(self) -> None:
         errors: list[str] = []
-        PACKAGING.validate_shared_reference_parity(ROOT / "plugin/skills", errors)
+        PACKAGING.validate_shared_reference_parity(
+            ROOT / "plugin/skills", self.expected_skills(), errors
+        )
         self.assertEqual(errors, [])
 
     def test_shared_reference_drift_fails_packaging(self) -> None:
@@ -124,7 +194,9 @@ class SkillPackagingMutationTests(unittest.TestCase):
             projected = skills / "mdp-pack-apply/references/communication-contract.md"
             projected.write_text(projected.read_text() + "\ndrift\n")
             errors: list[str] = []
-            PACKAGING.validate_shared_reference_parity(skills, errors)
+            PACKAGING.validate_shared_reference_parity(
+                skills, self.expected_skills(), errors
+            )
         self.assertTrue(any("shared reference drift" in error for error in errors))
 
     def test_cross_skill_link_fails_portable_layout(self) -> None:
@@ -172,6 +244,37 @@ class SkillPackagingMutationTests(unittest.TestCase):
                 ROOT / "plugin/skills", dist, self.expected_skills(), errors
             )
         self.assertEqual(errors, [])
+
+    def test_agent_plugins_bundle_rejects_unexpected_fifth_skill(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-agent-plugins-fifth-") as temp:
+            dist = Path(temp) / "dist"
+            portable = dist / "agent-plugins"
+            shutil.copytree(ROOT / "plugin/skills", portable / "skills")
+            extra = portable / "skills/unexpected-skill"
+            extra.mkdir()
+            (extra / "SKILL.md").write_text(
+                "---\nname: unexpected-skill\ndescription: mutation fixture\n---\n",
+                encoding="utf-8",
+            )
+            (portable / "plugin.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                        "name": "message-decision-packs",
+                        "version": "0.1.107",
+                        "license": "Elastic-2.0",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            PACKAGING.validate_agent_plugins_bundle(
+                ROOT / "plugin/skills", dist, self.expected_skills(), errors
+            )
+        self.assertTrue(
+            any("agent-plugins skill inventory drift" in error for error in errors)
+        )
 
     def test_agent_plugins_bundle_rejects_native_payload_and_false_mcp(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-agent-plugins-") as temp:
