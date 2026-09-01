@@ -60,7 +60,10 @@ const MAX_PACK_FILES: usize = 10_000;
 const MAX_PACK_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_EXECUTION_ID_BYTES: usize = 128;
 const MAX_OUTPUT_LEAF_BYTES: usize = 120;
-const MAX_RECOVERY_CLAIM_BYTES: usize = 512;
+// Exact compact-JSON ceiling for a v2 claim with the accepted 128-byte
+// execution ID, 158-byte transaction leaf, maximum-width u32/u64 fields, and
+// its terminating newline. The boundary test below locks this to the record.
+const MAX_RECOVERY_CLAIM_BYTES: usize = 536;
 const MIN_RECOVERY_AGE_SECONDS: u64 = 300;
 const MAX_POLICY_INPUT_BYTES: u64 = 100 * 1024 * 1024;
 // Native requests also contain the prompt envelope and projected provider
@@ -559,6 +562,18 @@ struct RunRecoveryClaim {
     process_id: u32,
     transaction_dev: u64,
     transaction_ino: u64,
+}
+
+fn serialize_recovery_claim(claim: &RunRecoveryClaim) -> Result<Vec<u8>> {
+    let mut bytes = serde_json::to_vec(claim)?;
+    bytes.push(b'\n');
+    if bytes.len() > MAX_RECOVERY_CLAIM_BYTES {
+        return Err(run_failure(
+            RunFailureKind::RunnerFailed,
+            "output-claim-failed",
+        ));
+    }
+    Ok(bytes)
 }
 
 impl Drop for TransactionGuard {
@@ -1477,13 +1492,17 @@ where
         transaction_dev,
         transaction_ino,
     };
-    let mut claim_bytes = serde_json::to_vec(&claim_value)?;
-    claim_bytes.push(b'\n');
-    if claim_bytes.len() > MAX_RECOVERY_CLAIM_BYTES
-        || claim
-            .write_all(&claim_bytes)
-            .and_then(|_| claim.sync_all())
-            .is_err()
+    let claim_bytes = match serialize_recovery_claim(&claim_value) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            drop(claim);
+            return Err(error);
+        }
+    };
+    if claim
+        .write_all(&claim_bytes)
+        .and_then(|_| claim.sync_all())
+        .is_err()
     {
         drop(claim);
         return Err(run_failure(
@@ -5466,8 +5485,11 @@ fn unique_suffix() -> u128 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use super::read_recovery_claim;
     use super::{
-        RunDeadline, RunFailure, RunFailureKind, deterministic_proposal_pursuit,
+        MAX_EXECUTION_ID_BYTES, MAX_OUTPUT_LEAF_BYTES, MAX_RECOVERY_CLAIM_BYTES, RunDeadline,
+        RunFailure, RunFailureKind, RunRecoveryClaim, deterministic_proposal_pursuit,
         execute_generative_step, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
         host_wrap_governed_output, host_wrap_v3_normalization_output,
@@ -5475,7 +5497,7 @@ mod tests {
         provider_schema_source_for_contract, routed_context_shape_diagnostic,
         routed_context_validation_diagnostic, sanitized_host_envelope_diagnostic,
         sanitized_prompt_validation_diagnostic, seal_driver_request, seal_driver_result,
-        validate_driver_result, validate_request,
+        serialize_recovery_claim, validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
@@ -7528,6 +7550,84 @@ mod tests {
 
         assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
         assert!(!claim.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_claim_serialization_matches_exact_boundary() {
+        let root = temp_path("recovery-claim-boundary");
+        fs::create_dir_all(&root).unwrap();
+        let claim_path = root.join("claim");
+        let mut claim = RunRecoveryClaim {
+            contract: "mdp.run-recovery-claim.v2".into(),
+            execution_id: "e".repeat(MAX_EXECUTION_ID_BYTES),
+            transaction_leaf: format!(
+                ".{}.tmp-{}",
+                "o".repeat(MAX_OUTPUT_LEAF_BYTES),
+                "f".repeat(32)
+            ),
+            created_unix_seconds: u64::MAX,
+            owner_uid: u32::MAX,
+            process_id: u32::MAX,
+            transaction_dev: u64::MAX,
+            transaction_ino: u64::MAX,
+        };
+
+        let bytes = serialize_recovery_claim(&claim).unwrap();
+        assert_eq!(bytes.len(), MAX_RECOVERY_CLAIM_BYTES);
+        fs::write(&claim_path, &bytes).unwrap();
+        let (persisted, metadata) = read_recovery_claim(&claim_path).unwrap();
+        assert_eq!(metadata.len(), MAX_RECOVERY_CLAIM_BYTES as u64);
+        assert_eq!(persisted.execution_id, claim.execution_id);
+        assert_eq!(persisted.transaction_leaf, claim.transaction_leaf);
+        assert_eq!(persisted.created_unix_seconds, u64::MAX);
+        assert_eq!(persisted.owner_uid, u32::MAX);
+        assert_eq!(persisted.process_id, u32::MAX);
+        assert_eq!(persisted.transaction_dev, u64::MAX);
+        assert_eq!(persisted.transaction_ino, u64::MAX);
+
+        claim.execution_id.push('e');
+        assert_eq!(
+            serialize_recovery_claim(&claim).unwrap_err().to_string(),
+            "output-claim-failed"
+        );
+
+        let mut oversized = bytes;
+        oversized.push(b' ');
+        fs::write(&claim_path, oversized).unwrap();
+        assert_eq!(
+            read_recovery_claim(&claim_path).unwrap_err(),
+            "recovery-claim-type-unsafe"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn maximum_accepted_identifiers_publish_recovery_claim() {
+        let root = temp_path("maximum-recovery-identifiers");
+        let pack = root.join("pack");
+        let output_leaf = "o".repeat(MAX_OUTPUT_LEAF_BYTES);
+        let run = root.join(&output_leaf);
+        let claim_path = root.join(format!(".{output_leaf}.mdp-run.claim"));
+        init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        let output = root.join("invalid.json");
+        fs::write(&output, "{}\n").unwrap();
+        let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+        request.execution_id = "e".repeat(MAX_EXECUTION_ID_BYTES);
+
+        let result = execute_run_inner(&request, &run, || {
+            let bytes = fs::read(&claim_path)?;
+            assert!(bytes.len() <= MAX_RECOVERY_CLAIM_BYTES);
+            let claim: RunRecoveryClaim = serde_json::from_slice(&bytes)?;
+            assert_eq!(claim.execution_id, request.execution_id);
+            assert_eq!(claim.transaction_leaf.len(), 1 + output_leaf.len() + 5 + 32);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
+        assert!(!claim_path.exists());
         let _ = fs::remove_dir_all(root);
     }
 
