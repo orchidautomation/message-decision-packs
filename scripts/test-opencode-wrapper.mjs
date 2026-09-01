@@ -67,12 +67,12 @@ assert(
   'Release workflow must publish once so generated manifest entries are not duplicated.',
 )
 assert(
-  releaseWorkflow.includes('npm pack @orchid-labs/pluxx@0.1.42') &&
+  releaseWorkflow.includes('npm pack @orchid-labs/pluxx@0.1.43') &&
     releaseWorkflow.includes('npm install -g "$pluxx_tarball_path"') &&
     releaseWorkflow.includes(
-      'sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw==',
+      '2851a386dc415fd37e124fa132d70af516fee062a8ac355310ea157fa8d2dfc3',
     ),
-  'Release workflow must hash and install the same exact Pluxx 0.1.42 tarball.',
+  'Release workflow must hash and install the same exact Pluxx 0.1.43 tarball.',
 )
 assert(
   releaseWorkflow.includes('npm pack @openai/codex@0.148.0') &&
@@ -339,6 +339,12 @@ try {
   const generatedChecksums = parseChecksums(join(releaseRoot, 'SHA256SUMS.txt'))
   const generatedInstallChecksum = generatedChecksums.get('install.sh')
   const stagedInstallPath = join(releaseRoot, 'install.sh')
+  copyFileSync(stagedInstallPath, join(releaseRoot, 'install-agents.sh'))
+  copyFileSync(join(root, 'scripts/bootstrap-runtime.sh'), join(releaseRoot, 'install-cli.sh'))
+  writeFileSync(
+    join(releaseRoot, 'SHA256SUMS.txt'),
+    `${readFileSync(join(releaseRoot, 'SHA256SUMS.txt'), 'utf8')}${generatedInstallChecksum}  install-agents.sh\n${sha256(join(releaseRoot, 'install-cli.sh'))}  install-cli.sh\n`,
+  )
   const stagedInstall = `${readFileSync(join(root, 'scripts/install.sh'), 'utf8')}\n# checksum refresh fixture\n`
   writeFileSync(stagedInstallPath, stagedInstall)
   for (const target of [
@@ -417,6 +423,11 @@ try {
   assert(
     finalizedChecksums.get('install-codex.sh') === sha256(join(releaseRoot, 'install-codex.sh')),
     'Finalized checksums must bind the patched native Codex installer.',
+  )
+  assert(
+    finalizedChecksums.get('install-agents.sh') === sha256(join(releaseRoot, 'install-agents.sh')) &&
+      finalizedChecksums.get('install-cli.sh') === sha256(join(releaseRoot, 'install-cli.sh')),
+    'Finalized checksums must bind the Pluxx aggregate installer and standalone CLI installer.',
   )
   assert(
     finalizedChecksums.get('message-decision-packs-agent-plugins-latest.tar.gz') ===

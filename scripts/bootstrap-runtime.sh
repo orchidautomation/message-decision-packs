@@ -21,14 +21,32 @@ REPO="${MDP_GITHUB_REPO:-orchidautomation/message-decision-packs}"
 VERSION="${MDP_VERSION:-latest}"
 INSTALL_DIR="${MDP_INSTALL_DIR:-$HOME/.local/bin}"
 
+RESOLVED_VERSION="${MDP_RESOLVED_VERSION:-}"
+if [[ -z "$RESOLVED_VERSION" && "$VERSION" != "latest" ]]; then
+  RESOLVED_VERSION="${VERSION#v}"
+fi
+if [[ -z "$RESOLVED_VERSION" ]]; then
+  need_cmd node
+  MANIFEST_URL="${MDP_RELEASE_BASE_URL:-https://github.com/$REPO/releases/latest/download}/release-manifest.json"
+  RESOLVED_VERSION="$(curl -fsSL "$MANIFEST_URL" | node -e '
+    let body = ""; process.stdin.on("data", (chunk) => { body += chunk });
+    process.stdin.on("end", () => {
+      const version = JSON.parse(body)?.plugin?.version;
+      if (typeof version !== "string" || !version) process.exit(1);
+      process.stdout.write(version);
+    });
+  ')"
+fi
+
 if command -v mdp >/dev/null 2>&1; then
-  echo "mdp CLI already available: $(command -v mdp)"
-  mdp --version || true
+  installed_version="$(mdp --version 2>/dev/null | awk '{print $NF}' || true)"
   if [[ "${MDP_SKIP_CLI_UPDATE:-0}" == "1" ]]; then
-    echo "Skipping mdp CLI refresh because MDP_SKIP_CLI_UPDATE=1."
     exit 0
   fi
-  echo "Refreshing mdp CLI from release assets."
+  if [[ "$installed_version" == "$RESOLVED_VERSION" && "${MDP_FORCE_CLI_UPDATE:-0}" != "1" ]]; then
+    echo "mdp CLI $RESOLVED_VERSION is already up to date."
+    exit 0
+  fi
 fi
 
 case "$(uname -s):$(uname -m)" in
