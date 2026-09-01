@@ -12,11 +12,13 @@ if (!process.argv[2]) {
 const source = readFileSync(installerPath, 'utf8')
 const broken = ".split(/\n/).filter(Boolean).map((line) =>"
 const repaired = ".split(/\\r?\\n/u).filter(Boolean).map((line) =>"
-const matches = source.split(broken).length - 1
+const brokenMatches = source.split(broken).length - 1
+const repairedMatches = source.split(repaired).length - 1
 
-if (matches !== 1) {
+if (brokenMatches === 0 && repairedMatches === 1) process.exit(0)
+if (brokenMatches !== 1 || repairedMatches !== 0) {
   console.error(
-    `Expected exactly one malformed Pluxx install-results splitter; found ${matches}: ${installerPath}`,
+    `Expected exactly one known Pluxx install-results splitter; found malformed=${brokenMatches}, repaired=${repairedMatches}: ${installerPath}`,
   )
   process.exit(1)
 }
