@@ -98,6 +98,20 @@ fn write_fixture(root: &std::path::Path, name: &str, body: serde_json::Value) ->
     path
 }
 
+fn copy_dir_all(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).expect("fixture destination");
+    for entry in std::fs::read_dir(source).expect("fixture source") {
+        let entry = entry.expect("fixture entry");
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type().expect("fixture file type").is_dir() {
+            copy_dir_all(&source_path, &destination_path);
+        } else {
+            std::fs::copy(&source_path, &destination_path).expect("copy fixture file");
+        }
+    }
+}
+
 #[test]
 fn capabilities_envelope_is_one_parseable_json_value() {
     let (code, stdout, stderr, value) = run(&["--json", "capabilities"], Case::Ok);
@@ -133,6 +147,66 @@ fn capabilities_envelope_is_one_parseable_json_value() {
         .expect("doctor command projection");
     assert_eq!(doctor["output_contract"], "mdp.doctor.v1");
     assert!(stdout.contains("presentation_contract"));
+}
+
+#[test]
+fn all_unassessed_route_budget_summary_emits_schema_valid_explicit_null_headroom() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-route-budget-unassessed-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic");
+    copy_dir_all(&source, &root);
+
+    let manifest_path = root.join(".mdp/manifest.yaml");
+    let mut manifest: serde_yaml::Value = serde_yaml::from_str(
+        &std::fs::read_to_string(&manifest_path).expect("read fixture manifest"),
+    )
+    .expect("parse fixture manifest");
+    for job in manifest["jobs"].as_sequence_mut().expect("manifest jobs") {
+        job.as_mapping_mut()
+            .expect("job mapping")
+            .remove(serde_yaml::Value::String("context_budget".to_string()));
+    }
+    std::fs::write(
+        &manifest_path,
+        serde_yaml::to_string(&manifest).expect("serialize unassessed manifest"),
+    )
+    .expect("write unassessed manifest");
+
+    let root_arg = root.display().to_string();
+    let (code, _, stderr, envelope) = run(
+        &[
+            "--json",
+            "--summary",
+            "route-budget",
+            "--dir",
+            root_arg.as_str(),
+        ],
+        Case::Ok,
+    );
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let envelope = envelope.expect("route-budget summary envelope");
+    let summary = &envelope["summary"];
+    assert_eq!(summary["route_status_counts"]["unassessed"], 9);
+    assert_eq!(summary["unassessed_generation_count"], 2);
+    assert!(summary.get("tightest_headroom").is_some());
+    assert!(summary["tightest_headroom"].is_null());
+    assert!(summary["query"].get("job_id").is_none());
+    assert!(summary["query"].get("persona").is_none());
+
+    let (_, _, _, schema_envelope) =
+        run(&["--json", "schema", "route-budget-summary-v1"], Case::Ok);
+    let schema_envelope = schema_envelope.expect("route-budget summary schema envelope");
+    jsonschema::draft202012::validate(&schema_envelope["data"], summary)
+        .expect("real unassessed summary should satisfy the advertised schema");
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

@@ -5264,6 +5264,11 @@ mod tests {
         assert!(summary["properties"].get("routes").is_none());
         assert_eq!(summary["properties"]["top_blockers"]["maxItems"], 5);
         assert_eq!(summary["properties"]["top_contributors"]["maxItems"], 5);
+        assert!(
+            summary["required"]
+                .as_array()
+                .is_some_and(|required| required.contains(&json!("tightest_headroom")))
+        );
     }
 
     #[test]
@@ -5340,6 +5345,12 @@ mod tests {
             }
         });
         validate_route_budget_summary_output(&base).expect("review action should validate");
+        let mut missing_headroom = base.clone();
+        missing_headroom
+            .as_object_mut()
+            .expect("summary object")
+            .remove("tightest_headroom");
+        assert!(validate_route_budget_summary_output(&missing_headroom).is_err());
         let mut malformed = base;
         malformed["next_safe_action"] =
             json!({"kind": "narrow_applicability", "preserve_guardrails": true});
