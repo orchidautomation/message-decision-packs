@@ -39,19 +39,60 @@ CONTROL_PLANE_PATTERNS = [
         ),
         "ambient_credential_roadmap",
     ),
+    (
+        re.compile(
+            r"\b(?:next|then)\s+(?:private\s+)?(?:Linear\s+)?"
+            r"(?:issue|task|ticket)\s+[A-Z][A-Z0-9]+-\d+\b",
+            re.I,
+        ),
+        "private_linear_sequence",
+    ),
+    (
+        re.compile(
+            r"\b[A-Z][A-Z0-9]+-\d+\s+(?:must|should|will)\s+"
+            r"(?:land|merge|ship|complete|start|run)\s+(?:before|after)\s+"
+            r"[A-Z][A-Z0-9]+-\d+\b",
+            re.I,
+        ),
+        "private_linear_sequence",
+    ),
+    (
+        re.compile(
+            r"\b(?:before|after)\s+[A-Z][A-Z0-9]+-\d+\b"
+            r"[^.!?\n]{0,80}\b(?:start|run|land|merge|ship|complete)\s+"
+            r"[A-Z][A-Z0-9]+-\d+\b",
+            re.I,
+        ),
+        "private_linear_sequence",
+    ),
+    (
+        re.compile(
+            r"\b[A-Z][A-Z0-9]+-\d+\s+(?:then|followed\s+by|->)\s+"
+            r"[A-Z][A-Z0-9]+-\d+\b",
+            re.I,
+        ),
+        "private_linear_sequence",
+    ),
+    (
+        re.compile(
+            r"\b(?:security|authentication|authorization|credential|token|provider)\s+"
+            r"(?:boundary|hardening|isolation|migration|remediation|work|"
+            r"integration|enablement|support)\s+"
+            r"(?:is|remains?|will\s+be)\s+"
+            r"(?:pending|planned|deferred|unremediated|unfinished|incomplete)\b",
+            re.I,
+        ),
+        "private_security_provider_roadmap",
+    ),
 ]
-NEGATION_MARKERS = (
-    " not ",
-    "never ",
-    "do not ",
-    "does not ",
-    "must not ",
-    "cannot ",
-    "without ",
-    "unsupported",
-    "reject",
-    "avoid ",
-    "prohibit",
+NEGATION_PATTERN = re.compile(
+    r"\b(?:no|not|never|cannot|unsupported|reject(?:s|ed|ing)?|"
+    r"avoid(?:s|ed|ing)?|prohibit(?:s|ed|ing)?|without)\b",
+    re.I,
+)
+CLAUSE_BOUNDARY_PATTERN = re.compile(
+    r"(?:[.!?;:]\s+|\n\s*\n|\b(?:but|however|yet)\b)",
+    re.I,
 )
 
 
@@ -75,6 +116,37 @@ def is_publication_boundary_surface(relative: str) -> bool:
     )
 
 
+def match_is_negated(text: str, match: re.Match[str]) -> bool:
+    """Return whether a nearby, same-clause marker negates an affirmative match."""
+    prefix = text[max(0, match.start() - 160) : match.start()]
+    boundaries = list(CLAUSE_BOUNDARY_PATTERN.finditer(prefix))
+    if boundaries:
+        prefix = prefix[boundaries[-1].end() :]
+    return NEGATION_PATTERN.search(prefix) is not None
+
+
+def pattern_findings(
+    relative: str,
+    text: str,
+    patterns: list[tuple[re.Pattern[str], str]],
+) -> list[dict[str, str | int]]:
+    """Scan a whole document so Markdown wrapping cannot split a match."""
+    matches: list[tuple[int, str]] = []
+    for pattern, code in patterns:
+        for match in pattern.finditer(text):
+            if match_is_negated(text, match):
+                continue
+            matches.append((match.start(), code))
+    return [
+        {
+            "path": relative,
+            "line": text.count("\n", 0, offset) + 1,
+            "code": code,
+        }
+        for offset, code in sorted(set(matches))
+    ]
+
+
 def lint_paths(root: Path, relative_paths: list[str]) -> list[dict[str, str | int]]:
     findings: list[dict[str, str | int]] = []
     for relative in relative_paths:
@@ -86,23 +158,14 @@ def lint_paths(root: Path, relative_paths: list[str]) -> list[dict[str, str | in
                 findings.append({"path": relative, "line": 0, "code": "sensitive_artifact"})
                 continue
         try:
-            lines = path.read_text(encoding="utf-8").splitlines()
+            text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
         if is_publication_boundary_surface(relative):
-            for number, line in enumerate(lines, 1):
-                for pattern, code in CONTROL_PLANE_PATTERNS:
-                    if pattern.search(line):
-                        findings.append({"path": relative, "line": number, "code": code})
+            findings.extend(pattern_findings(relative, text, CONTROL_PLANE_PATTERNS))
         if not is_claim_surface(relative):
             continue
-        for number, line in enumerate(lines, 1):
-            normalized = f" {line.lower()} "
-            if any(marker in normalized for marker in NEGATION_MARKERS):
-                continue
-            for pattern, code in CLAIM_PATTERNS:
-                if pattern.search(line):
-                    findings.append({"path": relative, "line": number, "code": code})
+        findings.extend(pattern_findings(relative, text, CLAIM_PATTERNS))
     return findings
 
 
