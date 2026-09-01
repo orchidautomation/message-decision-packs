@@ -296,11 +296,32 @@ class SkillContractTests(unittest.TestCase):
     def test_every_skill_declares_actionable_runtime_compatibility(self):
         for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
             text = path.read_text()
-            for marker in ("metadata:", "compatibility:", "mdp CLI", "Node.js 18+", "portable skill", "MCP"):
+            for marker in ("metadata:", "compatibility:", *module.COMPATIBILITY_TERMS):
                 self.assertIn(marker, text, path)
         path = self.root / "plugin/skills/mdp/SKILL.md"
         path.write_text(path.read_text().replace("Node.js 18+", "Node runtime", 1))
         self.assertIn("frontmatter_compatibility_invalid", self.codes())
+
+    def test_compatibility_requires_direct_cli_node_boundary(self):
+        path = self.root / "plugin/skills/mdp-pack-apply/SKILL.md"
+        path.write_text(
+            path.read_text().replace(
+                "generative direct-CLI runs",
+                "native plugin helpers",
+                1,
+            )
+        )
+        self.assertIn("frontmatter_compatibility_invalid", self.codes())
+
+    def test_source_plan_routing_and_non_mutating_closeout_are_required(self):
+        for skill_id, phrases in module.AUTHORING_CLOSEOUT_GUARDRAILS.items():
+            path = self.root / "plugin/skills" / skill_id / "SKILL.md"
+            original = path.read_text()
+            for phrase in phrases:
+                with self.subTest(skill_id=skill_id, phrase=phrase):
+                    path.write_text(original.replace(phrase, "REMOVED_SOURCE_PLAN_CONTRACT", 1))
+                    self.assertIn(f"authoring_closeout_missing:{skill_id}", self.codes())
+                    path.write_text(original)
 
     def test_repo_only_document_dependency_fails(self):
         path = self.root / "plugin/skills/mdp/references/operator-runtime.md"
