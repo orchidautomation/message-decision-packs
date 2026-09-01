@@ -30,10 +30,8 @@ CASE_TYPES = {
 QUERY_SHAPES = {"direct", "typo", "indirect-intent"}
 COMPARISON_MODES = {"with-skill", "baseline", "previous-version"}
 GOVERNED_MODE_ASSERTION_CATEGORIES = {
-    "mdp-pack-apply": {
-        mode: frozenset({"evidence", "safety", "human-review"})
-        for mode in ("bid-no-bid", "compliance", "proof", "red-team")
-    }
+    mode: frozenset({"evidence", "safety", "human-review"})
+    for mode in ("bid-no-bid", "compliance", "proof", "red-team")
 }
 TYPO_QUERY_MARKERS = frozenset(
     {
@@ -438,12 +436,15 @@ def validate_coverage(
                 f"coverage.json: {skill_id} cannot declare high-risk per-mode categories"
             )
 
-        governed_modes = GOVERNED_MODE_ASSERTION_CATEGORIES.get(skill_id, {})
-        for mode, governed_categories in governed_modes.items():
+        if row.get("risk_tier") == "high":
+            for mode in GOVERNED_MODE_ASSERTION_CATEGORIES:
+                if parsed_modes is None or mode not in parsed_modes:
+                    errors.append(
+                        f"coverage.json: high-risk {skill_id} must declare governed mode {mode}"
+                    )
+        for mode, governed_categories in GOVERNED_MODE_ASSERTION_CATEGORIES.items():
             if parsed_modes is None or mode not in parsed_modes:
-                errors.append(
-                    f"coverage.json: {skill_id}/{mode} must remain a governed mode"
-                )
+                continue
             raw_mode_categories = per_mode.get(mode) if isinstance(per_mode, dict) else None
             parsed_mode_categories = string_list_set(raw_mode_categories)
             if (

@@ -216,6 +216,27 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
                 msg=f"coordinated downgrade of {mode} was accepted: {errors}",
             )
 
+    def test_governed_modes_survive_skill_id_rename(self) -> None:
+        payload = copy.deepcopy(self.coverage)
+        definition = next(row for row in payload["skills"] if row["id"] == "mdp-pack-apply")
+        definition["id"] = "renamed-pack-apply"
+        definition["eval_index"] = "plugin/skills/renamed-pack-apply/evals/index.json"
+        for mode in ("bid-no-bid", "compliance", "proof", "red-team"):
+            definition["required_assertion_categories_by_mode"][mode] = ["evidence"]
+        errors: list[str] = []
+
+        HARNESS.validate_coverage(payload, ROOT / "plugin" / "skills", None, errors)
+
+        for mode in ("bid-no-bid", "compliance", "proof", "red-team"):
+            self.assertTrue(
+                any(
+                    f"renamed-pack-apply/{mode} must require governed assertion categories"
+                    in error
+                    for error in errors
+                ),
+                msg=f"renaming the skill bypassed {mode} governance: {errors}",
+            )
+
     def test_high_risk_per_mode_contract_must_be_complete(self) -> None:
         payload = copy.deepcopy(self.coverage)
         definition = next(row for row in payload["skills"] if row["id"] == "mdp-pack-apply")
