@@ -60,6 +60,8 @@ jobs:
               - "scripts/test_skill_packaging.py"
               - "scripts/test-authority-conformance.mjs"
               - "scripts/test-run-mcp-server.mjs"
+              - "scripts/test-run-mcp-queued-cancellation.sh"
+              - "scripts/test-proposal-mcp-queued-cancellation.sh"
               - "scripts/mdp-run-mcp-server.mjs"
               - "scripts/test-temp-workspace.mjs"
               - "scripts/with-temp-workspace.mjs"
@@ -67,6 +69,8 @@ jobs:
               - "scripts/mdp-proposal-mcp-server.mjs"
               - "scripts/mdp-proposal-runner.mjs"
               - "scripts/test-release-workflow.mjs"
+              - "scripts/patch-codex-installer.mjs"
+              - "scripts/test-opencode-wrapper.mjs"
               - "scripts/test-authority-mutations-contract.mjs"
               - "scripts/test-authority-mutations.sh"
               - "scripts/test-native-model-driver.mjs"
@@ -136,6 +140,10 @@ jobs:
           node --test
           --test-name-pattern='maps path-backed identity-bound|completes prepare, run, and verify|prepare refuses request and manifest parent swaps'
           scripts/test-run-mcp-server.mjs
+      - name: Verify typed queued cancellation over stdio
+        run: |
+          bash scripts/test-run-mcp-queued-cancellation.sh
+          bash scripts/test-proposal-mcp-queued-cancellation.sh
       - name: Verify temporary workspace cleanup
         run: node --test scripts/test-temp-workspace.mjs
 
@@ -149,12 +157,12 @@ jobs:
       - name: Install Pluxx
         run: |
           # MDP-221 public binding: install the registry artifact only after its
-          # exact npm-published integrity matches the reviewed Pluxx 0.1.42 release.
-          expected='sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw=='
-          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.42 --pack-destination "$RUNNER_TEMP" --silent)"
+          # exact npm tarball must match the reviewed Pluxx 0.1.43 release.
+          expected_sha256='2851a386dc415fd37e124fa132d70af516fee062a8ac355310ea157fa8d2dfc3'
+          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.43 --pack-destination "$RUNNER_TEMP" --silent)"
           pluxx_tarball_path="$RUNNER_TEMP/$pluxx_tarball"
-          actual="$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' "$pluxx_tarball_path")"
-          test "$actual" = "$expected"
+          actual_sha256="$(shasum -a 256 "$pluxx_tarball_path" | awk '{print $1}')"
+          test "$actual_sha256" = "$expected_sha256"
           npm install -g "$pluxx_tarball_path"
       - name: Check Pluxx source health
         run: pluxx doctor

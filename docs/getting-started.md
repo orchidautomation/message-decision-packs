@@ -42,7 +42,13 @@ CLI-only portable shell fallback:
 curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
 ```
 
-The installer fetches the latest GitHub Release. `--cli` installs only the `mdp` binary for your platform. `--agents` installs the CLI once, then installs Pluxx-generated bundles for supported agent hosts. Single-host flags are also available: `--codex`, `--cursor`, `--claude-code`, and `--opencode`.
+The installer fetches the latest GitHub Release. `--cli` installs only the `mdp`
+binary for your platform. An exact-version repeat is a no-op; use `--force-cli`
+only for an intentional repair. `--agents` installs the CLI plus bundles for
+hosts detected by Pluxx and ends with one installed/updated/unchanged/skipped/
+failed summary. Missing hosts are normal skips. Single-host flags remain strict:
+`--codex`, `--cursor`, `--claude-code`, and `--opencode` fail if their requested
+installation cannot complete.
 
 MDP `0.1.107` also ships a separate Agent Plugins v1 skills package. Set
 `MDP_AGENT_PLUGINS_INSTALL_DIR` to an explicit absolute client-managed
@@ -51,6 +57,8 @@ overlaps and unknown nonempty destinations. There is no guessed generic Codex
 import path. Cursor's documented local path can be used only in portable-only
 mode, not together with `--agents` or `--cursor`. See
 [Distribution](distribution.md) for the exact boundary and evidence matrix.
+Ordinary `--agents` runs do not mention or guess a portable destination; setting
+`MDP_AGENT_PLUGINS_INSTALL_DIR` explicitly opts that package into the run.
 
 In `0.1.107`, `mdp-pack-apply` replaces the former `mdp-gtm-brief` and
 `mdp-proposal-review` discovery entries. Rediscover the installed skills after

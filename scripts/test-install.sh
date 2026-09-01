@@ -25,6 +25,44 @@ SH
   chmod +x "$path"
 }
 
+write_agents_installer() {
+  local path="$FIXTURE_DIR/install-agents.sh"
+  cat > "$path" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+echo "agents args:\$*" >> "$LOG_FILE"
+mode=explicit
+selected=()
+for arg in "\$@"; do
+  case "\$arg" in
+    --agents) mode=aggregate ;;
+    --claude-code|--cursor|--codex|--opencode) selected+=("\${arg#--}") ;;
+  esac
+done
+if [ "\$mode" = aggregate ]; then selected=(claude-code cursor codex opencode); fi
+items=""
+failed=0
+for target in "\${selected[@]}"; do
+  state=installed; reason=""; error=""; action=""
+  if [ "\$mode" = aggregate ]; then
+    case " \${MDP_TEST_DETECTED_HOSTS:-cursor opencode} " in *" \$target "*) ;; *) state=skipped; reason=host-not-detected;; esac
+  fi
+  if [ "\${MDP_TEST_FAIL_TARGET:-}" = "\$target" ]; then state=failed; error="fixture failure"; action="repair fixture"; failed=1; fi
+  items="\$items\$target|\$state|\$reason|\$error|\$action
+"
+done
+PLUXX_TEST_ITEMS="\$items" PLUXX_TEST_MODE="\$mode" node <<'NODE'
+const results = process.env.PLUXX_TEST_ITEMS.trim().split(/\n/).filter(Boolean).map((line) => {
+  const [target,state,reason,error,action] = line.split('|');
+  return {target,state,...(reason?{reason}:{}),...(error?{error,action}:{})}
+})
+console.log(JSON.stringify({schema:'pluxx.install-results.v1',plugin:{name:'message-decision-packs',version:'0.1.101'},selectionMode:process.env.PLUXX_TEST_MODE,plan:results.map(({target})=>({target,selected:true})),results}))
+NODE
+exit "\$failed"
+SH
+  chmod +x "$path"
+}
+
 assert_log() {
   local expected="$1"
   local actual
@@ -42,6 +80,7 @@ assert_log() {
 for target in cli claude-code cursor codex opencode; do
   write_installer "$target"
 done
+write_agents_installer
 
 portable_source="$FIXTURE_DIR/agent-plugins"
 mkdir -p "$portable_source"
@@ -98,26 +137,32 @@ else
   portable_sha="$(shasum -a 256 "$portable_archive" | awk '{print $1}')"
 fi
 printf '%s  %s\n' "$portable_sha" "$(basename "$portable_archive")" > "$FIXTURE_DIR/SHA256SUMS.txt"
+for asset in install-cli.sh install-agents.sh; do
+  if command -v sha256sum >/dev/null 2>&1; then asset_sha="$(sha256sum "$FIXTURE_DIR/$asset" | awk '{print $1}')"
+  else asset_sha="$(shasum -a 256 "$FIXTURE_DIR/$asset" | awk '{print $1}')"; fi
+  printf '%s  %s\n' "$asset_sha" "$asset" >> "$FIXTURE_DIR/SHA256SUMS.txt"
+done
 
 BASE_URL="file://$FIXTURE_DIR"
 TEST_PATH="/usr/bin:/bin"
 
 : > "$LOG_FILE"
 PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --cli -y --base-url "$BASE_URL"
-assert_log "cli args:--yes skip:0"
+assert_log "cli args: skip:0"
 
 : > "$LOG_FILE"
 PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --cli-only -y --base-url "$BASE_URL"
-assert_log "cli args:--yes skip:0"
+assert_log "cli args: skip:0"
 
 : > "$LOG_FILE"
-PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --agents -y --base-url "$BASE_URL"
-assert_log "$(cat <<'EOF'
-cli args:--yes skip:0
-cursor args:--yes skip:1
-opencode args:--yes skip:1
-EOF
-)"
+PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --agents -y --base-url "$BASE_URL" \
+  >"$TMP_DIR/agents.stdout" 2>"$TMP_DIR/agents.stderr"
+assert_log "$(printf 'cli args: skip:0\nagents args:--json --quiet --base-url %s --version 0.1.101 --yes --agents' "$BASE_URL")"
+if grep -F 'MDP_AGENT_PLUGINS_INSTALL_DIR' "$TMP_DIR/agents.stderr" >/dev/null; then
+  echo "Ordinary --agents output unexpectedly warned about portable routing." >&2
+  exit 1
+fi
+grep -F 'claude-code: skipped (host-not-detected)' "$TMP_DIR/agents.stdout" >/dev/null
 
 portable_install="$TMP_DIR/portable-install"
 
@@ -159,12 +204,7 @@ test "$(find "$(dirname "$native_cursor")" -maxdepth 1 -name 'message-decision-p
 PATH="$TEST_PATH" \
 MDP_AGENT_PLUGINS_INSTALL_DIR="$portable_install" \
   "$ROOT/scripts/install.sh" --agents -y --base-url "$BASE_URL"
-assert_log "$(cat <<'EOF'
-cli args:--yes skip:0
-cursor args:--yes skip:1
-opencode args:--yes skip:1
-EOF
-)"
+assert_log "$(printf 'cli args: skip:0\nagents args:--json --quiet --base-url %s --version 0.1.101 --yes --agents' "$BASE_URL")"
 for skill in mdp mdp-pack-apply mdp-pack-builder mdp-pack-review; do
   test -f "$portable_install/skills/$skill/SKILL.md"
 done
@@ -185,6 +225,10 @@ if grep -F "stale portable payload" "$portable_install/skills/mdp/SKILL.md" >/de
 fi
 test "$(find "$(dirname "$portable_install")" -maxdepth 1 -name 'portable-install.mdp-portable-backup.*' -print | wc -l | tr -d ' ')" = "0"
 
+PATH="$TEST_PATH" MDP_AGENT_PLUGINS_INSTALL_DIR="$portable_install" \
+  "$ROOT/scripts/install.sh" --agent-plugins -y --base-url "$BASE_URL" >"$TMP_DIR/portable-repeat.stdout"
+grep -F 'agent-plugins: unchanged' "$TMP_DIR/portable-repeat.stdout" >/dev/null
+
 if PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --agent-plugins -y --base-url "$BASE_URL" \
   >"$TMP_DIR/missing-portable-dir.stdout" 2>"$TMP_DIR/missing-portable-dir.stderr"; then
   echo "Portable installer unexpectedly accepted a missing explicit install directory." >&2
@@ -194,10 +238,67 @@ grep -F "MDP_AGENT_PLUGINS_INSTALL_DIR is required" "$TMP_DIR/missing-portable-d
 
 : > "$LOG_FILE"
 PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --claude-code -y --base-url "$BASE_URL"
-assert_log "claude-code args:--yes skip:0"
+assert_log "agents args:--json --quiet --base-url $BASE_URL --version 0.1.101 --yes --claude-code"
 
 : > "$LOG_FILE"
 PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --codex -y --base-url "$BASE_URL"
-assert_log "codex args:--yes skip:0"
+assert_log "agents args:--json --quiet --base-url $BASE_URL --version 0.1.101 --yes --codex"
+
+# An exact installed CLI version is a true no-op unless forced.
+fake_path="$TMP_DIR/fake-path"
+mkdir -p "$fake_path"
+cat > "$fake_path/mdp" <<'EOF'
+#!/usr/bin/env bash
+echo 'mdp 0.1.101'
+EOF
+chmod +x "$fake_path/mdp"
+: > "$LOG_FILE"
+PATH="$fake_path:$TEST_PATH" "$ROOT/scripts/install.sh" --cli -y --base-url "$BASE_URL" >"$TMP_DIR/repeat.stdout"
+test ! -s "$LOG_FILE"
+grep -F 'cli: unchanged' "$TMP_DIR/repeat.stdout" >/dev/null
+: > "$LOG_FILE"
+PATH="$fake_path:$TEST_PATH" "$ROOT/scripts/install.sh" --cli --force-cli -y --base-url "$BASE_URL" >"$TMP_DIR/force.stdout"
+assert_log "cli args: skip:0"
+grep -F 'cli: updated' "$TMP_DIR/force.stdout" >/dev/null
+
+# The standalone CLI bootstrap keeps skip-only and exact-version no-op behavior,
+# but an explicit force repair must override the aggregate install's skip flag.
+bootstrap_asset="$TMP_DIR/bootstrap-mdp"
+cat > "$bootstrap_asset" <<'EOF'
+#!/usr/bin/env bash
+echo 'mdp 0.1.101'
+EOF
+chmod +x "$bootstrap_asset"
+for scenario in skip-only same-version; do
+  scenario_dir="$TMP_DIR/bootstrap-$scenario"
+  scenario_skip=0
+  if [ "$scenario" = skip-only ]; then scenario_skip=1; fi
+  MDP_RESOLVED_VERSION=0.1.101 \
+  MDP_DOWNLOAD_URL="file://$bootstrap_asset" \
+  MDP_INSTALL_DIR="$scenario_dir" \
+  MDP_SKIP_CLI_UPDATE="$scenario_skip" \
+  MDP_FORCE_CLI_UPDATE=0 \
+  PATH="$fake_path:$TEST_PATH" \
+    "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-$scenario.stdout"
+  test ! -e "$scenario_dir/mdp"
+done
+forced_bootstrap_dir="$TMP_DIR/bootstrap-forced"
+MDP_RESOLVED_VERSION=0.1.101 \
+MDP_DOWNLOAD_URL="file://$bootstrap_asset" \
+MDP_INSTALL_DIR="$forced_bootstrap_dir" \
+MDP_SKIP_CLI_UPDATE=1 \
+MDP_FORCE_CLI_UPDATE=1 \
+PATH="$fake_path:$TEST_PATH" \
+  "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-forced.stdout"
+test -x "$forced_bootstrap_dir/mdp"
+grep -F "Installed mdp CLI to $forced_bootstrap_dir/mdp" "$TMP_DIR/bootstrap-forced.stdout" >/dev/null
+
+# Explicit target failure stays strict and produces a truthful terminal summary.
+: > "$LOG_FILE"
+if PATH="$TEST_PATH" MDP_TEST_FAIL_TARGET=codex "$ROOT/scripts/install.sh" --codex -y --base-url "$BASE_URL" >"$TMP_DIR/failure.stdout" 2>"$TMP_DIR/failure.stderr"; then
+  echo "Explicit native failure unexpectedly returned success." >&2
+  exit 1
+fi
+grep -F 'codex: failed' "$TMP_DIR/failure.stdout" >/dev/null
 
 echo "Installer fixture tests passed."

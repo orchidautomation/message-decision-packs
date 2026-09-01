@@ -88,6 +88,8 @@ validate-run-mcp:
 	node --check scripts/lib/temp-workspace.mjs
 	node --check scripts/mdp-run-mcp-server.mjs
 	node --test scripts/test-mcp-lifecycle.mjs
+	bash -n scripts/test-run-mcp-queued-cancellation.sh
+	bash scripts/test-run-mcp-queued-cancellation.sh
 	node --test scripts/test-run-mcp-server.mjs
 
 validate-temp-workspace:
@@ -164,6 +166,8 @@ validate-proposal-evidence-harness:
 validate-proposal-mcp:
 	node --check scripts/lib/mcp-lifecycle.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
+	bash -n scripts/test-proposal-mcp-queued-cancellation.sh
+	bash scripts/test-proposal-mcp-queued-cancellation.sh
 	bash -n scripts/test-proposal-mcp-server.sh
 	bash scripts/test-proposal-mcp-server.sh
 

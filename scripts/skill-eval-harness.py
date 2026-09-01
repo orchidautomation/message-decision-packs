@@ -85,6 +85,13 @@ TRIGGER_OBSERVATION_KEYS = frozenset(
     {"case_id", "trial_id", "selected_skill_id"}
 )
 OUTPUT_OBSERVATION_KEYS = frozenset({"case_id", "trial_id", "assertions"})
+SOURCE_PLAN_OUTCOME_CONTRACT = {
+    "kind": "non-mutating-plan",
+    "pack_files": "unchanged",
+    "preview": "not-run",
+    "apply": "not-run",
+    "report_file_edits": False,
+}
 PACK_PROFILES = {"none", "gtm", "proposal", "invalid"}
 SHARED_SKILLS = ["mdp", "mdp-pack-builder", "mdp-pack-review"]
 PROFILE_JOBS = {
@@ -820,6 +827,11 @@ def validate_outputs(
         missing = required - categories
         if missing:
             errors.append(f"{case_id}: missing required assertion categories {sorted(missing)}")
+        if skill_id == "mdp-pack-builder" and mode == "source-plan":
+            if case.get("outcome_contract") != SOURCE_PLAN_OUTCOME_CONTRACT:
+                errors.append(
+                    f"{case_id}: source-plan outcome_contract must be the exact non-mutating closeout contract"
+                )
 
     for family, splits in scenario_splits.items():
         if len(splits) > 1:

@@ -122,21 +122,49 @@ pub(crate) fn stage_artifacts(
     validate_artifacts(artifacts)?;
     let staging_root = parent.join(format!(".mdp.init.staging.{nonce}"));
     if staging_root.exists() {
-        let _ = remove_quietly(&staging_root);
+        remove_quietly(&staging_root).with_context(|| {
+            format!(
+                "refusing to stage over stale transaction path {}",
+                staging_root.display()
+            )
+        })?;
     }
-    for artifact in artifacts {
-        let target = staging_root.join(&artifact.relative);
-        if let Some(parent_dir) = target.parent() {
-            fs::create_dir_all(parent_dir)
-                .with_context(|| format!("creating staging directory {}", parent_dir.display()))?;
+    let staging = (|| -> Result<()> {
+        for (index, artifact) in artifacts.iter().enumerate() {
+            let target = staging_root.join(&artifact.relative);
+            if let Some(parent_dir) = target.parent() {
+                fs::create_dir_all(parent_dir).with_context(|| {
+                    format!("creating staging directory {}", parent_dir.display())
+                })?;
+            }
+            if artifact.is_directory {
+                fs::create_dir_all(&target)
+                    .with_context(|| format!("creating staged directory {}", target.display()))?;
+            } else {
+                fs::write(&target, &artifact.bytes)
+                    .with_context(|| format!("writing staged artifact {}", target.display()))?;
+            }
+            if index == 0 && test_fault("staging-after-first-artifact") {
+                return Err(anyhow!(
+                    "test fault: staging failed after the first artifact"
+                ));
+            }
         }
-        if artifact.is_directory {
-            fs::create_dir_all(&target)
-                .with_context(|| format!("creating staged directory {}", target.display()))?;
+        Ok(())
+    })();
+    if let Err(staging_error) = staging {
+        let cleanup = if test_fault("staging-cleanup") {
+            Err(anyhow!("test fault: staging cleanup failed"))
         } else {
-            fs::write(&target, &artifact.bytes)
-                .with_context(|| format!("writing staged artifact {}", target.display()))?;
-        }
+            remove_quietly(&staging_root)
+        };
+        return match cleanup {
+            Ok(()) => Err(staging_error),
+            Err(cleanup_error) => Err(anyhow!(
+                "staging failed and transaction cleanup failed for {}: cleanup={cleanup_error}; staging={staging_error}",
+                staging_root.display()
+            )),
+        };
     }
     Ok(staging_root)
 }
@@ -265,9 +293,7 @@ pub(crate) fn publish(
         // filesystem as the staging directory. We assume the staging
         // directory is always created beneath the destination's parent,
         // so this is the case when the destination itself is absent.
-        if let Some(parent) = destination.parent() {
-            ensure_same_filesystem(parent, staging_root, destination)?;
-        }
+        ensure_same_filesystem(destination_parent(destination), staging_root, destination)?;
         fs::rename(staging_root, destination).with_context(|| {
             format!(
                 "atomic rename of {} into {}",
@@ -494,7 +520,9 @@ fn remove_created_directories(created: &[PathBuf]) {
 }
 
 fn test_fault(name: &str) -> bool {
-    cfg!(debug_assertions) && std::env::var("MDP_TEST_INIT_FAULT").is_ok_and(|value| value == name)
+    cfg!(debug_assertions)
+        && std::env::var("MDP_TEST_INIT_FAULT")
+            .is_ok_and(|value| value.split(',').any(|fault| fault == name))
 }
 
 fn generated_ancestors(destination: &Path, path: &Path) -> Vec<PathBuf> {
@@ -555,9 +583,20 @@ pub(crate) fn dry_run(
 }
 
 /// Remove the transaction-owned staging, backup, and snapshot paths.
-pub(crate) fn cleanup(paths: &[&Path]) {
+pub(crate) fn cleanup(paths: &[&Path]) -> Result<()> {
+    let mut failures = Vec::new();
     for path in paths {
-        let _ = remove_quietly(path);
+        if let Err(error) = remove_quietly(path) {
+            failures.push(format!("{}: {error}", path.display()));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "failed to remove transaction-owned paths: {}",
+            failures.join("; ")
+        ))
     }
 }
 
@@ -565,10 +604,24 @@ pub(crate) fn cleanup(paths: &[&Path]) {
 /// nonce. Returned paths are siblings of `destination` so atomic rename
 /// stays on the same filesystem.
 pub(crate) fn publication_paths(destination: &Path, nonce: &str) -> (PathBuf, PathBuf) {
-    let parent = destination.parent().unwrap_or(destination);
+    let parent = destination_parent(destination);
     let staging = parent.join(format!(".mdp.init.staging.{nonce}"));
     let backup = parent.join(format!(".mdp.init.backup.{nonce}"));
     (staging, backup)
+}
+
+/// Return the directory that owns transaction paths for `destination`.
+///
+/// `Path::parent` represents the parent of a single-component relative path
+/// such as `pack` as an empty path. Filesystem metadata calls do not treat
+/// that empty path as the current directory, so normalize it to `.` while
+/// preserving normal absolute and multi-component parents.
+pub(crate) fn destination_parent(destination: &Path) -> &Path {
+    match destination.parent() {
+        Some(parent) if parent.as_os_str().is_empty() => Path::new("."),
+        Some(parent) => parent,
+        None => destination,
+    }
 }
 
 pub(crate) fn dry_run_value(plan: &DryRunPlan) -> Value {
@@ -613,7 +666,7 @@ fn remove_quietly(path: &Path) -> Result<()> {
 fn ensure_same_filesystem(parent: &Path, staging: &Path, destination: &Path) -> Result<()> {
     let parent_dev = device_id(parent)?;
     let staging_dev = device_id(staging)?;
-    let dest_parent = destination.parent().unwrap_or(destination);
+    let dest_parent = destination_parent(destination);
     let dest_dev = device_id(dest_parent)?;
     if parent_dev != staging_dev || parent_dev != dest_dev {
         return Err(anyhow!(

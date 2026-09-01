@@ -109,6 +109,9 @@ pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("trace", SurfaceRole::Projection),
     ("consume-run", SurfaceRole::Lifecycle),
     ("run", SurfaceRole::AuthorityOrigin),
+    // Hidden descriptor-bound form of `run`; it preserves the same authority
+    // origin while preventing pathname replacement from redirecting output.
+    ("__secure-run", SurfaceRole::AuthorityOrigin),
     ("recover-run", SurfaceRole::Lifecycle),
     ("run-preflight", SurfaceRole::Diagnostic),
     ("verify-output", SurfaceRole::Verifier),
