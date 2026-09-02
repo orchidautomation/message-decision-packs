@@ -912,7 +912,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 shape
                     && transition.is_none_or(|value| {
                         parse_utc_seconds(value).is_some_and(|at| {
-                            at <= as_of && changed.is_none_or(|origin| at >= origin)
+                            at <= as_of && changed.max(reviewed).is_none_or(|origin| at >= origin)
                         })
                     })
             });
@@ -1638,6 +1638,29 @@ mod tests {
                 }
                 let _ = fs::remove_dir_all(root);
             }
+        }
+    }
+
+    #[test]
+    fn decision_transition_before_review_is_not_terminal() {
+        for lifecycle in ["revoked", "superseded"] {
+            let root = governed_pack("transition-before-review");
+            let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+            let manifest = fs::read_to_string(&path).unwrap()
+                .replace("lifecycle: current\n    changed_at:", &format!("lifecycle: {lifecycle}\n    {lifecycle}_at: 2026-02-01T00:00:00Z\n    changed_at:"))
+                .replace("changed_at: 2026-08-01T00:00:00Z", "changed_at: 2026-01-01T00:00:00Z")
+                .replace("reviewed_at: 2026-09-01T00:00:00Z", "reviewed_at: 2026-03-01T00:00:00Z");
+            fs::write(path, manifest).unwrap();
+            let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(output["decision_review"][0]["state"], "review-due");
+            assert!(
+                output["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d["code"] == "temporal_transition_before_origin")
+            );
+            let _ = fs::remove_dir_all(root);
         }
     }
 
