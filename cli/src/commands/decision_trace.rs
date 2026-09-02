@@ -152,16 +152,18 @@ pub(crate) fn project_trace_inputs(
     receipt: Option<&Path>,
     artifact_root: Option<&Path>,
 ) -> Result<DecisionTrace> {
-    Ok(project_decision_card_inputs(
-        file,
-        pack_root,
-        prompt_output,
-        validation_inputs,
-        bundle,
-        receipt,
-        artifact_root,
-    )?
-    .trace)
+    match (file, bundle, receipt) {
+        (Some(path), None, None) => match (artifact_root, pack_root, prompt_output) {
+            (Some(root), None, None) => project_conformance_file(path, root),
+            (None, Some(root), Some(output)) => {
+                project_prompt_output_validation_file(path, root, output, validation_inputs)
+            }
+            (None, None, None) => Ok(project_source_file_with_value(path)?.trace),
+            _ => unreachable!("clap validates trace authority bindings"),
+        },
+        (None, Some(bundle), Some(receipt)) => project_run_files(bundle, receipt, artifact_root),
+        _ => unreachable!("clap validates trace source arguments"),
+    }
 }
 
 pub(crate) fn project_decision_card_inputs(
