@@ -5,19 +5,13 @@ contracts, templates, docs, and skills stay version-aligned. Pluxx remains the
 compiler and distribution layer: maintainers author one source in this repo,
 and Pluxx emits both a portable skills floor and host-native bundles.
 
-## Shipped release evidence
+## Current release evidence
 
-MDP `0.1.101` was released from source commit
-`9168539388555394e049a1202933032701104db2` by
-[release run 33412887825](https://github.com/orchidautomation/message-decision-packs/actions/runs/33412887825).
-The public release contains one Agent Plugins portable archive and the four
-native Claude Code, Cursor, Codex, and OpenCode archives. Its manifest SHA-256
-is `52319eb97b9a2503b5116bd4b0791d8353f81596b6d10217bb811697181dcfc8`;
-the portable archive SHA-256 is
-`ec96247e2aa680d599cc60f247595c22d30ebcc33246da6503c64c014a0e13bb`.
-Release checksums, the public installer/asset match, and an isolated install
-reporting `mdp 0.1.101` were verified. This proves publication, package shape,
-and safe isolated placement—not discovery by every conformant client.
+The [latest GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
+is the public source of truth for the shipped version, assets, checksums, and
+release manifest. Release CI verifies publication, package shape, checksum
+agreement, and safe isolated placement. Those checks do not prove discovery by
+every conformant client; host-specific evidence remains separate below.
 
 ## Public install
 
@@ -51,14 +45,14 @@ loaded in a fresh process.
 
 ## Portable install contract
 
-MDP `0.1.101` exposes the portable artifact with `--agent-plugins`. The
-destination is deliberately explicit because compatible clients do not share
-one proven install root:
+MDP exposes the portable artifact with `--agent-plugins`. The destination is
+deliberately explicit because compatible clients do not share one proven
+install root:
 
 ```bash
 MDP_AGENT_PLUGINS_INSTALL_DIR=/absolute/client-managed/path/message-decision-packs \
   bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) \
-  --agent-plugins --version 0.1.101 -y
+  --agent-plugins -y
 ```
 
 `--agents` keeps the four native installs. It adds the portable artifact only
@@ -130,7 +124,7 @@ extension claim.
 
 ## What ships
 
-The MDP `0.1.101` release contains:
+The current MDP release contains:
 
 - platform-specific `mdp` CLI binaries;
 - Pluxx-generated native bundles and installers for Claude Code, Cursor, Codex,
@@ -152,14 +146,11 @@ actions. Pluxx does not replace the Rust CLI, and the plugin does not hide a
 separate hosted runtime.
 
 The tag, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests must use the
-same semantic version. MDP `0.1.101` is bound to public
-`@orchid-labs/pluxx@0.1.42`, registry integrity
-`sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw==`.
-Current CI and release generation are pinned to `@orchid-labs/pluxx@0.1.44`
-and verify npm tarball SHA-256
-`4d8a5fb3ac5f9da5e37dbca1ad635dc0bd684616d88647fe1e9fb377a431c043`.
-That release supplies `pluxx.install-results.v1`; MDP validates the envelope and
-adds only CLI/portable policy plus its branded aggregate summary.
+same semantic version. CI and release generation pin the reviewed public Pluxx
+package and verify its npm tarball digest before use; inspect the workflows for
+the exact current dependency and hash. Pluxx supplies
+`pluxx.install-results.v1`; MDP validates the envelope and adds only
+CLI/portable policy plus its branded aggregate summary.
 
 ## Agent-readable context
 

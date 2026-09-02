@@ -12,11 +12,10 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. Rerun the installer to update.
 
-MDP `0.1.107` publicly ships an Agent Plugins v1 artifact built with Pluxx
-`0.1.42`. It is exactly the four skills, with no portable MCP, hooks, scripts,
-assets, commands, or agents. Installation requires an explicit non-overlapping
-client-managed path. Cursor documents a local path but real Cursor discovery
-is not proven here; no undocumented generic Codex import path is guessed.
+MDP ships an Agent Plugins v1 artifact built with Pluxx. It contains exactly
+the four skills, with no portable MCP, hooks, scripts, assets, commands, or
+agents. Installation requires an explicit non-overlapping client-managed path;
+MDP does not guess undocumented host import paths.
 
 ## Agent Workflow
 
@@ -84,9 +83,11 @@ keep Pluxx, and keep Codex native-only rather than switch compilers.
 
 MDP ships exactly four skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, and `mdp-pack-apply`. Use `mdp --json skills --dir <pack> --job <job-id>` to validate profile eligibility and the exact job route. Host discovery remains separate and host-managed.
 
-## Canonical Example
+## Contract Fixtures
 
-[AI SDR Eve on Vercel](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/ai-sdr-eve-vercel) is the only canonical runnable example. Eve is the runtime; MDP provides versioned decision context and remains the local decision/context authority for the run. Each live run targets three qualified people and continues across approved strategy prompts until the target or bounded exhaustion. Pack-owned `qualification_gates` require person-level and source-backed evidence before reviewed ledger rows are appended. The example does not send outreach or sync a CRM.
+The repository's `examples/` directories are synthetic contract and
+conformance fixtures used by validation. They are not hosted products or
+recommended agent-runtime architectures.
 
 ## Docs
 

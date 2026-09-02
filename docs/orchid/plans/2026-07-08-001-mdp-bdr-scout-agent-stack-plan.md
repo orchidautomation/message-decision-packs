@@ -1,7 +1,7 @@
 # MDP BDR Scout Agent Stack Plan
 
 Date: 2026-07-08
-Status: proposed, revised to Vercel-first
+Status: superseded; retained as historical runtime exploration
 Owner: Brandon / Orchid
 Repo: message-decision-packs
 

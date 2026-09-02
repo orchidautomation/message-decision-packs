@@ -32,20 +32,10 @@ The installer uses the latest
 [GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 so the CLI and agent instructions remain version-aligned.
 
-MDP `0.1.107` now ships a Pluxx-emitted Agent Plugins v1 portable skills
-package alongside the four native bundles. The portable package has exactly
-the four MDP skills and no portable MCP or hooks. It requires an explicit,
-non-overlapping client-managed destination; MDP does not guess an undocumented
-generic Codex import path. Publication and isolated installation are verified;
-real client discovery remains a separate host-specific proof. See
-[Distribution](docs/distribution.md) for the evidence matrix and install
-contract.
-
-The `0.1.107` skill migration replaces the profile-named
-`mdp-gtm-brief` and `mdp-proposal-review` entrypoints with
-`mdp-pack-apply`. After upgrading, let the host rediscover the four-skill
-package and use `mdp --json skills --dir PACK_ROOT --job JOB_ID` to select the
-exact job. The old names are not packaged as aliases.
+MDP also ships a Pluxx-emitted Agent Plugins v1 portable skills package. It
+contains exactly the four MDP skills and no portable MCP or hooks. See
+[Distribution](docs/distribution.md) for the current package, host support, and
+install contracts.
 
 ## Quick Start
 
@@ -118,16 +108,14 @@ Maintainers extending shipped profiles or templates should follow the
 [extension boundary](docs/extension-boundary.md); editing a `.mdp/` pack is not
 registration work.
 
-## Examples
+## Contract Fixtures
 
-- [Eve on Vercel](examples/ai-sdr-eve-vercel/README.md) is the canonical
-  runnable integration. Eve provides the runtime; MDP provides local decision
-  context and gates. The example does not send outreach or mutate a CRM.
 - [Clay Audiences](examples/clay-audiences-self-serve-enterprise-expansion/README.md)
   is a synthetic reference pack for attempted-complete inputs and source
   lineage.
-- Other directories under `examples/` are synthetic contract or test fixtures.
-  They are not alternate hosted products or recommended runtime architectures.
+- The other directories under `examples/` are synthetic conformance fixtures
+  used by repository validation. They are not hosted products, starter apps, or
+  recommended runtime architectures.
 
 ## Repository Layout
 
@@ -135,7 +123,7 @@ registration work.
 cli/      Rust `mdp` CLI
 plugin/   canonical plugin source, skills, templates, and hooks
 docs/     user and maintainer documentation
-examples/ synthetic integrations and contract fixtures
+examples/ synthetic contract and conformance fixtures
 scripts/  validation, packaging, and compatibility tooling
 ```
 
@@ -172,14 +160,6 @@ cargo test --manifest-path cli/Cargo.toml
 cargo run --manifest-path cli/Cargo.toml -- \
   --json validate --dir plugin/assets/templates/basic
 make validate
-```
-
-The Eve integration has its own checks:
-
-```bash
-cd examples/ai-sdr-eve-vercel
-npm ci
-npm run check
 ```
 
 ## License
