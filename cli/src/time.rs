@@ -43,8 +43,11 @@ pub(crate) fn parse_utc_seconds(v: &str) -> Option<i64> {
 }
 pub(crate) fn parse_day_cadence(v: &str) -> Option<u32> {
     let d = v.strip_prefix('P')?.strip_suffix('D')?;
+    if d.is_empty() || !d.bytes().all(|byte| byte.is_ascii_digit()) || d.starts_with('0') {
+        return None;
+    }
     let n = d.parse().ok()?;
-    (n > 0).then_some(n)
+    Some(n)
 }
 pub(crate) fn checked_add_days(s: i64, d: u32) -> Option<i64> {
     s.checked_add(i64::from(d).checked_mul(86400)?)
@@ -80,6 +83,9 @@ mod tests {
         assert!(parse_utc_seconds("2026-01-01T00:00:00+00:00").is_none());
         assert_eq!(parse_day_cadence("P90D"), Some(90));
         assert!(parse_day_cadence("P0D").is_none());
+        for invalid in ["P01D", "P+1D", "P 1D", "P4294967296D"] {
+            assert!(parse_day_cadence(invalid).is_none(), "{invalid}");
+        }
         assert!(parse_day_cadence("P90M").is_none());
         assert!(parse_utc_seconds("2026-01-01T00:00:00+00:00").is_none());
         assert!(parse_utc_seconds("2026-01-01T00:00:00.000Z").is_none());
