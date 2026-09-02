@@ -1288,6 +1288,11 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                     item["state"].as_str().unwrap_or("unassessed")
                 );
             }
+            if let Some(diagnostics) = data["diagnostics"].as_array() {
+                for diagnostic in diagnostics {
+                    println!("- {}", issue_message(diagnostic));
+                }
+            }
             println!(
                 "Next: {}",
                 data["recommendation"]
