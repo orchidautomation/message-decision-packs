@@ -1067,6 +1067,7 @@ pub(crate) struct Provenance {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ReviewPolicy {
     #[serde(default)]
     pub(crate) cadence: Option<String>,
@@ -1091,6 +1092,7 @@ pub(crate) struct DecisionGroup {
     pub(crate) temporal: Option<DecisionTemporal>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DecisionTemporal {
     pub(crate) lifecycle: String,
     #[serde(default)]
@@ -1107,11 +1109,13 @@ pub(crate) struct DecisionTemporal {
     pub(crate) source_revisions: Vec<SourceRevision>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SourceRevision {
     pub(crate) source_id: String,
     pub(crate) sha256: String,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PublicationTemporal {
     pub(crate) published_at: Option<String>,
     #[serde(default)]
@@ -1120,6 +1124,7 @@ pub(crate) struct PublicationTemporal {
     pub(crate) receipt_sha256: Option<String>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SourceTemporal {
     pub(crate) observed_at: Option<String>,
     pub(crate) published_at: Option<String>,

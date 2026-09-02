@@ -1172,3 +1172,30 @@ fn json_mode_writes_nothing_to_stderr() {
         );
     }
 }
+
+#[test]
+fn temporal_health_json_stdout_contract() {
+    const PACK: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../plugin/assets/templates/basic"
+    );
+    let args = [
+        "--json",
+        "temporal-health",
+        "--dir",
+        PACK,
+        "--as-of",
+        "2026-09-02T00:00:00Z",
+    ];
+    let output = Command::new(mdp_bin())
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("mdp should run");
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["contract"], "mdp.temporal-health.v1");
+    assert_eq!(value["data"]["evaluation"]["as_of"], "2026-09-02T00:00:00Z");
+}

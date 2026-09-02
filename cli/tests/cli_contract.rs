@@ -26,6 +26,21 @@ fn json(args: &[&str]) -> (Output, Value) {
     (output, value)
 }
 
+#[test]
+fn temporal_health_command_accepts_explicit_as_of() {
+    let output = run(&[
+        "temporal-health",
+        "--dir",
+        "plugin/assets/templates/basic",
+        "--as-of",
+        "2026-09-02T00:00:00Z",
+    ]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("temporal health evaluated at 2026-09-02T00:00:00Z"));
+}
+
 fn temp_root(label: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
