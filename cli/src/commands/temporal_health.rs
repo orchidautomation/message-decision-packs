@@ -172,11 +172,23 @@ fn source_hash_match(source: &LedgerSource, root: &Path) -> Option<bool> {
     {
         return None;
     }
-    let resolved = crate::pack_io::resolve_pack_path(root, locator).ok()?;
-    if !fs::symlink_metadata(&resolved).ok()?.file_type().is_file() {
+    // Source locators are pack-root-relative (existing ledgers use both
+    // `.mdp/...` and `examples/...`), unlike manifest card paths which are
+    // `.mdp`-relative. Canonicalize both ends so an intermediate symlink
+    // cannot escape the pack, and reject a symlink as the final locator too.
+    let resolved = root.join(path);
+    let pack_root = root.canonicalize().ok()?;
+    let real_path = resolved.canonicalize().ok()?;
+    if !real_path.starts_with(&pack_root)
+        || fs::symlink_metadata(&resolved)
+            .ok()?
+            .file_type()
+            .is_symlink()
+        || !real_path.is_file()
+    {
         return None;
     }
-    let bytes = fs::read(resolved).ok()?;
+    let bytes = fs::read(real_path).ok()?;
     Some(format!("{:x}", Sha256::digest(bytes)) == *expected)
 }
 
@@ -756,7 +768,7 @@ mod tests {
         fs::write(root.join(DEFAULT_DIR).join("source.txt"), b"actual bytes").unwrap();
         let source = LedgerSource {
             id: "source".into(),
-            locator: Some("source.txt".into()),
+            locator: Some(".mdp/source.txt".into()),
             temporal: Some(SourceTemporal {
                 sha256: Some("0".repeat(64)),
                 observed_at: Some("2026-09-01T00:00:00Z".into()),
@@ -777,6 +789,153 @@ mod tests {
                 .iter()
                 .any(|d| d["code"] == "source_hash_mismatch")
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn copy_tree(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+
+    fn governed_pack(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-temporal-{label}-{nonce}"));
+        let template =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic/.mdp");
+        copy_tree(&template, &root.join(DEFAULT_DIR));
+        let card = root.join(DEFAULT_DIR).join("cards/positioning.yaml");
+        let sha = format!("{:x}", Sha256::digest(fs::read(&card).unwrap()));
+        fs::write(
+            root.join(DEFAULT_DIR).join("sources.yaml"),
+            format!(
+                "format: mdp.sources.v0\nsources:\n- id: source\n  locator: .mdp/cards/positioning.yaml\n  temporal:\n    observed_at: 2026-01-01T00:00:00Z\n    imported_at: 2026-09-01T00:00:00Z\n    sha256: {sha}\n    lifecycle: current\n    review_policy:\n      cadence: P30D\n      aging_after_days: 30\n      stale_after_days: 60\n"
+            ),
+        )
+        .unwrap();
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let mut manifest = fs::read_to_string(&manifest_path).unwrap();
+        manifest.push_str(&format!(
+            "  temporal:\n    published_at: 2026-09-01T00:00:00Z\n    receipt_ref: receipt.json\n    receipt_sha256: {}\ndecision_groups:\n- id: positioning-decision\n  label: Positioning decision\n  entries:\n  - card_id: positioning\n    entry_id: decision-layer\n  jobs:\n  - prospect-fit-or-brief\n  review_policy:\n    cadence: P10D\n    aging_after_days: 10\n    stale_after_days: 20\n  temporal:\n    lifecycle: current\n    changed_at: 2026-08-01T00:00:00Z\n    reviewed_at: 2026-09-01T00:00:00Z\n    source_revisions:\n    - source_id: source\n      sha256: {sha}\n",
+            "a".repeat(64)
+        ));
+        fs::write(manifest_path, manifest).unwrap();
+        root
+    }
+
+    #[test]
+    fn temporal_health_matrix_separates_source_review_and_binds_integrity() {
+        let root = governed_pack("matrix");
+        let as_of = "2026-09-02T00:00:00Z";
+        let baseline = temporal_health(&root, Some(as_of)).unwrap();
+        assert_eq!(baseline["sources"][0]["state"], "stale");
+        assert_eq!(baseline["sources"][0]["hash_match"], true);
+        assert_eq!(baseline["decision_review"][0]["state"], "review-current");
+        assert_eq!(baseline["pack_publication"]["authority"], "receipt-bound");
+        jsonschema::draft202012::validate(
+            &crate::commands::schema(crate::cli::SchemaTarget::TemporalHealthV1),
+            &baseline,
+        )
+        .unwrap();
+
+        let hash_before = crate::artifact_hash::pack_content_sha256(&root).unwrap();
+        let sources_path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let same_bytes = fs::read(&sources_path).unwrap();
+        fs::write(&sources_path, &same_bytes).unwrap();
+        assert_eq!(
+            hash_before,
+            crate::artifact_hash::pack_content_sha256(&root).unwrap(),
+            "mtime/write time must not affect semantic identity"
+        );
+        let changed_sources = String::from_utf8(same_bytes)
+            .unwrap()
+            .replace("2026-09-01T00:00:00Z", "2026-08-31T00:00:00Z");
+        fs::write(&sources_path, changed_sources).unwrap();
+        assert_ne!(
+            hash_before,
+            crate::artifact_hash::pack_content_sha256(&root).unwrap(),
+            "authority-bearing temporal content must affect semantic identity"
+        );
+
+        let card = root.join(DEFAULT_DIR).join("cards/positioning.yaml");
+        let mut bytes = fs::read(&card).unwrap();
+        bytes.push(b'\n');
+        fs::write(card, bytes).unwrap();
+        let mismatched = temporal_health(&root, Some(as_of)).unwrap();
+        assert_eq!(mismatched["sources"][0]["hash_match"], false);
+        assert_eq!(mismatched["decision_review"][0]["state"], "review-due");
+        assert!(
+            mismatched["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|d| {
+                    d.get("code").is_some() && d.get("path").is_some() && d.get("message").is_some()
+                })
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn temporal_health_matrix_is_fail_closed_at_boundaries() {
+        let root = governed_pack("boundaries");
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path).unwrap().replace(
+            "reviewed_at: 2026-09-01T00:00:00Z",
+            "reviewed_at: 2026-08-23T00:00:00Z",
+        );
+        fs::write(&manifest_path, &manifest).unwrap();
+        let due = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(due["decision_review"][0]["state"], "review-due");
+        let overdue = temporal_health(&root, Some("2026-09-12T00:00:00Z")).unwrap();
+        assert_eq!(overdue["decision_review"][0]["state"], "review-overdue");
+
+        let invalid = manifest
+            .replace(
+                "reviewed_at: 2026-08-23T00:00:00Z",
+                "reviewed_at: 2027-01-01T00:00:00Z",
+            )
+            .replace(
+                "published_at: 2026-09-01T00:00:00Z",
+                "published_at: not-a-time",
+            )
+            .replace(&"a".repeat(64), "bad-hash");
+        fs::write(&manifest_path, invalid).unwrap();
+        let failed_closed = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(
+            failed_closed["decision_review"][0]["state"],
+            "never-reviewed"
+        );
+        assert_eq!(
+            failed_closed["decision_review"][0]["next_review_at"],
+            Value::Null
+        );
+        assert_eq!(failed_closed["pack_publication"]["state"], "unknown");
+        assert_eq!(failed_closed["pack_publication"]["authority"], "unknown");
+        assert!(
+            failed_closed["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["code"] == "temporal_timestamp_invalid_or_future")
+        );
+
+        for template in ["basic", "proposal"] {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../plugin/assets/templates")
+                .join(template);
+            assert!(temporal_health(&root, Some("2026-09-02T00:00:00Z")).is_ok());
+        }
         let _ = fs::remove_dir_all(root);
     }
 }
