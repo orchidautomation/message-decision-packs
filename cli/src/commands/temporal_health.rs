@@ -898,7 +898,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             .is_some_and(|_| changed.is_none());
         let reviewed_invalid = t
             .and_then(|temporal| temporal.reviewed_at.as_ref())
-            .is_some_and(|value| reviewed.is_none());
+            .is_some_and(|_| reviewed.is_none());
         let decision_transition_valid = if !matches!(lifecycle, "revoked" | "superseded") {
             true
         } else if changed_invalid || reviewed_invalid {
