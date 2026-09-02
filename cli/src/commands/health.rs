@@ -284,6 +284,18 @@ fn doctor_result(
 pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let mut issues = Vec::new();
+    let as_of = crate::runtime_context::current_runtime_context()
+        .ok()
+        .and_then(|v| {
+            v["now_utc"]
+                .as_str()
+                .and_then(crate::time::parse_utc_seconds)
+        });
+    if let Some(as_of) = as_of {
+        issues.extend(crate::commands::temporal_health::validate_governance(
+            root, &manifest, as_of,
+        ));
+    }
     validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
     let mut card_entry_index: BTreeMap<String, (CardKind, BTreeSet<String>, BTreeSet<String>)> =

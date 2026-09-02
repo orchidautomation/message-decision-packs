@@ -556,3 +556,16 @@ Generated starter rows and `sample-leads` rows are synthetic examples. They incl
 Direct persona/job commands resolve pack-owned persona aliases before routing. Check `requested_persona` and `persona_resolution` in JSON output when the route used an alias.
 
 `mdp` is not a sender, CRM, sequencer, lead enricher, scraper, or AI SDR. It is the local decision contract layer.
+
+### Temporal health
+
+Project declared source age and decision review independently without changing
+readiness:
+
+```bash
+mdp --json temporal-health --dir PACK_ROOT --as-of 2026-09-02T00:00:00Z
+mdp temporal-health --dir PACK_ROOT --as-of 2026-09-02T00:00:00Z
+```
+
+The command is read-only and offline. Omitted governance remains compatible and
+is reported as unknown or unassessed; the projection never grants approval.

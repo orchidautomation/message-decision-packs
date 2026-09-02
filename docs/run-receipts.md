@@ -443,3 +443,11 @@ descriptor identity. Generative calls require an out-of-band one-shot consent
 record matching the exact request/source digests and output root. The record is
 consumed before provider preflight or runner spawn. A native credential or
 enable flag without that record is insufficient.
+
+### Temporal declarations are not receipts
+
+Pack integrity, source freshness, and publication authority remain separate.
+`temporal-health` can report declared publication time, but only a bound
+publication receipt upgrades it to receipt-bound authority. Future receipt
+history will bind these declarations durably; this projection performs no
+approval, publication, scheduling, or source fetch.

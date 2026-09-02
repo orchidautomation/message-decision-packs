@@ -153,3 +153,12 @@ in the manifest or README.
 Review every opted-in job with `validate`, `skills --job`, and `requirements
 --job`. Confirm selected IDs and load order, verify optional/excluded content is
 absent, and test empty, gap, dangling, conflict, and irrelevant-facet cases.
+
+### Decision groups and temporal state
+
+Decision groups are typed manifest membership and governance metadata. They
+reference exact existing card entries and canonical jobs rather than copying
+decision prose. Source observation/publication age, decision review cadence,
+and lifecycle are separate states; unknown dates are not inferred from file
+mtime, Git, or the current clock. A source digest proves byte identity only and
+cannot approve, supersede, or rewrite a decision.

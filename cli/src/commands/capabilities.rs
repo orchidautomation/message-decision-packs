@@ -360,6 +360,7 @@ pub(crate) fn capabilities() -> Value {
             author_command("apply", "transactional-pack-write", &["--candidate", "--change-set"], &["--dir"]),
             command("doctor", "mdp.doctor.v1", "read-only", false, false, false, &["--dir"]),
             command("status", "mdp.status.v1", "read-only-observational", false, false, false, &["--dir"]),
+            command("temporal-health", "mdp.temporal-health.v1", "read-only-offline", false, false, false, &["--dir", "--as-of"]),
             command("check", "mdp.readiness.v1", "read-only", false, false, false, &["--dir", "--job", "--input-validation"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--model-context"]),

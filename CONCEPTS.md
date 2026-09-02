@@ -148,3 +148,14 @@ graph, and do not claim that its hashes or traces prove source truth.
 
 See [Extension boundary](docs/extension-boundary.md) for the ownership table
 and reviewed template/profile checklist.
+
+## Temporal provenance and decision groups
+
+A manifest `decision_groups` registry names an owner-readable decision and
+references exact card entries and canonical jobs; it does not duplicate their
+prose. Source age (`observed_at`, `published_at`, or `imported_at`) and decision
+review state (`reviewed_at`, `changed_at`, and source revisions) are independent.
+`mdp temporal-health --as-of 2026-09-02T00:00:00Z` is a local deterministic
+projection: missing dates remain `unknown`/`unassessed`, hashes establish
+identity but never approval, and a changed source starts review without
+superseding a decision. No filesystem mtime or network fetch is used.
