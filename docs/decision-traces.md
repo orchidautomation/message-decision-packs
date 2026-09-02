@@ -10,6 +10,9 @@ The stable vocabulary is:
 - **Designed graph** — the relevant policy and gate relationships.
 - **Observed path** — the facts recorded for one decision.
 - **Decision graph** — a JSON or Mermaid visualization of those two views.
+- **Decision card** — the `mdp.decision-card.v1` operator projection composed
+  from the canonical trace. It summarizes the decision without becoming
+  authority.
 
 MDP's product category is **versioned decision context for agents**. A decision
 graph is only the bounded visualization of designed policy and one observed
@@ -74,6 +77,25 @@ Stable unavailable diagnostics distinguish raw output
 (`prompt-output-tampered`), and a changed receipt binding
 (`prompt-output-validation-receipt-tampered`).
 
+## Render an executive decision card
+
+For a one-minute, outcome-first operator review, use the same source bindings
+with the decision-card projection:
+
+```bash
+mdp decision-card --file <saved-result.json>
+mdp --json decision-card --file <saved-result.json>
+mdp decision-card --file <saved-result.json> --out <decision-card.md>
+```
+
+Markdown is the default. Global `--json` or `--format json` emits the stable
+machine object. Explicit `--format markdown` is human-only and conflicts with
+global `--json`. The relationship is strict: **source artifact = authority;
+trace = bounded explanation; decision card = operator projection**. The card
+derives only from the bounded trace, so private row fields and arbitrary source
+prose are not copied. If the trace cannot safely name a person or record, the
+card says that the subject label is unavailable.
+
 ## Inspect v1 run authority
 
 ```bash
@@ -87,6 +109,10 @@ This form reuses `verify-run`. Invalid hashes, mismatched authority, or
 no-draft leakage produce a blocked projection. Without `--artifact-root`, the
 trace states that published artifact bytes were not recomputed. The run receipt
 and verification remain authoritative in either case.
+
+Replace `trace` with `decision-card` to render the same verified authority as a
+human card. The card does not open additional artifacts or strengthen the
+receipt's decision or output authority.
 
 ## Inspect a job-conformance journey
 

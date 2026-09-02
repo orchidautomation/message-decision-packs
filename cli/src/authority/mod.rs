@@ -107,6 +107,7 @@ pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("run-receipt", SurfaceRole::AuthorityOrigin),
     ("verify-run", SurfaceRole::Verifier),
     ("trace", SurfaceRole::Projection),
+    ("decision-card", SurfaceRole::Projection),
     ("consume-run", SurfaceRole::Lifecycle),
     ("run", SurfaceRole::AuthorityOrigin),
     // Hidden descriptor-bound form of `run`; it preserves the same authority
@@ -137,6 +138,7 @@ pub(crate) const SUPPORTED_PROJECTION_SURFACES: &[(&str, SurfaceRole)] = &[
     ("renderer:human-brief", SurfaceRole::Projection),
     ("renderer:summary", SurfaceRole::Projection),
     ("renderer:decision-trace", SurfaceRole::Projection),
+    ("renderer:decision-card", SurfaceRole::Projection),
     ("transport:run-mcp", SurfaceRole::Transport),
     ("transport:proposal-mcp", SurfaceRole::Transport),
     ("adapter:native-model", SurfaceRole::Adapter),

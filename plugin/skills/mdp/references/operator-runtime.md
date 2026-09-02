@@ -218,6 +218,13 @@ prompt-output trace authority, and only when `mdp trace` is given the same
 `--validation-input LOGICAL_NAME=PATH`. Trace verifies those bindings; it does
 not validate the model output a second time.
 
+Use `mdp decision-card` when a human needs an outcome-first review of the same
+saved decision or verified run. Pass the same authority bindings accepted by
+`mdp trace`. Treat the source artifact or receipt as authority, the embedded
+trace as bounded explanation, and the card as an operator projection only.
+Never infer missing subject details from private row prose or treat the card as
+drafting, sending, or approval authority.
+
 Do not extract or pass `normalized_prospect` to fit, routing, brief, or copy
 work. For v3, pass the verified sealed neutral envelope intact; for v1/v2,
 require compatibility validation and its governed ready outcome. Every blocked,

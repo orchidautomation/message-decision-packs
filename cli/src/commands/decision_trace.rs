@@ -118,6 +118,31 @@ pub(crate) fn project_source_file(path: &Path) -> Result<DecisionTrace> {
     Ok(project_source_value(&value, hash))
 }
 
+/// Resolve the mutually exclusive public trace authority bindings once so
+/// every projection composes the same canonical decision trace.
+pub(crate) fn project_trace_inputs(
+    file: Option<&Path>,
+    pack_root: Option<&Path>,
+    prompt_output: Option<&Path>,
+    validation_inputs: &[String],
+    bundle: Option<&Path>,
+    receipt: Option<&Path>,
+    artifact_root: Option<&Path>,
+) -> Result<DecisionTrace> {
+    match (file, bundle, receipt) {
+        (Some(path), None, None) => match (artifact_root, pack_root, prompt_output) {
+            (Some(root), None, None) => project_conformance_file(path, root),
+            (None, Some(root), Some(output)) => {
+                project_prompt_output_validation_file(path, root, output, validation_inputs)
+            }
+            (None, None, None) => project_source_file(path),
+            _ => unreachable!("clap validates trace authority bindings"),
+        },
+        (None, Some(bundle), Some(receipt)) => project_run_files(bundle, receipt, artifact_root),
+        _ => unreachable!("clap validates trace source arguments"),
+    }
+}
+
 pub(crate) fn project_prompt_output_validation_file(
     validation_path: &Path,
     pack_root: &Path,
