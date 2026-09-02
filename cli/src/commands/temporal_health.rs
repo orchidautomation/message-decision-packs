@@ -16,17 +16,81 @@ fn diagnostic(code: &str, path: impl Into<String>, message: &str) -> Value {
     json!({"code": code, "path": path.into(), "message": message})
 }
 #[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct Ledger {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    purpose: Option<String>,
+    #[serde(default)]
+    rules: Vec<String>,
     #[serde(default)]
     sources: Vec<LedgerSource>,
 }
 #[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct LedgerSource {
     id: String,
     #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
     locator: Option<String>,
     #[serde(default)]
+    freshness: Option<String>,
+    #[serde(default)]
+    confidence: Option<String>,
+    #[serde(default)]
+    direct_claims: Vec<String>,
+    #[serde(default)]
+    interpretations: Vec<String>,
+    #[serde(default)]
+    gaps: Vec<String>,
+    #[serde(default)]
     temporal: Option<SourceTemporal>,
+}
+
+struct LedgerLoad {
+    ledger: Ledger,
+    usable: bool,
+    diagnostics: Vec<Value>,
+}
+
+fn load_ledger(root: &Path) -> LedgerLoad {
+    let path = root.join(DEFAULT_DIR).join("sources.yaml");
+    let malformed = || LedgerLoad {
+        ledger: Ledger::default(),
+        usable: false,
+        diagnostics: vec![diagnostic(
+            "temporal_source_ledger_malformed",
+            ".mdp/sources.yaml",
+            "source ledger temporal fields must match the typed governance shape",
+        )],
+    };
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return LedgerLoad {
+                ledger: Ledger::default(),
+                usable: true,
+                diagnostics: Vec::new(),
+            };
+        }
+        Err(_) => return malformed(),
+    };
+    if !metadata.file_type().is_file() {
+        return malformed();
+    }
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return malformed();
+    };
+    match serde_yaml::from_str::<Ledger>(&raw) {
+        Ok(ledger) => LedgerLoad {
+            ledger,
+            usable: true,
+            diagnostics: Vec::new(),
+        },
+        Err(_) => malformed(),
+    }
 }
 
 fn timestamp(
@@ -119,17 +183,18 @@ fn source_state(
     // source-origin clock; never substitute imported_at.
     let observed = t.and_then(|x| x.observed_at.as_ref());
     let published = t.and_then(|x| x.published_at.as_ref());
+    let mut projection_diagnostics = Vec::new();
     let observed_at = timestamp(
         observed,
         &format!(".mdp/sources.yaml#/sources/{index}/temporal/observed_at"),
         as_of,
-        diagnostics,
+        &mut projection_diagnostics,
     );
     let published_at = timestamp(
         published,
         &format!(".mdp/sources.yaml#/sources/{index}/temporal/published_at"),
         as_of,
-        diagnostics,
+        &mut projection_diagnostics,
     );
     let instant = observed_at.or(published_at);
     let hash_match = source_hash_match(source, root);
@@ -151,7 +216,7 @@ fn source_state(
     };
     let (aging, stale) = policy_days(
         t.and_then(|x| x.review_policy.as_ref()),
-        diagnostics,
+        &mut projection_diagnostics,
         &format!("source/{}/review_policy", source.id),
     );
     let age = (as_of - at) / 86400;
@@ -269,6 +334,25 @@ fn verify_publication_receipt(
     true
 }
 pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) -> Vec<Value> {
+    let loaded = load_ledger(root);
+    let mut diagnostics = loaded.diagnostics;
+    diagnostics.extend(validate_governance_with_ledger(
+        root,
+        manifest,
+        as_of,
+        &loaded.ledger,
+        loaded.usable,
+    ));
+    diagnostics
+}
+
+fn validate_governance_with_ledger(
+    root: &Path,
+    manifest: &Manifest,
+    as_of: i64,
+    ledger: &Ledger,
+    ledger_usable: bool,
+) -> Vec<Value> {
     let mut d = Vec::new();
     let mut ids = BTreeSet::new();
     let mut source_ids_seen = BTreeSet::new();
@@ -332,39 +416,39 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
         if let Some(t) = &g.temporal {
             let changed = timestamp(
                 t.changed_at.as_ref(),
-                "#/decision_groups/temporal/changed_at",
+                &format!("#/decision_groups/{i}/temporal/changed_at"),
                 as_of,
                 &mut d,
             );
             let reviewed = timestamp(
                 t.reviewed_at.as_ref(),
-                "#/decision_groups/temporal/reviewed_at",
+                &format!("#/decision_groups/{i}/temporal/reviewed_at"),
                 as_of,
                 &mut d,
             );
             let revoked_at = timestamp(
                 t.revoked_at.as_ref(),
-                "#/decision_groups/temporal/revoked_at",
+                &format!("#/decision_groups/{i}/temporal/revoked_at"),
                 as_of,
                 &mut d,
             );
             let superseded_at = timestamp(
                 t.superseded_at.as_ref(),
-                "#/decision_groups/temporal/superseded_at",
+                &format!("#/decision_groups/{i}/temporal/superseded_at"),
                 as_of,
                 &mut d,
             );
             if reviewed.zip(changed).is_some_and(|(r, c)| r < c) {
                 d.push(diagnostic(
                     "decision_reviewed_before_changed",
-                    "#/decision_groups/temporal/reviewed_at",
+                    format!("#/decision_groups/{i}/temporal/reviewed_at"),
                     "reviewed_at cannot precede changed_at",
                 ));
             }
             if !matches!(t.lifecycle.as_str(), "current" | "revoked" | "superseded") {
                 d.push(diagnostic(
                     "decision_lifecycle_invalid",
-                    "#/decision_groups/temporal/lifecycle",
+                    format!("#/decision_groups/{i}/temporal/lifecycle"),
                     "lifecycle must be current, revoked, or superseded",
                 ));
             }
@@ -373,7 +457,7 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
             {
                 d.push(diagnostic(
                     "decision_revocation_transition_invalid",
-                    "#/decision_groups/temporal/revoked_at",
+                    format!("#/decision_groups/{i}/temporal/revoked_at"),
                     "revoked_at must be present only for revoked decisions",
                 ));
             }
@@ -382,32 +466,32 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
             {
                 d.push(diagnostic(
                     "decision_supersession_transition_invalid",
-                    "#/decision_groups/temporal/superseded_at",
+                    format!("#/decision_groups/{i}/temporal/superseded_at"),
                     "superseded_at must be present only for superseded decisions",
                 ));
             }
             check_transition(
                 t.revoked_at.as_ref(),
                 changed,
-                "#/decision_groups/temporal/revoked_at",
+                &format!("#/decision_groups/{i}/temporal/revoked_at"),
                 &mut d,
             );
             check_transition(
                 t.superseded_at.as_ref(),
                 changed,
-                "#/decision_groups/temporal/superseded_at",
+                &format!("#/decision_groups/{i}/temporal/superseded_at"),
                 &mut d,
             );
             check_transition(
                 t.revoked_at.as_ref(),
                 reviewed,
-                "#/decision_groups/temporal/revoked_at",
+                &format!("#/decision_groups/{i}/temporal/revoked_at"),
                 &mut d,
             );
             check_transition(
                 t.superseded_at.as_ref(),
                 reviewed,
-                "#/decision_groups/temporal/superseded_at",
+                &format!("#/decision_groups/{i}/temporal/superseded_at"),
                 &mut d,
             );
             let _ = (revoked_at, superseded_at);
@@ -420,172 +504,153 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
                 {
                     d.push(diagnostic(
                         "source_revision_hash_invalid",
-                        "#/decision_groups/temporal/source_revisions",
+                        format!("#/decision_groups/{i}/temporal/source_revisions"),
                         "source revision must be exactly 64 lowercase hexadecimal characters",
                     ));
                 }
             }
         }
     }
-    let ledger_path = root.join(DEFAULT_DIR).join("sources.yaml");
-    if let Ok(raw) = fs::read_to_string(&ledger_path) {
-        match serde_yaml::from_str::<Ledger>(&raw) {
-            Ok(ledger) => {
-                let source_ids: BTreeSet<_> =
-                    ledger.sources.iter().map(|s| s.id.as_str()).collect();
-                let decision_ids: BTreeSet<_> = manifest
-                    .decision_groups
-                    .iter()
-                    .map(|g| g.id.as_str())
-                    .collect();
-                for (i, group) in manifest.decision_groups.iter().enumerate() {
-                    if let Some(temporal) = &group.temporal {
-                        for revision in &temporal.source_revisions {
-                            if !source_ids.contains(revision.source_id.as_str()) {
-                                d.push(diagnostic(
-                                    "source_revision_source_unknown",
-                                    format!("#/decision_groups/{i}/temporal/source_revisions"),
-                                    "source revision must reference an existing source",
-                                ));
-                            }
-                        }
-                        if let Some(replacement) = &temporal.replacement_group {
-                            if replacement == &group.id
-                                || !decision_ids.contains(replacement.as_str())
-                            {
-                                d.push(diagnostic(
-                                    "decision_replacement_group_invalid",
-                                    format!("#/decision_groups/{i}/temporal/replacement_group"),
-                                    "replacement_group must reference a distinct existing decision group",
-                                ));
-                            }
-                        }
-                    }
-                }
-                for (i, source) in ledger.sources.iter().enumerate() {
-                    if !source_ids_seen.insert(source.id.as_str()) {
+    if ledger_usable {
+        let source_ids: BTreeSet<_> = ledger.sources.iter().map(|s| s.id.as_str()).collect();
+        let decision_ids: BTreeSet<_> = manifest
+            .decision_groups
+            .iter()
+            .map(|g| g.id.as_str())
+            .collect();
+        for (i, group) in manifest.decision_groups.iter().enumerate() {
+            if let Some(temporal) = &group.temporal {
+                for revision in &temporal.source_revisions {
+                    if !source_ids.contains(revision.source_id.as_str()) {
                         d.push(diagnostic(
-                            "source_duplicate_id",
-                            format!(".mdp/sources.yaml#/sources/{i}/id"),
-                            "source IDs must be unique",
+                            "source_revision_source_unknown",
+                            format!("#/decision_groups/{i}/temporal/source_revisions"),
+                            "source revision must reference an existing source",
                         ));
                     }
-                    if let Some(t) = &source.temporal {
-                        if !matches!(
-                            t.lifecycle.as_deref().unwrap_or("current"),
-                            "current" | "revoked" | "superseded"
-                        ) {
-                            d.push(diagnostic(
-                                "source_lifecycle_invalid",
-                                format!(".mdp/sources.yaml#/sources/{i}/temporal/lifecycle"),
-                                "lifecycle must be current, revoked, or superseded",
-                            ));
-                        }
-                        let observed = timestamp(
-                            t.observed_at.as_ref(),
-                            &format!(".mdp/sources.yaml#/sources/{i}/temporal/observed_at"),
-                            as_of,
-                            &mut d,
-                        );
-                        let published = timestamp(
-                            t.published_at.as_ref(),
-                            &format!(".mdp/sources.yaml#/sources/{i}/temporal/published_at"),
-                            as_of,
-                            &mut d,
-                        );
-                        let imported = timestamp(
-                            t.imported_at.as_ref(),
-                            &format!(".mdp/sources.yaml#/sources/{i}/temporal/imported_at"),
-                            as_of,
-                            &mut d,
-                        );
-                        check_transition(
-                            t.revoked_at.as_ref(),
-                            observed.max(published).max(imported),
-                            &format!(".mdp/sources.yaml#/sources/{i}/temporal/revoked_at"),
-                            &mut d,
-                        );
-                        check_transition(
-                            t.superseded_at.as_ref(),
-                            observed.max(published).max(imported),
-                            &format!(".mdp/sources.yaml#/sources/{i}/temporal/superseded_at"),
-                            &mut d,
-                        );
-                        for (name, value) in [
-                            ("observed_at", &t.observed_at),
-                            ("published_at", &t.published_at),
-                            ("imported_at", &t.imported_at),
-                            ("revoked_at", &t.revoked_at),
-                            ("superseded_at", &t.superseded_at),
-                        ] {
-                            if name != "observed_at"
-                                && name != "published_at"
-                                && name != "imported_at"
-                            {
-                                timestamp(
-                                    value.as_ref(),
-                                    &format!(".mdp/sources.yaml#/sources/{i}/temporal/{name}"),
-                                    as_of,
-                                    &mut d,
-                                );
-                            }
-                        }
-                        if t.lifecycle.as_deref() == Some("revoked") && t.revoked_at.is_none()
-                            || t.lifecycle.as_deref() != Some("revoked") && t.revoked_at.is_some()
-                        {
-                            d.push(diagnostic(
-                                "source_revocation_transition_invalid",
-                                format!(".mdp/sources.yaml#/sources/{i}/temporal/revoked_at"),
-                                "revoked_at must be present only for revoked sources",
-                            ));
-                        }
-                        if t.lifecycle.as_deref() == Some("superseded") && t.superseded_at.is_none()
-                            || t.lifecycle.as_deref() != Some("superseded")
-                                && t.superseded_at.is_some()
-                        {
-                            d.push(diagnostic(
-                                "source_supersession_transition_invalid",
-                                format!(".mdp/sources.yaml#/sources/{i}/temporal/superseded_at"),
-                                "superseded_at must be present only for superseded sources",
-                            ));
-                        }
-                        if let Some(id) = &t.superseded_by {
-                            if id == &source.id || !source_ids.contains(id.as_str()) {
-                                d.push(diagnostic(
-                                    "source_superseded_by_invalid",
-                                    format!(
-                                        ".mdp/sources.yaml#/sources/{i}/temporal/superseded_by"
-                                    ),
-                                    "superseded_by must reference a distinct existing source",
-                                ));
-                            }
-                        }
-                        if let Some(hash) = &t.sha256 {
-                            if hash.len() != 64
-                                || !hash
-                                    .chars()
-                                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-                            {
-                                d.push(diagnostic(
-                                    "source_hash_invalid",
-                                    format!(".mdp/sources.yaml#/sources/{i}/temporal/sha256"),
-                                    "sha256 must be exactly 64 lowercase hexadecimal characters",
-                                ));
-                            }
-                        }
-                        policy_days(
-                            t.review_policy.as_ref(),
-                            &mut d,
-                            &format!("source/{}/review_policy", source.id),
-                        );
+                }
+                if let Some(replacement) = &temporal.replacement_group {
+                    if replacement == &group.id || !decision_ids.contains(replacement.as_str()) {
+                        d.push(diagnostic(
+                            "decision_replacement_group_invalid",
+                            format!("#/decision_groups/{i}/temporal/replacement_group"),
+                            "replacement_group must reference a distinct existing decision group",
+                        ));
                     }
                 }
             }
-            Err(_) => d.push(diagnostic(
-                "temporal_source_ledger_malformed",
-                ".mdp/sources.yaml",
-                "source ledger temporal fields must match the typed governance shape",
-            )),
+        }
+        for (i, source) in ledger.sources.iter().enumerate() {
+            if !source_ids_seen.insert(source.id.as_str()) {
+                d.push(diagnostic(
+                    "source_duplicate_id",
+                    format!(".mdp/sources.yaml#/sources/{i}/id"),
+                    "source IDs must be unique",
+                ));
+            }
+            if let Some(t) = &source.temporal {
+                if !matches!(
+                    t.lifecycle.as_deref().unwrap_or("current"),
+                    "current" | "revoked" | "superseded"
+                ) {
+                    d.push(diagnostic(
+                        "source_lifecycle_invalid",
+                        format!(".mdp/sources.yaml#/sources/{i}/temporal/lifecycle"),
+                        "lifecycle must be current, revoked, or superseded",
+                    ));
+                }
+                let observed = timestamp(
+                    t.observed_at.as_ref(),
+                    &format!(".mdp/sources.yaml#/sources/{i}/temporal/observed_at"),
+                    as_of,
+                    &mut d,
+                );
+                let published = timestamp(
+                    t.published_at.as_ref(),
+                    &format!(".mdp/sources.yaml#/sources/{i}/temporal/published_at"),
+                    as_of,
+                    &mut d,
+                );
+                let imported = timestamp(
+                    t.imported_at.as_ref(),
+                    &format!(".mdp/sources.yaml#/sources/{i}/temporal/imported_at"),
+                    as_of,
+                    &mut d,
+                );
+                check_transition(
+                    t.revoked_at.as_ref(),
+                    observed.max(published).max(imported),
+                    &format!(".mdp/sources.yaml#/sources/{i}/temporal/revoked_at"),
+                    &mut d,
+                );
+                check_transition(
+                    t.superseded_at.as_ref(),
+                    observed.max(published).max(imported),
+                    &format!(".mdp/sources.yaml#/sources/{i}/temporal/superseded_at"),
+                    &mut d,
+                );
+                for (name, value) in [
+                    ("observed_at", &t.observed_at),
+                    ("published_at", &t.published_at),
+                    ("imported_at", &t.imported_at),
+                    ("revoked_at", &t.revoked_at),
+                    ("superseded_at", &t.superseded_at),
+                ] {
+                    if name != "observed_at" && name != "published_at" && name != "imported_at" {
+                        timestamp(
+                            value.as_ref(),
+                            &format!(".mdp/sources.yaml#/sources/{i}/temporal/{name}"),
+                            as_of,
+                            &mut d,
+                        );
+                    }
+                }
+                if t.lifecycle.as_deref() == Some("revoked") && t.revoked_at.is_none()
+                    || t.lifecycle.as_deref() != Some("revoked") && t.revoked_at.is_some()
+                {
+                    d.push(diagnostic(
+                        "source_revocation_transition_invalid",
+                        format!(".mdp/sources.yaml#/sources/{i}/temporal/revoked_at"),
+                        "revoked_at must be present only for revoked sources",
+                    ));
+                }
+                if t.lifecycle.as_deref() == Some("superseded") && t.superseded_at.is_none()
+                    || t.lifecycle.as_deref() != Some("superseded") && t.superseded_at.is_some()
+                {
+                    d.push(diagnostic(
+                        "source_supersession_transition_invalid",
+                        format!(".mdp/sources.yaml#/sources/{i}/temporal/superseded_at"),
+                        "superseded_at must be present only for superseded sources",
+                    ));
+                }
+                if let Some(id) = &t.superseded_by {
+                    if id == &source.id || !source_ids.contains(id.as_str()) {
+                        d.push(diagnostic(
+                            "source_superseded_by_invalid",
+                            format!(".mdp/sources.yaml#/sources/{i}/temporal/superseded_by"),
+                            "superseded_by must reference a distinct existing source",
+                        ));
+                    }
+                }
+                if let Some(hash) = &t.sha256 {
+                    if hash.len() != 64
+                        || !hash
+                            .chars()
+                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+                    {
+                        d.push(diagnostic(
+                            "source_hash_invalid",
+                            format!(".mdp/sources.yaml#/sources/{i}/temporal/sha256"),
+                            "sha256 must be exactly 64 lowercase hexadecimal characters",
+                        ));
+                    }
+                }
+                policy_days(
+                    t.review_policy.as_ref(),
+                    &mut d,
+                    &format!("source/{}/review_policy", source.id),
+                );
+            }
         }
     }
     if let Some(publication) = &manifest.provenance.temporal {
@@ -621,19 +686,16 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         }
     };
     let manifest = read_manifest(root)?;
-    let mut diagnostics = validate_governance(root, &manifest, as_of);
-    let ledger_path = root.join(DEFAULT_DIR).join("sources.yaml");
-    let ledger = if ledger_path.exists() {
-        match fs::read_to_string(&ledger_path)
-            .ok()
-            .and_then(|raw| serde_yaml::from_str::<Ledger>(&raw).ok())
-        {
-            Some(ledger) => ledger,
-            None => Ledger::default(),
-        }
-    } else {
-        Ledger::default()
-    };
+    let loaded = load_ledger(root);
+    let mut diagnostics = loaded.diagnostics;
+    diagnostics.extend(validate_governance_with_ledger(
+        root,
+        &manifest,
+        as_of,
+        &loaded.ledger,
+        loaded.usable,
+    ));
+    let ledger = loaded.ledger;
     let mut sources = Vec::new();
     let mut source_map: BTreeMap<String, Option<String>> = BTreeMap::new();
     let mut source_local_mismatch: BTreeSet<String> = BTreeSet::new();
@@ -666,7 +728,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         sources.push(json!({"id":s.id,"state":state,"observed_at":t.and_then(|x|x.observed_at.clone()),"published_at":t.and_then(|x|x.published_at.clone()),"imported_at":t.and_then(|x|x.imported_at.clone()),"age_origin_at":origin,"next_review_at":next_review_at,"hash_match":hash_match}));
     }
     let mut decisions = Vec::new();
-    for g in &manifest.decision_groups {
+    for (group_index, g) in manifest.decision_groups.iter().enumerate() {
         let t = g.temporal.as_ref();
         let lifecycle = t.map(|x| x.lifecycle.as_str()).unwrap_or("unknown");
         let reviewed = t
@@ -697,7 +759,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                     .and_then(|v| v.as_ref())
                     .is_none()
                 {
-                    diagnostics.push(diagnostic("source_revision_unverifiable", "#/decision_groups/temporal/source_revisions", "source revision cannot be compared because the source has no declared digest"));
+                    diagnostics.push(diagnostic("source_revision_unverifiable", format!("#/decision_groups/{group_index}/temporal/source_revisions"), "source revision cannot be compared because the source has no declared digest"));
                 }
             }
         }
@@ -713,8 +775,12 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         } else if reviewed.is_none() {
             "never-reviewed"
         } else if reviewed.is_some() {
-            let (aging, stale) =
-                policy_days(g.review_policy.as_ref(), &mut diagnostics, "decision");
+            let mut projection_policy_diagnostics = Vec::new();
+            let (aging, stale) = policy_days(
+                g.review_policy.as_ref(),
+                &mut projection_policy_diagnostics,
+                &format!("#/decision_groups/{group_index}/review_policy"),
+            );
             if stale.is_some_and(|n| as_of - reviewed.unwrap() >= i64::from(n) * 86400)
                 || changed.is_some_and(|changed| reviewed.unwrap() < changed)
             {
@@ -873,6 +939,7 @@ mod tests {
                 observed_at: Some("2026-09-01T00:00:00Z".into()),
                 ..SourceTemporal::default()
             }),
+            ..LedgerSource::default()
         };
         let mut diagnostics = Vec::new();
         let (_, _, hash_match) = source_state(
@@ -1175,6 +1242,77 @@ mod tests {
             &output,
         )
         .unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn typed_source_ledger_root_and_source_shapes_are_closed() {
+        let root = governed_pack("closed-ledger");
+        let path = root.join(DEFAULT_DIR).join("sources.yaml");
+        fs::write(
+            &path,
+            "format: mdp.sources.v0\nunknown_root: true\nsources: []\n",
+        )
+        .unwrap();
+        let root_unknown = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert!(
+            root_unknown["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| { d["code"] == "temporal_source_ledger_malformed" })
+        );
+
+        fs::write(
+            &path,
+            "format: mdp.sources.v0\nsources:\n- id: source\n  temporal_typo: {}\n",
+        )
+        .unwrap();
+        let source_unknown = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(source_unknown["contract"], CONTRACT);
+        assert!(
+            source_unknown["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| { d["code"] == "temporal_source_ledger_malformed" })
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn decision_temporal_diagnostics_are_indexed_and_unique() {
+        let root = governed_pack("indexed-diagnostics");
+        let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&path)
+            .unwrap()
+            .replace(
+                "reviewed_at: 2026-09-01T00:00:00Z",
+                "reviewed_at: not-a-timestamp",
+            )
+            .replace("cadence: P10D", "cadence: P0D");
+        fs::write(path, manifest).unwrap();
+        let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        let diagnostics = output["diagnostics"].as_array().unwrap();
+        let keys = diagnostics
+            .iter()
+            .map(|d| {
+                (
+                    d["code"].as_str().unwrap_or_default().to_owned(),
+                    d["path"].as_str().unwrap_or_default().to_owned(),
+                    d["message"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(keys.len(), diagnostics.len());
+        assert!(diagnostics.iter().any(|d| {
+            d["code"] == "temporal_timestamp_invalid_or_future"
+                && d["path"] == "#/decision_groups/0/temporal/reviewed_at"
+        }));
+        assert!(diagnostics.iter().any(|d| {
+            d["code"] == "temporal_cadence_invalid"
+                && d["path"] == "#/decision_groups/0/review_policy/cadence"
+        }));
         let _ = fs::remove_dir_all(root);
     }
 
