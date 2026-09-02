@@ -1506,6 +1506,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "primitive_map",
             "decision_input_contracts",
             "classification_taxonomies",
+            "decision_groups",
             "input_contracts",
             "jobs",
             "profile_eval",
@@ -1812,7 +1813,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
     );
     validate_object_keys(
         yaml_get(&value, "provenance").unwrap_or(&YamlValue::Null),
-        &["owner", "created_by", "notes"],
+        &["owner", "created_by", "notes", "temporal"],
         ".mdp/manifest.yaml#/provenance",
         "manifest_provenance_unknown_field",
         issues,
@@ -7500,6 +7501,92 @@ mod tests {
         for root in [unreadable, wrong_format, invalid, activation_blocked, ready] {
             let _ = std::fs::remove_dir_all(root);
         }
+    }
+
+    #[test]
+    fn validation_accepts_governance_manifest_fields_but_rejects_unknown_fields() {
+        let root = temp_pack("governance-schema-fields");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).unwrap();
+        let mut value: YamlValue = serde_yaml::from_str(&raw).unwrap();
+        let mapping = value
+            .as_mapping_mut()
+            .expect("manifest should be a mapping");
+        mapping.insert(
+            YamlValue::String("decision_groups".into()),
+            YamlValue::Sequence(Vec::new()),
+        );
+        let provenance = mapping
+            .get_mut(YamlValue::String("provenance".into()))
+            .and_then(YamlValue::as_mapping_mut)
+            .expect("starter manifest should contain provenance");
+        let mut temporal = serde_yaml::Mapping::new();
+        temporal.insert(YamlValue::String("published_at".into()), YamlValue::Null);
+        provenance.insert(
+            YamlValue::String("temporal".into()),
+            YamlValue::Mapping(temporal),
+        );
+        std::fs::write(&manifest_path, serde_yaml::to_string(&value).unwrap()).unwrap();
+
+        let valid = validate_pack(&root).unwrap();
+        assert_eq!(valid["valid"], true, "valid governance fields: {valid:#}");
+        let ready = doctor(&root);
+        assert_eq!(ready["valid"], true, "valid governance fields: {ready:#}");
+
+        let mut unknown_top_level: YamlValue =
+            serde_yaml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        unknown_top_level.as_mapping_mut().unwrap().insert(
+            YamlValue::String("unknown_governance_field".into()),
+            YamlValue::Bool(true),
+        );
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&unknown_top_level).unwrap(),
+        )
+        .unwrap();
+        let invalid = validate_pack(&root).unwrap();
+        assert!(
+            invalid["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| { issue["code"] == "manifest_unknown_field" })
+        );
+        assert!(
+            doctor(&root)["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| { issue["code"] == "manifest_unknown_field" })
+        );
+
+        let mut unknown_temporal: YamlValue =
+            serde_yaml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        unknown_temporal
+            .as_mapping_mut()
+            .unwrap()
+            .remove(YamlValue::String("unknown_governance_field".into()));
+        unknown_temporal
+            .as_mapping_mut()
+            .unwrap()
+            .get_mut(YamlValue::String("provenance".into()))
+            .and_then(YamlValue::as_mapping_mut)
+            .and_then(|provenance| provenance.get_mut(YamlValue::String("temporal".into())))
+            .and_then(YamlValue::as_mapping_mut)
+            .unwrap()
+            .insert(
+                YamlValue::String("unknown_temporal_field".into()),
+                YamlValue::Bool(true),
+            );
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&unknown_temporal).unwrap(),
+        )
+        .unwrap();
+        assert!(validate_pack(&root).is_err());
+        assert_eq!(doctor(&root)["valid"], false);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn targeted_pack(name: &str, excluded: &[String]) -> PathBuf {

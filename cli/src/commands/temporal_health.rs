@@ -210,6 +210,12 @@ fn valid_sha256(value: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
+fn timestamp_in_wire_range(seconds: i64) -> bool {
+    let minimum = crate::time::days_from_civil(0, 1, 1) * 86_400;
+    let maximum = (crate::time::days_from_civil(9_999, 12, 31) + 1) * 86_400 - 1;
+    (minimum..=maximum).contains(&seconds)
+}
+
 fn verify_publication_receipt(
     root: &Path,
     receipt_ref: &str,
@@ -643,6 +649,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 .and_then(parse_day_cadence)
                 .and_then(|days| {
                     at.and_then(|origin| crate::time::checked_add_days(origin, days))
+                        .filter(|seconds| timestamp_in_wire_range(*seconds))
                         .map(format_timestamp)
                 })
         });
@@ -723,6 +730,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                     .and_then(|p| p.cadence.as_deref())
                     .and_then(parse_day_cadence)
                     .and_then(|days| crate::time::checked_add_days(reviewed, days))
+                    .filter(|seconds| timestamp_in_wire_range(*seconds))
                     .map(format_timestamp)
             });
         decisions.push(json!({"id":g.id,"label":g.label,"state":state,"reviewed_at":t.and_then(|x|x.reviewed_at.clone()),"changed_at":t.and_then(|x|x.changed_at.clone()),"source_revision_mismatch":mismatch,"next_review_at":next_review_at}));
@@ -1132,5 +1140,27 @@ mod tests {
             "source/review_policy",
         );
         assert!(diagnostics.len() >= 2);
+    }
+
+    #[test]
+    fn next_review_does_not_emit_outside_four_digit_utc_range() {
+        let root = governed_pack("wire-range");
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path)
+            .unwrap()
+            .replace("cadence: P10D", "cadence: P1D")
+            .replace(
+                "reviewed_at: 2026-09-01T00:00:00Z",
+                "reviewed_at: 9999-12-31T00:00:00Z",
+            );
+        fs::write(&manifest_path, manifest).unwrap();
+        let output = temporal_health(&root, Some("9999-12-31T00:00:00Z")).unwrap();
+        assert_eq!(output["decision_review"][0]["next_review_at"], Value::Null);
+        jsonschema::draft202012::validate(
+            &crate::commands::schema(crate::cli::SchemaTarget::TemporalHealthV1),
+            &output,
+        )
+        .unwrap();
+        let _ = fs::remove_dir_all(root);
     }
 }
