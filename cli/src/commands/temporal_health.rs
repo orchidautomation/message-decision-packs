@@ -754,6 +754,17 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
     let mut sources = Vec::new();
     let mut source_map: BTreeMap<String, Option<String>> = BTreeMap::new();
     let mut source_local_mismatch: BTreeSet<String> = BTreeSet::new();
+    // Only an exact, unique nonblank identity is authoritative. Duplicate
+    // rows remain visible in the projection, but cannot silently become a
+    // last-wins revision lookup entry.
+    let source_id_counts = ledger
+        .sources
+        .iter()
+        .filter(|s| !s.id.trim().is_empty())
+        .fold(BTreeMap::<&str, usize>::new(), |mut counts, source| {
+            *counts.entry(source.id.as_str()).or_default() += 1;
+            counts
+        });
     for (i, s) in ledger.sources.iter().enumerate() {
         let (state, at, hash_match) = source_state(s, root, as_of, &mut diagnostics, i);
         // Revision comparison is against the source's declared digest. Local
@@ -769,7 +780,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         }
         // Blank source IDs are invalid and must never become authoritative
         // revision lookup keys. Their decision bindings remain unverifiable.
-        if !s.id.trim().is_empty() {
+        if source_id_counts.get(s.id.as_str()) == Some(&1) {
             source_map.insert(s.id.clone(), declared_sha);
         }
         let t = s.temporal.as_ref();
@@ -1158,6 +1169,49 @@ mod tests {
                 .iter()
                 .any(|issue| {
                     issue["code"] == "source_id_empty" && issue["severity"] == "error"
+                })
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn duplicate_source_identity_is_unverifiable_and_strict_validation_error() {
+        let root = governed_pack("duplicate-source-id");
+        let sources_path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let original = fs::read_to_string(&sources_path).unwrap();
+        let entries = original.split_once("sources:\n").unwrap().1;
+        fs::write(
+            sources_path,
+            format!("format: mdp.sources.v0\nsources:\n{entries}{entries}"),
+        )
+        .unwrap();
+
+        let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        let diagnostics = health["diagnostics"].as_array().unwrap();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d["code"] == "source_duplicate_id")
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d["code"] == "source_revision_unverifiable")
+        );
+        assert_eq!(
+            health["decision_review"][0]["source_revision_mismatch"],
+            true
+        );
+
+        let validation = crate::commands::health::validate_pack(&root).unwrap();
+        assert_eq!(validation["valid"], false);
+        assert!(
+            validation["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "source_duplicate_id" && issue["severity"] == "error"
                 })
         );
         let _ = fs::remove_dir_all(root);
