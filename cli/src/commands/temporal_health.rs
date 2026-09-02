@@ -899,9 +899,12 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         let reviewed_invalid = t
             .and_then(|temporal| temporal.reviewed_at.as_ref())
             .is_some_and(|value| reviewed.is_none());
-        let decision_transition_valid = !changed_invalid
-            && !reviewed_invalid
-            && t.is_none_or(|temporal| {
+        let decision_transition_valid = if !matches!(lifecycle, "revoked" | "superseded") {
+            true
+        } else if changed_invalid || reviewed_invalid {
+            false
+        } else {
+            t.is_none_or(|temporal| {
                 let transition = match temporal.lifecycle.as_str() {
                     "revoked" => temporal.revoked_at.as_ref(),
                     "superseded" => temporal.superseded_at.as_ref(),
@@ -915,7 +918,8 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                             at <= as_of && changed.max(reviewed).is_none_or(|origin| at >= origin)
                         })
                     })
-            });
+            })
+        };
         let mismatch = t.is_some_and(|x| {
             x.source_revisions
                 .iter()
