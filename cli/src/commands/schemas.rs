@@ -171,6 +171,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RoutedContextV1 => routed_context_schema(),
         SchemaTarget::RouteBudget => route_budget_schema(),
         SchemaTarget::RouteBudgetSummaryV1 => route_budget_summary_schema(),
+        SchemaTarget::TemporalHealthV1 => temporal_health_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::RequirementsModelContextV1 => requirements_model_context_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
@@ -231,6 +232,26 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Skills => skills_schema(),
         SchemaTarget::ReadinessV1 => readiness_v1_schema(),
     }
+}
+
+fn temporal_health_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Temporal Health v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "evaluation", "sources", "decision_review", "pack_publication", "diagnostics", "recommendation", "status"],
+        "properties": {
+            "contract": {"const": "mdp.temporal-health.v1"},
+            "evaluation": {"type": "object", "additionalProperties": false, "required": ["as_of", "timezone"], "properties": {"as_of": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"}, "timezone": {"const": "UTC"}}},
+            "sources": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "state", "observed_at", "hash_match"], "properties": {"id": {"type": "string"}, "state": {"enum": ["current", "aging", "stale", "unknown", "revoked", "superseded"]}, "observed_at": {"type": ["string", "null"]}, "hash_match": {"type": ["boolean", "null"]}}}},
+            "decision_review": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "state", "reviewed_at", "changed_at", "source_revision_mismatch"], "properties": {"id": {"type": "string"}, "label": {"type": "string"}, "state": {"enum": ["review-current", "review-due", "review-overdue", "never-reviewed", "revoked", "superseded"]}, "reviewed_at": {"type": ["string", "null"]}, "changed_at": {"type": ["string", "null"]}, "source_revision_mismatch": {"type": "boolean"}}}},
+            "pack_publication": {"type": "object", "additionalProperties": false, "required": ["state", "authority"], "properties": {"state": {"enum": ["known", "unknown"]}, "authority": {"enum": ["receipt-bound", "declared-unverified", "unknown"]}}},
+            "diagnostics": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["code", "path", "message"], "properties": {"code": {"type": "string"}, "path": {"type": "string"}, "message": {"type": "string"}}}},
+            "recommendation": {"type": "string"},
+            "status": {"enum": ["available", "available-with-diagnostics"]}
+        }
+    })
 }
 
 fn readiness_v1_schema() -> Value {
@@ -2860,6 +2881,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "primitive_map": primitive_map_schema(),
             "decision_input_contracts": decision_input_contracts_schema(),
             "classification_taxonomies": classification_taxonomies_schema(),
+            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label"], "properties": {"id": {"type": "string"}, "label": {"type": "string"}, "entries": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string"}, "entry_id": {"type": "string"}}}}, "jobs": {"type": "array", "items": {"type": "string"}}, "owner": {"type": "string"}, "review_policy": {"$ref": "#/$defs/review_policy"}, "temporal": {"$ref": "#/$defs/decision_temporal"}}}},
             "input_contracts": input_contracts_schema(),
             "jobs": profile_jobs_schema(),
             "profile_eval": profile_eval_schema(),
@@ -2895,9 +2917,15 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
                 "properties": {
                     "owner": {"type": "string"},
                     "created_by": {"type": "string"},
-                    "notes": {"type": "array", "items": {"type": "string"}}
+                    "notes": {"type": "array", "items": {"type": "string"}},
+                    "temporal": {"$ref": "#/$defs/publication_temporal"}
                 }
             }
+        },
+        "$defs": {
+            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": "^P[1-9][0-9]*D$"}, "aging_after_days": {"type": "integer", "minimum": 1}, "stale_after_days": {"type": "integer", "minimum": 1}}},
+            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": {"type": "string"}, "reviewed_at": {"type": "string"}, "revoked_at": {"type": "string"}, "superseded_at": {"type": "string"}, "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
+            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": {"type": "string"}, "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
         }
     })
 }

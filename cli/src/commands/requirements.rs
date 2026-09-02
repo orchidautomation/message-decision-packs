@@ -2402,45 +2402,7 @@ fn meaningful_projected_value(value: &Value) -> bool {
 }
 
 fn parse_utc_timestamp_seconds(value: &str) -> Option<i64> {
-    if !value.is_ascii()
-        || value.len() != 20
-        || &value[4..5] != "-"
-        || &value[7..8] != "-"
-        || &value[10..11] != "T"
-        || &value[13..14] != ":"
-        || &value[16..17] != ":"
-        || !value.ends_with('Z')
-    {
-        return None;
-    }
-    let date = &value[..10];
-    if !valid_date(date) {
-        return None;
-    }
-    let year = value[..4].parse::<i64>().ok()?;
-    let month = value[5..7].parse::<i64>().ok()?;
-    let day = value[8..10].parse::<i64>().ok()?;
-    let hour = value[11..13].parse::<i64>().ok()?;
-    let minute = value[14..16].parse::<i64>().ok()?;
-    let second = value[17..19].parse::<i64>().ok()?;
-    if hour > 23 || minute > 59 || second > 59 {
-        return None;
-    }
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
-}
-
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let adjusted_year = year - i64::from(month <= 2);
-    let era = if adjusted_year >= 0 {
-        adjusted_year
-    } else {
-        adjusted_year - 399
-    } / 400;
-    let year_of_era = adjusted_year - era * 400;
-    let adjusted_month = month + if month > 2 { -3 } else { 9 };
-    let day_of_year = (153 * adjusted_month + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
+    crate::time::parse_utc_seconds(value)
 }
 
 fn value_at_output_path<'a>(prospect: &'a Value, output_path: &str) -> Option<&'a Value> {

@@ -154,6 +154,7 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
         primitive_map: gtm_primitive_map(),
         decision_input_contracts: vec![starter_prospect_decision_input_contract()],
         classification_taxonomies: starter_classification_taxonomies(),
+        decision_groups: Vec::new(),
         input_contracts: vec![InputContract {
             id: "prospect".to_string(),
             description: Some(
@@ -205,7 +206,7 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
             card_ref("gaps", "cards/gaps.yaml", CardKind::Gaps, "Known gaps and open questions agents must surface instead of filling in.", &["GTM Engineering", "PMM"], &[]),
         ],
         policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 16, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
-        provenance: Provenance { owner: "local".to_string(), created_by: "mdp init".to_string(), notes: vec!["This pack is guidance and evidence context, not an execution system.".to_string(), "Agents should load only routed cards unless the user asks for a full audit.".to_string()] },
+        provenance: Provenance { owner: "local".to_string(), created_by: "mdp init".to_string(), notes: vec!["This pack is guidance and evidence context, not an execution system.".to_string(), "Agents should load only routed cards unless the user asks for a full audit.".to_string()], temporal: None },
     }
 }
 
