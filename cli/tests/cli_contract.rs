@@ -149,6 +149,9 @@ fn help_and_capabilities_expose_grouping_status_and_canonical_options() {
     assert!(help.status.success());
     let text = String::from_utf8(help.stdout).unwrap();
     assert!(!text.contains("__secure-install"));
+    let inspect_start = text.find("Inspect:").unwrap();
+    let decide_start = text.find("Decide:").unwrap();
+    assert!(text[inspect_start..decide_start].contains("  upgrade"));
     let sections = [
         ("Start:", "init"),
         ("Inspect:", "status"),
@@ -189,6 +192,20 @@ fn help_and_capabilities_expose_grouping_status_and_canonical_options() {
         .unwrap();
     assert_eq!(status["output_contract"], "mdp.status.v1");
     assert_eq!(status["side_effects"], "read-only-observational");
+
+    let upgrade = value["data"]["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["name"] == "upgrade")
+        .unwrap();
+    assert_eq!(upgrade["output_contract"], "mdp.upgrade-check.v1");
+    assert_eq!(upgrade["supports_json"], true);
+    assert_eq!(upgrade["json_modes"]["execution"], "rejected");
+    assert_eq!(
+        upgrade["json_execution"],
+        "rejected-before-network-or-filesystem-side-effects"
+    );
 }
 
 #[test]

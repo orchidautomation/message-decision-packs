@@ -61,6 +61,30 @@ pub(crate) enum Commands {
     },
     #[command(about = "Print agent-readable CLI capabilities and contracts")]
     Capabilities,
+    #[command(
+        about = "Update the mdp CLI and all supported agent bundles together",
+        after_help = "Use `mdp upgrade --check` for an observational version check. Upgrade execution downloads the fixed HTTPS installer and requires confirmation or `-y`."
+    )]
+    Upgrade {
+        #[arg(
+            short = 'y',
+            long,
+            help = "Confirm the aligned CLI and agent bundle update"
+        )]
+        yes: bool,
+        #[arg(
+            long,
+            conflicts_with = "yes",
+            help = "Check the target CLI version without installing"
+        )]
+        check: bool,
+        #[arg(
+            long,
+            value_name = "VERSION",
+            help = "Install or check a specific release version"
+        )]
+        version: Option<String>,
+    },
     #[command(about = "Compile and inspect cold-model conformance evidence")]
     Conformance {
         #[command(subcommand)]
@@ -809,6 +833,7 @@ pub(crate) fn grouped_root_help() -> String {
                 "status",
                 "doctor",
                 "capabilities",
+                "upgrade",
                 "skills",
                 "explain",
                 "gaps",

@@ -72,7 +72,9 @@ pub(crate) fn doctor(root: &Path) -> Value {
         "tool": "mdp",
         "version": env!("CARGO_PKG_VERSION"),
         "offline": true,
-        "auth_required": false
+        "auth_required": false,
+        "update_check": "mdp upgrade --check",
+        "upgrade_command": "mdp upgrade"
     });
     let job_readiness = json!({
         "state": "not-assessed",
