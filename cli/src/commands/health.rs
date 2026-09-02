@@ -7529,14 +7529,40 @@ mod tests {
             YamlValue::Mapping(temporal),
         );
         std::fs::write(&manifest_path, serde_yaml::to_string(&value).unwrap()).unwrap();
+        let valid_yaml = std::fs::read_to_string(&manifest_path).unwrap();
 
         let valid = validate_pack(&root).unwrap();
         assert_eq!(valid["valid"], true, "valid governance fields: {valid:#}");
         let ready = doctor(&root);
         assert_eq!(ready["valid"], true, "valid governance fields: {ready:#}");
 
-        let mut unknown_top_level: YamlValue =
-            serde_yaml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        let mut unknown_group: YamlValue = serde_yaml::from_str(&valid_yaml).unwrap();
+        let mut group = serde_yaml::Mapping::new();
+        group.insert(
+            YamlValue::String("id".into()),
+            YamlValue::String("g".into()),
+        );
+        group.insert(
+            YamlValue::String("label".into()),
+            YamlValue::String("Governed".into()),
+        );
+        group.insert(
+            YamlValue::String("review_polciy".into()),
+            YamlValue::Mapping(serde_yaml::Mapping::new()),
+        );
+        unknown_group.as_mapping_mut().unwrap().insert(
+            YamlValue::String("decision_groups".into()),
+            YamlValue::Sequence(vec![YamlValue::Mapping(group)]),
+        );
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&unknown_group).unwrap(),
+        )
+        .unwrap();
+        assert!(validate_pack(&root).is_err());
+        assert_eq!(doctor(&root)["valid"], false);
+
+        let mut unknown_top_level: YamlValue = serde_yaml::from_str(&valid_yaml).unwrap();
         unknown_top_level.as_mapping_mut().unwrap().insert(
             YamlValue::String("unknown_governance_field".into()),
             YamlValue::Bool(true),
@@ -7562,8 +7588,7 @@ mod tests {
                 .any(|issue| { issue["code"] == "manifest_unknown_field" })
         );
 
-        let mut unknown_temporal: YamlValue =
-            serde_yaml::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        let mut unknown_temporal: YamlValue = serde_yaml::from_str(&valid_yaml).unwrap();
         unknown_temporal
             .as_mapping_mut()
             .unwrap()

@@ -1077,6 +1077,7 @@ pub(crate) struct ReviewPolicy {
     pub(crate) stale_after_days: Option<u32>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DecisionGroup {
     pub(crate) id: String,
     pub(crate) label: String,
