@@ -322,6 +322,13 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
                 ));
             }
         }
+        if let Some(p) = &g.review_policy {
+            policy_days(
+                Some(p),
+                &mut d,
+                &format!("#/decision_groups/{i}/review_policy"),
+            );
+        }
         if let Some(t) = &g.temporal {
             let changed = timestamp(
                 t.changed_at.as_ref(),
@@ -417,9 +424,6 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
                         "source revision must be exactly 64 lowercase hexadecimal characters",
                     ));
                 }
-            }
-            if let Some(p) = &g.review_policy {
-                policy_days(Some(p), &mut d, "#/decision_groups/review_policy");
             }
         }
     }
@@ -620,7 +624,13 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
     let mut diagnostics = validate_governance(root, &manifest, as_of);
     let ledger_path = root.join(DEFAULT_DIR).join("sources.yaml");
     let ledger = if ledger_path.exists() {
-        serde_yaml::from_str::<Ledger>(&fs::read_to_string(&ledger_path)?)?
+        match fs::read_to_string(&ledger_path)
+            .ok()
+            .and_then(|raw| serde_yaml::from_str::<Ledger>(&raw).ok())
+        {
+            Some(ledger) => ledger,
+            None => Ledger::default(),
+        }
     } else {
         Ledger::default()
     };
@@ -1140,6 +1150,32 @@ mod tests {
             "source/review_policy",
         );
         assert!(diagnostics.len() >= 2);
+    }
+
+    #[test]
+    fn malformed_typed_source_ledger_keeps_temporal_projection_available() {
+        let root = governed_pack("malformed-ledger");
+        fs::write(
+            root.join(DEFAULT_DIR).join("sources.yaml"),
+            "format: mdp.sources.v0\nsources:\n- id: source\n  temporal:\n    observed_at: [not-a-timestamp]\n",
+        )
+        .unwrap();
+        let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(output["contract"], CONTRACT);
+        assert!(output["sources"].as_array().unwrap().is_empty());
+        assert!(
+            output["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| { d["code"] == "temporal_source_ledger_malformed" })
+        );
+        jsonschema::draft202012::validate(
+            &crate::commands::schema(crate::cli::SchemaTarget::TemporalHealthV1),
+            &output,
+        )
+        .unwrap();
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
