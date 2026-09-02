@@ -1306,49 +1306,58 @@ mod tests {
 
     #[test]
     fn source_transition_before_or_after_review_controls_mismatch_only() {
-        let root = governed_pack("source-transition");
-        let source_path = root.join(DEFAULT_DIR).join("sources.yaml");
-        let source = fs::read_to_string(&source_path)
+        for lifecycle in ["revoked", "superseded"] {
+            let root = governed_pack("source-transition");
+            let source_path = root.join(DEFAULT_DIR).join("sources.yaml");
+            let source = fs::read_to_string(&source_path)
             .unwrap()
             .replace(
                 "observed_at: 2026-01-01T00:00:00Z",
-                "observed_at: 2026-01-01T00:00:00Z\n    revoked_at: 2026-02-01T00:00:00Z",
+                &format!("observed_at: 2026-01-01T00:00:00Z\n    {lifecycle}_at: 2026-02-01T00:00:00Z"),
             )
-            .replace("lifecycle: current", "lifecycle: revoked")
+            .replace("lifecycle: current", &format!("lifecycle: {lifecycle}"))
             .replace(
                 "imported_at: 2026-09-01T00:00:00Z",
                 "imported_at: 2026-03-01T00:00:00Z",
             );
-        fs::write(source_path, source).unwrap();
-        let after = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
-        assert_eq!(after["decision_review"][0]["state"], "review-current");
-        assert_eq!(
-            after["decision_review"][0]["source_revision_mismatch"],
-            false
-        );
-        let path = root.join(DEFAULT_DIR).join("manifest.yaml");
-        let manifest = fs::read_to_string(&path)
-            .unwrap()
-            .replace(
-                "reviewed_at: 2026-09-01T00:00:00Z",
-                "reviewed_at: 2026-01-15T00:00:00Z",
-            )
-            .replace(
-                "changed_at: 2026-08-01T00:00:00Z",
-                "changed_at: 2026-01-01T00:00:00Z",
-            )
-            .replace("cadence: P10D", "cadence: P1000D")
-            .replace("aging_after_days: 10", "aging_after_days: 1000")
-            .replace("stale_after_days: 20", "stale_after_days: 2000");
-        fs::write(path, manifest).unwrap();
-        let before = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
-        assert_eq!(before["decision_review"][0]["state"], "review-due");
-        assert_eq!(
-            before["decision_review"][0]["source_revision_mismatch"],
-            true
-        );
-        assert_eq!(before["sources"][0]["state"], "revoked");
-        let _ = fs::remove_dir_all(root);
+            fs::write(source_path, source).unwrap();
+            let after = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(after["decision_review"][0]["state"], "review-current");
+            assert!(
+                !after["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d["code"] == "temporal_transition_before_origin")
+            );
+            assert_eq!(
+                after["decision_review"][0]["source_revision_mismatch"],
+                false
+            );
+            let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+            let manifest = fs::read_to_string(&path)
+                .unwrap()
+                .replace(
+                    "reviewed_at: 2026-09-01T00:00:00Z",
+                    "reviewed_at: 2026-01-15T00:00:00Z",
+                )
+                .replace(
+                    "changed_at: 2026-08-01T00:00:00Z",
+                    "changed_at: 2026-01-01T00:00:00Z",
+                )
+                .replace("cadence: P10D", "cadence: P1000D")
+                .replace("aging_after_days: 10", "aging_after_days: 1000")
+                .replace("stale_after_days: 20", "stale_after_days: 2000");
+            fs::write(path, manifest).unwrap();
+            let before = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(before["decision_review"][0]["state"], "review-due");
+            assert_eq!(
+                before["decision_review"][0]["source_revision_mismatch"],
+                true
+            );
+            assert_eq!(before["sources"][0]["state"], lifecycle);
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]
