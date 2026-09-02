@@ -2881,7 +2881,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "primitive_map": primitive_map_schema(),
             "decision_input_contracts": decision_input_contracts_schema(),
             "classification_taxonomies": classification_taxonomies_schema(),
-            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "entries", "jobs"], "properties": {"id": {"type": "string", "minLength": 1}, "label": {"type": "string"}, "entries": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string", "minLength": 1}, "entry_id": {"type": "string", "minLength": 1}}}}, "jobs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "owner": {"type": "string"}, "review_policy": {"$ref": "#/$defs/review_policy"}, "temporal": {"$ref": "#/$defs/decision_temporal"}}}},
+            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "entries", "jobs"], "properties": {"id": {"type": "string", "minLength": 1}, "label": {"type": "string", "minLength": 1}, "entries": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string", "minLength": 1}, "entry_id": {"type": "string", "minLength": 1}}}}, "jobs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "owner": {"type": "string", "minLength": 1}, "review_policy": {"$ref": "#/$defs/review_policy"}, "temporal": {"$ref": "#/$defs/decision_temporal"}}}},
             "input_contracts": input_contracts_schema(),
             "jobs": profile_jobs_schema(),
             "profile_eval": profile_eval_schema(),
@@ -2923,7 +2923,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             }
         },
         "$defs": {
-            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": "^P[1-9][0-9]*D$"}, "aging_after_days": {"type": "integer", "minimum": 1}, "stale_after_days": {"type": "integer", "minimum": 1}}},
+            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": "^P[1-9][0-9]*D$"}, "aging_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}, "stale_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}}},
             "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": {"type": "string"}, "reviewed_at": {"type": "string"}, "revoked_at": {"type": "string"}, "superseded_at": {"type": "string"}, "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
             "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": {"type": "string"}, "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
         }
@@ -5891,6 +5891,16 @@ mod tests {
                 [0],
             "proceed"
         );
+    }
+
+    #[test]
+    fn decision_group_review_policy_schema_matches_u32_boundaries() {
+        let policy = schema(SchemaTarget::Manifest)["$defs"]["review_policy"].clone();
+        for field in ["aging_after_days", "stale_after_days"] {
+            draft202012::validate(&policy, &json!({field: 4_294_967_295u64}))
+                .expect("u32 maximum should be accepted");
+            assert!(draft202012::validate(&policy, &json!({field: 4_294_967_296u64})).is_err());
+        }
     }
 
     #[test]

@@ -381,6 +381,30 @@ fn validate_governance_with_ledger(
         }
     }
     for (i, g) in manifest.decision_groups.iter().enumerate() {
+        if g.id.trim().is_empty() {
+            d.push(diagnostic(
+                "decision_group_id_empty",
+                format!("#/decision_groups/{i}/id"),
+                "decision group ID must not be empty or whitespace-only",
+            ));
+        }
+        if g.label.trim().is_empty() {
+            d.push(diagnostic(
+                "decision_group_label_empty",
+                format!("#/decision_groups/{i}/label"),
+                "decision group label must not be empty or whitespace-only",
+            ));
+        }
+        if g.owner
+            .as_deref()
+            .is_some_and(|owner| owner.trim().is_empty())
+        {
+            d.push(diagnostic(
+                "decision_group_owner_empty",
+                format!("#/decision_groups/{i}/owner"),
+                "decision group owner must not be empty or whitespace-only",
+            ));
+        }
         if !ids.insert(&g.id) {
             d.push(diagnostic(
                 "decision_group_duplicate_id",
@@ -1351,6 +1375,40 @@ mod tests {
                 })
                 .count();
             assert_eq!(matching, 1, "{lifecycle} transition should be unique");
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn decision_group_identity_fields_require_meaningful_text() {
+        let root = governed_pack("group-text-fields");
+        let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let original = fs::read_to_string(&path).unwrap();
+        for (needle, replacement, code, field) in [
+            (
+                "id: positioning-decision",
+                "id: '   '",
+                "decision_group_id_empty",
+                "id",
+            ),
+            (
+                "label: Positioning decision",
+                "label: '   '",
+                "decision_group_label_empty",
+                "label",
+            ),
+            (
+                "jobs:\n  - prospect-fit-or-brief",
+                "jobs:\n  - prospect-fit-or-brief\n  owner: '   '",
+                "decision_group_owner_empty",
+                "owner",
+            ),
+        ] {
+            fs::write(&path, original.replace(needle, replacement)).unwrap();
+            let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert!(output["diagnostics"].as_array().unwrap().iter().any(|d| {
+                d["code"] == code && d["path"] == format!("#/decision_groups/0/{field}")
+            }));
         }
         let _ = fs::remove_dir_all(root);
     }
