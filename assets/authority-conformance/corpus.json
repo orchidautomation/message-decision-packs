@@ -76,6 +76,16 @@
       "id": "mdp-209-profile-activation-block",
       "source": {"profile_activation": "blocked", "downstream_route_matches": true},
       "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
+    },
+    {
+      "id": "mdp-339-decision-card-blocked-preserves-block",
+      "source": {"surface": "decision-card", "trace_status": "blocked", "decision_authority": "source-artifact", "output_authority": false},
+      "expected": {"projection_level": "informational", "card_status": "blocked", "action_gate": "blocked", "decision_authority": "source-artifact", "output_authority": false, "governed_generation": false}
+    },
+    {
+      "id": "mdp-339-decision-card-unavailable-preserves-unavailable",
+      "source": {"surface": "decision-card", "trace_status": "unavailable", "decision_authority": "none", "output_authority": false},
+      "expected": {"projection_level": "informational", "card_status": "unavailable", "action_gate": "unavailable", "decision_authority": "none", "output_authority": false, "governed_generation": false}
     }
   ]
 }

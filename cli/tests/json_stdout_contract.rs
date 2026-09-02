@@ -725,6 +725,102 @@ fn help_after_subcommand_wraps_as_one_parseable_json_value() {
 }
 
 #[test]
+fn decision_card_global_json_wins_and_markdown_conflicts_explicitly() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-decision-card-json-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let fixture = write_fixture(
+        &root,
+        "fit.json",
+        serde_json::json!({
+            "contract": "mdp.fit.v0",
+            "status": "fit",
+            "context": {"missing_requirements": [], "invalid_requirements": []},
+            "matches": [{"id": "rule-one"}],
+            "disqualifiers": []
+        }),
+    );
+    let fixture = fixture.to_string_lossy().into_owned();
+    let (code, _, stderr, value) = run(&["--json", "decision-card", "--file", &fixture], Case::Ok);
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let value = value.unwrap();
+    assert_eq!(value["command"], "decision-card");
+    assert_eq!(value["data"]["contract"], "mdp.decision-card.v1");
+
+    let (code, _, stderr, value) = run(
+        &["decision-card", "--file", &fixture, "--format", "json"],
+        Case::Ok,
+    );
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    assert_eq!(value.unwrap()["data"]["contract"], "mdp.decision-card.v1");
+
+    let human_summary = Command::new(mdp_bin())
+        .args(["--summary", "decision-card", "--file", &fixture])
+        .output()
+        .expect("human summary should run");
+    assert!(human_summary.status.success());
+    let human_stdout = String::from_utf8_lossy(&human_summary.stdout);
+    assert!(human_stdout.contains("decision-card: available"));
+    assert!(serde_json::from_str::<serde_json::Value>(&human_stdout).is_err());
+
+    let (code, _, _, value) = run(
+        &[
+            "--summary",
+            "decision-card",
+            "--file",
+            &fixture,
+            "--format",
+            "json",
+        ],
+        Case::Ok,
+    );
+    assert_eq!(code, 0);
+    assert!(value.unwrap().get("summary").is_some());
+
+    std::fs::write(root.join("bad-conformance.json"), b"{not-json").unwrap();
+    let root_arg = root.to_string_lossy().into_owned();
+    let (code, _, stderr, value) = run(
+        &[
+            "--json",
+            "decision-card",
+            "--file",
+            "bad-conformance.json",
+            "--artifact-root",
+            &root_arg,
+        ],
+        Case::Ok,
+    );
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let value = value.unwrap();
+    assert_eq!(value["data"]["status"], "unavailable");
+    assert_eq!(value["data"]["decision"]["action_gate"], "unavailable");
+    assert!(!value.to_string().contains("bad-conformance"));
+
+    assert_conflict(
+        &[
+            "--json",
+            "decision-card",
+            "--file",
+            &fixture,
+            "--format",
+            "markdown",
+        ],
+        "--format",
+        "markdown",
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn help_for_nested_subcommand_wraps_as_one_parseable_json_value() {
     // Deep subcommand help (e.g. `conformance compile --help`) must also be
     // scoped to the requested subcommand.

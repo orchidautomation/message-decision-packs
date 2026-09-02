@@ -160,6 +160,7 @@ fn non_command_authority_surface_registry_is_closed() {
         "renderer:human-brief",
         "renderer:summary",
         "renderer:decision-trace",
+        "renderer:decision-card",
         "transport:run-mcp",
         "transport:proposal-mcp",
         "adapter:native-model",

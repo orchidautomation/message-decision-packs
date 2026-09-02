@@ -1,6 +1,7 @@
 use crate::authority::{SUPPORTED_COMMAND_SURFACES, SUPPORTED_PROJECTION_SURFACES};
 use crate::cli::Cli;
 use crate::commands::PACK_AUTHORING_RESULT_V1;
+use crate::commands::decision_card::DECISION_CARD_V1;
 use crate::commands::decision_trace::{
     DECISION_TRACE_V1, MAX_MERMAID_BYTES, MAX_TRACE_EDGES, MAX_TRACE_LABEL_BYTES, MAX_TRACE_NODES,
     MAX_TRACE_SOURCE_BYTES,
@@ -258,6 +259,15 @@ pub(crate) fn capabilities() -> Value {
                 "mermaid_bytes": MAX_MERMAID_BYTES
             }
         },
+        "decision_card_contract": {
+            "contract": DECISION_CARD_V1,
+            "schema_target": "decision-card-v1",
+            "projection_only": true,
+            "source_authority_retained": true,
+            "trace_contract": DECISION_TRACE_V1,
+            "formats": ["markdown", "json"],
+            "privacy": "canonical trace plus a closed contract-specific allowlist from the same parsed source; private row payloads are not rendered"
+        },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
             "skills": "mdp.skills.v1",
@@ -361,6 +371,7 @@ pub(crate) fn capabilities() -> Value {
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
             command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--dir", "--prompt-output", "--validation-input", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
+            command("decision-card", DECISION_CARD_V1, "read-only-unless-out", false, true, false, &["--file", "--dir", "--prompt-output", "--validation-input", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
             command("consume-run", "mdp.run-consumption-result.v1", "writes-local-ledger", false, false, false, &["--ledger", "--job-id", "--idempotency-key", "--receipt-sha256", "--expected-prior-version", "--permit-exact-replay"]),
             command("run", RUN_EXECUTION_V1, "writes-new-run-directory", false, true, false, &["--request", "--out-dir", "--transport-timeout-ms"]),
             command("recover-run", "mdp.run-recovery.v1", "validated-stale-transaction-removal-with-apply", false, false, false, &["--out-dir", "--apply"]),
@@ -732,23 +743,27 @@ fn conditional_requirements(path: &[String], argument_id: &str) -> ConditionalRe
             requires_when_present: &["apply"],
             ..Default::default()
         },
-        (["trace"], "dir") => ConditionalRequirements {
+        (["trace"], "dir") | (["decision-card"], "dir") => ConditionalRequirements {
             requires_when_present: &["file", "prompt_output"],
             ..Default::default()
         },
-        (["trace"], "prompt_output") => ConditionalRequirements {
-            requires_when_present: &["file", "dir"],
-            ..Default::default()
-        },
-        (["trace"], "validation_inputs") => ConditionalRequirements {
-            requires_when_present: &["file", "dir", "prompt_output"],
-            ..Default::default()
-        },
-        (["trace"], "bundle") => ConditionalRequirements {
+        (["trace"], "prompt_output") | (["decision-card"], "prompt_output") => {
+            ConditionalRequirements {
+                requires_when_present: &["file", "dir"],
+                ..Default::default()
+            }
+        }
+        (["trace"], "validation_inputs") | (["decision-card"], "validation_inputs") => {
+            ConditionalRequirements {
+                requires_when_present: &["file", "dir", "prompt_output"],
+                ..Default::default()
+            }
+        }
+        (["trace"], "bundle") | (["decision-card"], "bundle") => ConditionalRequirements {
             requires_when_present: &["receipt"],
             ..Default::default()
         },
-        (["trace"], "receipt") => ConditionalRequirements {
+        (["trace"], "receipt") | (["decision-card"], "receipt") => ConditionalRequirements {
             requires_when_present: &["bundle"],
             ..Default::default()
         },
@@ -1415,6 +1430,18 @@ mod tests {
             }),
             json!({
                 "path": ["trace"],
+                "arguments": [
+                    {"canonical": "--file", "conflicts_with": ["--bundle", "--receipt"]},
+                    {"canonical": "--dir", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--prompt-output", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--validation-input", "conflicts_with": ["--artifact-root"]},
+                    {"canonical": "--bundle", "conflicts_with": ["--file"]},
+                    {"canonical": "--receipt", "conflicts_with": ["--file"]},
+                    {"canonical": "--artifact-root", "conflicts_with": ["--dir", "--prompt-output", "--validation-input"]},
+                ],
+            }),
+            json!({
+                "path": ["decision-card"],
                 "arguments": [
                     {"canonical": "--file", "conflicts_with": ["--bundle", "--receipt"]},
                     {"canonical": "--dir", "conflicts_with": ["--artifact-root"]},

@@ -136,6 +136,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RunVerificationV1 => run_verification_v1_schema(),
         SchemaTarget::RunExecutionV1 => run_execution_v1_schema(),
         SchemaTarget::DecisionTraceV1 => crate::commands::decision_trace_schema(),
+        SchemaTarget::DecisionCardV1 => crate::commands::decision_card_schema(),
         SchemaTarget::CanonicalAuthorityBlockV1 => canonical_authority_block_v1_schema(),
         SchemaTarget::ConformanceCandidateV1 => {
             conformance_schema(CONFORMANCE_CANDIDATE_V1).unwrap()
@@ -6172,6 +6173,18 @@ mod tests {
         let instance = serde_json::to_value(trace).expect("trace should serialize");
         draft202012::validate(&result, &instance)
             .expect("projected decision trace should validate against its public schema");
+    }
+
+    #[test]
+    fn decision_card_schema_is_closed_and_compiles() {
+        let result = schema(SchemaTarget::DecisionCardV1);
+        draft202012::new(&result).expect("decision card schema should compile");
+        assert_eq!(result["additionalProperties"], false);
+        assert_eq!(
+            result["properties"]["contract"]["const"],
+            "mdp.decision-card.v1"
+        );
+        assert_eq!(result["properties"]["trace"]["additionalProperties"], false);
     }
 
     #[test]
