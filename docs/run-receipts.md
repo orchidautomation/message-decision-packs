@@ -447,7 +447,8 @@ enable flag without that record is insufficient.
 ### Temporal declarations are not receipts
 
 Pack integrity, source freshness, and publication authority remain separate.
-`temporal-health` can report declared publication time, but only a bound
-publication receipt upgrades it to receipt-bound authority. Future receipt
+`temporal-health` can report declared publication time, but only a bound,
+pack-local receipt whose exact bytes verify against its declared digest upgrades
+it to receipt-bound authority. Future receipt
 history will bind these declarations durably; this projection performs no
 approval, publication, scheduling, or source fetch.

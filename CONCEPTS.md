@@ -153,7 +153,8 @@ and reviewed template/profile checklist.
 
 A manifest `decision_groups` registry names an owner-readable decision and
 references exact card entries and canonical jobs; it does not duplicate their
-prose. Source age (`observed_at`, `published_at`, or `imported_at`) and decision
+prose. Source age uses `observed_at`, falling back to `published_at`; `imported_at`
+is ingestion/audit metadata only. Decision
 review state (`reviewed_at`, `changed_at`, and source revisions) are independent.
 `mdp temporal-health --as-of 2026-09-02T00:00:00Z` is a local deterministic
 projection: missing dates remain `unknown`/`unassessed`, hashes establish
