@@ -16,6 +16,13 @@ mdp --json skills --dir <pack-root>
 3. Treat `packaged_skill_ids` as released inventory, `eligibility` as pack policy, and `host_discovery.status: unobserved` as literal. Never claim MDP hid or exposed a host-discovered skill.
 4. Use JSON output for decisions. Use `--summary` only for a concise human status.
 
+For installed runtime maintenance, use `mdp upgrade --check` to inspect the
+target CLI version without installing. Run mutating `mdp upgrade` only when the
+operator explicitly asks to update; preserve its confirmation boundary, use
+`-y` only for an already authorized noninteractive run, and restart or reload
+affected open agent applications after success. Do not substitute single-host
+installer flags for this aligned CLI-and-bundle path.
+
 When the user asks why an existing fit, route, brief, normalization, or clean
 run reached its result, prefer the bounded projection before opening full
 source artifacts:

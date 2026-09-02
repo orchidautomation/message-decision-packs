@@ -1,0 +1,56 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "codex/mdp-4-upgrade-plan",
+  "sourceCommit": "a1153ef4d8150698de08122cfeff3f42ec0c066a",
+  "plan": {
+    "path": "docs/orchid/plans/2026-09-02-mdp-4-aligned-upgrade.md",
+    "sha256": "4e37feb577d4bab4fea758b867dd6d14e88c3433471b46b5e8fb2e4687c0c335",
+    "sourceRef": "codex/mdp-4-upgrade-plan",
+    "sourceCommit": "a1153ef4d8150698de08122cfeff3f42ec0c066a"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "sol-implementation-exception",
+  "delivery": {
+    "shape": "cumulative-pr",
+    "sourceRef": "codex/mdp-4-upgrade-plan",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    "docs/orchid/reviews"
+  ],
+  "lunaLanes": [],
+  "exceptionReason": "visible-dispatch-unavailable",
+  "exceptionPaths": [
+    "cli/src/cli.rs",
+    "cli/src/app.rs",
+    "cli/src/output.rs",
+    "cli/src/commands/upgrade.rs",
+    "cli/src/commands/mod.rs",
+    "cli/src/commands/capabilities.rs",
+    "cli/src/commands/health.rs",
+    "cli/tests/upgrade.rs",
+    "cli/tests/cli_contract.rs",
+    "cli/tests/json_stdout_contract.rs",
+    "cli/Cargo.toml",
+    "cli/Cargo.lock",
+    "pluxx.config.ts",
+    "plugin/.codex-plugin/plugin.json",
+    "README.md",
+    "cli/USAGE.md",
+    "docs/getting-started.md",
+    "docs/distribution.md",
+    "plugin/skills/mdp/references/operator-runtime.md",
+    "cli/src/authority/mod.rs"
+  ],
+  "exceptionJustification": "Two clean canonical Luna Medium/Fast dispatches produced authentic receipts but stopped before edits because the Orchid started-event validator compares plan objects by insertion-order JSON: Commit-to-Build emits sourceCommit before sourceRef while the dispatcher receipt emits sourceRef before sourceCommit. The exact immutable receipt cannot be altered, so visible execution is unavailable for this lane. Sol remains bounded to the original ownership and pinned plan.",
+  "validation": [
+    "First canonical dispatch stopped before edits and recorded a terminal failed event.",
+    "Second canonical dispatch reproduced the failure as a deterministic plan-key-order validator incompatibility and recorded a terminal blocked event.",
+    "Git worktree /tmp/mdp-4-aligned-upgrade remains clean at a1153ef4d8150698de08122cfeff3f42ec0c066a on codex/mdp-4-aligned-upgrade."
+  ],
+  "verdict": "valid",
+  "observedAt": "2026-09-02T16:58:05.953Z"
+}

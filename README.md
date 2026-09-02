@@ -32,6 +32,10 @@ The installer uses the latest
 [GitHub release](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 so the CLI and agent instructions remain version-aligned.
 
+After bootstrap, update the CLI and all supported agent bundles together with
+`mdp upgrade` (interactive) or `mdp upgrade -y` (noninteractive). Check the
+target version without installing with `mdp upgrade --check`.
+
 MDP also ships a Pluxx-emitted Agent Plugins v1 portable skills package. It
 contains exactly the four MDP skills and no portable MCP or hooks. See
 [Distribution](docs/distribution.md) for the current package, host support, and

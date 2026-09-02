@@ -359,6 +359,20 @@ pub(crate) fn capabilities() -> Value {
             author_command("preview", "writes-new-change-set", &["--candidate", "--out"], &["--dir"]),
             author_command("apply", "transactional-pack-write", &["--candidate", "--change-set"], &["--dir"]),
             command("doctor", "mdp.doctor.v1", "read-only", false, false, false, &["--dir"]),
+            json!({
+                "name": "upgrade",
+                "output_contract": "mdp.upgrade-check.v1",
+                "side_effects": "downloads-and-installs-aligned-cli-and-agent-bundles",
+                "supports_json": true,
+                "json_modes": {"check": "supported", "execution": "rejected"},
+                "json_execution": "rejected-before-network-or-filesystem-side-effects",
+                "supports_summary": true,
+                "supports_out": false,
+                "supports_dry_run": false,
+                "supports_strict": false,
+                "source": "https://mdp.orchidlabs.dev/install.sh",
+                "args": ["-y", "--yes", "--check", "--version"]
+            }),
             command("status", "mdp.status.v1", "read-only-observational", false, false, false, &["--dir"]),
             command("temporal-health", "mdp.temporal-health.v1", "read-only-offline", false, false, false, &["--dir", "--as-of"]),
             command("check", "mdp.readiness.v1", "read-only", false, false, false, &["--dir", "--job", "--input-validation"]),
@@ -397,6 +411,7 @@ pub(crate) fn capabilities() -> Value {
             command("schema", "mdp.schema.v0", "read-only", false, false, false, &["target"])
         ],
         "stable_error_codes": [
+            {"code": "upgrade_json_execution_unsupported", "meaning": "Mutating upgrade execution does not support JSON; use mdp upgrade --check or execute without --json"},
             {"code": "pack_not_found", "meaning": "A pack manifest or required .mdp path could not be read"},
             {"code": "invalid_manifest", "meaning": "A pack manifest could not be parsed or uses invalid structure"},
             {"code": "model-step-ambiguous", "meaning": "The selected job has more than one model step; provide an exact --operation"},
@@ -1421,6 +1436,13 @@ mod tests {
         // adds or removes an effective conflict must update this list after
         // its user-facing behavior has been reviewed.
         let expected = vec![
+            json!({
+                "path": ["upgrade"],
+                "arguments": [
+                    {"canonical": "--yes", "conflicts_with": ["--check"]},
+                    {"canonical": "--check", "conflicts_with": ["--yes"]},
+                ],
+            }),
             json!({
                 "path": ["rebind-synthetic-chain"],
                 "arguments": [

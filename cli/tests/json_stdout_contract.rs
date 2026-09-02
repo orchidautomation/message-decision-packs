@@ -1238,3 +1238,18 @@ fn temporal_health_json_stdout_contract() {
         "--as-of must be strict UTC timestamp"
     );
 }
+
+#[test]
+fn mutating_upgrade_json_rejection_is_one_stable_envelope() {
+    let output = Command::new(mdp_bin())
+        .args(["--json", "upgrade", "-y"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("mdp should reject JSON upgrade execution");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "upgrade_json_execution_unsupported");
+}
