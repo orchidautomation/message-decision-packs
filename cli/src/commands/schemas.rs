@@ -6922,12 +6922,18 @@ mod tests {
         let wrap = |definition: Value, value: Value| {
             jsonschema::draft202012::validate(&definition, &value).is_ok()
         };
+        assert!(wrap_publication(
+            &publication,
+            json!({"published_at":"2026-01-02T03:04:05Z"})
+        ));
         let valid = json!({"lifecycle":"current","changed_at":"2026-01-02T03:04:05Z"});
         assert!(wrap(temporal.clone(), valid));
         for invalid in [
             "2026-01-02T03:04:05+00:00",
             "2026-99-02T03:04:05Z",
             "2026-01-02T99:04:05Z",
+            "2026-02-30T03:04:05Z",
+            "bananas",
         ] {
             assert!(
                 !wrap(
@@ -6936,6 +6942,10 @@ mod tests {
                 ),
                 "{invalid} should be rejected"
             );
+            assert!(!wrap_publication(
+                &publication,
+                json!({"published_at":invalid})
+            ));
         }
     }
 
