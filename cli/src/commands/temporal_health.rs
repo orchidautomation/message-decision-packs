@@ -265,6 +265,18 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
                 as_of,
                 &mut d,
             );
+            let revoked_at = timestamp(
+                t.revoked_at.as_ref(),
+                "#/decision_groups/temporal/revoked_at",
+                as_of,
+                &mut d,
+            );
+            let superseded_at = timestamp(
+                t.superseded_at.as_ref(),
+                "#/decision_groups/temporal/superseded_at",
+                as_of,
+                &mut d,
+            );
             if reviewed.zip(changed).is_some_and(|(r, c)| r < c) {
                 d.push(diagnostic(
                     "decision_reviewed_before_changed",
@@ -321,6 +333,7 @@ pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) 
                 "#/decision_groups/temporal/superseded_at",
                 &mut d,
             );
+            let _ = (revoked_at, superseded_at);
             for r in &t.source_revisions {
                 if r.sha256.len() != 64
                     || !r
@@ -618,8 +631,6 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             "review-due"
         } else if reviewed.is_none() {
             "never-reviewed"
-        } else if mismatch {
-            "review-due"
         } else if reviewed.is_some() {
             let (aging, stale) =
                 policy_days(g.review_policy.as_ref(), &mut diagnostics, "decision");
@@ -627,6 +638,8 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 || changed.is_some_and(|changed| reviewed.unwrap() < changed)
             {
                 "review-overdue"
+            } else if mismatch {
+                "review-due"
             } else if aging.is_some_and(|n| as_of - reviewed.unwrap() >= i64::from(n) * 86400) {
                 "review-due"
             } else {
@@ -936,6 +949,54 @@ mod tests {
                 .join(template);
             assert!(temporal_health(&root, Some("2026-09-02T00:00:00Z")).is_ok());
         }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invalid_decision_transition_fails_validate_and_doctor_closed() {
+        let root = governed_pack("invalid-transition");
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path).unwrap().replace(
+            "lifecycle: current\n    changed_at:",
+            "lifecycle: revoked\n    revoked_at: not-a-time\n    changed_at:",
+        );
+        fs::write(&manifest_path, manifest).unwrap();
+        let validation = crate::commands::health::validate_pack(&root).unwrap();
+        assert_eq!(validation["valid"], false);
+        assert!(
+            validation["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "temporal_timestamp_invalid_or_future"
+                        && issue["severity"] == "error"
+                })
+        );
+        let doctor = crate::commands::health::doctor(&root);
+        assert_ne!(doctor["status"], "ready");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn overdue_review_precedes_source_revision_mismatch() {
+        let root = governed_pack("overdue-mismatch");
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path).unwrap().replace(
+            "reviewed_at: 2026-09-01T00:00:00Z",
+            "reviewed_at: 2026-08-01T00:00:00Z",
+        );
+        fs::write(&manifest_path, manifest).unwrap();
+        let card = root.join(DEFAULT_DIR).join("cards/positioning.yaml");
+        let mut bytes = fs::read(&card).unwrap();
+        bytes.push(b'\n');
+        fs::write(card, bytes).unwrap();
+        let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(health["decision_review"][0]["state"], "review-overdue");
+        assert_eq!(
+            health["decision_review"][0]["source_revision_mismatch"],
+            true
+        );
         let _ = fs::remove_dir_all(root);
     }
 }
