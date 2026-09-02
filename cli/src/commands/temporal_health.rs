@@ -1506,28 +1506,52 @@ mod tests {
 
     #[test]
     fn invalid_decision_transition_fails_validate_and_doctor_closed() {
-        let root = governed_pack("invalid-transition");
-        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
-        let manifest = fs::read_to_string(&manifest_path).unwrap().replace(
-            "lifecycle: current\n    changed_at:",
-            "lifecycle: revoked\n    revoked_at: not-a-time\n    changed_at:",
-        );
-        fs::write(&manifest_path, manifest).unwrap();
-        let validation = crate::commands::health::validate_pack(&root).unwrap();
-        assert_eq!(validation["valid"], false);
-        assert!(
-            validation["issues"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|issue| {
-                    issue["code"] == "temporal_timestamp_invalid_or_future"
-                        && issue["severity"] == "error"
-                })
-        );
-        let doctor = crate::commands::health::doctor(&root);
-        assert_ne!(doctor["status"], "ready");
-        let _ = fs::remove_dir_all(root);
+        for lifecycle in ["revoked", "superseded"] {
+            for (value, diagnostic) in [
+                (None, "transition_missing"),
+                (Some("not-a-time"), "temporal_timestamp_invalid_or_future"),
+                (
+                    Some("2027-01-01T00:00:00Z"),
+                    "temporal_timestamp_invalid_or_future",
+                ),
+                (
+                    Some("2026-01-01T00:00:00Z"),
+                    "temporal_transition_before_origin",
+                ),
+            ] {
+                let root = governed_pack("invalid-transition");
+                let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+                let transition =
+                    value.map_or(String::new(), |v| format!("{lifecycle}_at: {v}\n    "));
+                let manifest = fs::read_to_string(&path).unwrap().replace(
+                    "lifecycle: current\n    changed_at:",
+                    &format!("lifecycle: {lifecycle}\n    {transition}changed_at:"),
+                );
+                fs::write(&path, manifest).unwrap();
+                let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+                assert_eq!(health["decision_review"][0]["state"], "review-due");
+                assert!(
+                    health["diagnostics"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|d| d["code"]
+                            == if diagnostic == "transition_missing" && lifecycle == "revoked" {
+                                "decision_revocation_transition_invalid"
+                            } else if diagnostic == "transition_missing" {
+                                "decision_supersession_transition_invalid"
+                            } else {
+                                diagnostic
+                            })
+                );
+                if value == Some("not-a-time") && lifecycle == "revoked" {
+                    let validation = crate::commands::health::validate_pack(&root).unwrap();
+                    assert_eq!(validation["valid"], false);
+                    assert!(crate::commands::health::doctor(&root)["status"] != "ready");
+                }
+                let _ = fs::remove_dir_all(root);
+            }
+        }
     }
 
     #[test]
