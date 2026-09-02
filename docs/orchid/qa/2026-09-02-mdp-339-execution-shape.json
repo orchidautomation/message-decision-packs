@@ -2,12 +2,12 @@
   "schema": "orchid.work.execution-shape/v1",
   "repository": "orchidautomation/message-decision-packs",
   "sourceRef": "codex/mdp-339-decision-card",
-  "sourceCommit": "16edd6d7e85a2e974761e372f0316d8be8da9742",
+  "sourceCommit": "f02c2a8e19248961da983a3c818d5dcdca7af192",
   "plan": {
     "path": "docs/orchid/plans/2026-09-02-mdp-339-executive-decision-card-plan.md",
     "sha256": "9d55fece3901e0a1cd1954e41fb6e5247f286bb8c43563e2f1a0433838b184ce",
     "sourceRef": "codex/mdp-339-decision-card",
-    "sourceCommit": "16edd6d7e85a2e974761e372f0316d8be8da9742"
+    "sourceCommit": "f02c2a8e19248961da983a3c818d5dcdca7af192"
   },
   "risk": "Elevated",
   "orchestrationRequired": true,
@@ -24,20 +24,23 @@
   "lunaLanes": [],
   "exceptionReason": "unsafe-delegation",
   "exceptionPaths": [
+    "assets/authority-conformance",
     "cli",
     "docs/decision-traces.md",
     "docs/getting-started.md",
     "plugin",
+    "scripts/test-authority-conformance.mjs",
     "CONCEPTS.md",
     "pluxx.config.ts"
   ],
   "exceptionJustification": "Brandon explicitly requested Codex implementation without Orchid delegation. Direct implementation stayed on the issue-bound branch, followed the committed plan, and preserved the repository's default one-root-agent policy.",
   "validation": [
-    "cargo test --manifest-path cli/Cargo.toml: passed (870 unit tests and all integration suites)",
-    "decision-card JSON stdout and presentation-conflict subprocess tests: passed",
+    "cargo test --manifest-path cli/Cargo.toml --no-fail-fast: passed (876 unit tests and all integration suites)",
+    "decision-card JSON stdout, summary presentation, malformed-source, schema, and authority regression tests: passed",
+    "authority conformance corpus validation passed for 17 cases and packaged mirrors are byte-identical",
     "version sync, skill packaging, skill contracts, public artifact lint, cargo fmt, and git diff checks: passed",
-    "make validate reached the MCP server Node test after all Rust suites passed; the no-output Node test was stopped rather than claimed as passed"
+    "make validate previously reached the MCP server Node test after all Rust suites passed; the no-output Node test was stopped rather than claimed as passed"
   ],
   "verdict": "valid",
-  "observedAt": "2026-09-02T00:00:00Z"
+  "observedAt": "2026-09-02T10:14:08Z"
 }
