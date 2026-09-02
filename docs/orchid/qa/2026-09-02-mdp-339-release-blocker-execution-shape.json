@@ -1,0 +1,37 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "fix/mdp-339-trace-conformance",
+  "sourceCommit": "d75f43603f10d81fc58531811c24a4ace5eb9e13",
+  "plan": {
+    "path": "docs/orchid/plans/2026-09-02-mdp-339-executive-decision-card-plan.md",
+    "sha256": "9d55fece3901e0a1cd1954e41fb6e5247f286bb8c43563e2f1a0433838b184ce",
+    "sourceRef": "fix/mdp-339-trace-conformance",
+    "sourceCommit": "d75f43603f10d81fc58531811c24a4ace5eb9e13"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "sol-implementation-exception",
+  "delivery": {
+    "shape": "cumulative-pr",
+    "sourceRef": "fix/mdp-339-trace-conformance",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    "docs/orchid/qa"
+  ],
+  "lunaLanes": [],
+  "exceptionReason": "unsafe-delegation",
+  "exceptionPaths": [
+    "cli/src/commands/decision_trace.rs"
+  ],
+  "exceptionJustification": "The release-blocking CI regression was isolated to the shared trace resolver. Direct Codex repair restored the established trace failure contract while preserving the decision-card-only sanitized unavailable projection requested by MDP-339.",
+  "validation": [
+    "make validate-cold-model-conformance: passed (12 of 12 checks)",
+    "cargo test --manifest-path cli/Cargo.toml --test json_stdout_contract decision_card_global_json_wins_and_markdown_conflicts_explicitly: passed",
+    "cargo fmt and git diff checks: passed"
+  ],
+  "verdict": "valid",
+  "observedAt": "2026-09-02T10:33:07Z"
+}
