@@ -297,7 +297,10 @@ pub(crate) fn fit_normalized(
     if let Some(projected_prospect_sha256) = projected_prospect_sha256 {
         authority["projected_prospect_sha256"] = json!(projected_prospect_sha256);
     }
-    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority), true)?;
+    let mut result = fit_prospect_with_signal_authority(root, prospect, Some(authority), true)?;
+    if is_v3 {
+        result["classifications"] = normalized["classifications"].clone();
+    }
     let decision_input_contracts = compiled["decision_input_contracts"]
         .as_array()
         .into_iter()

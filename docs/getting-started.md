@@ -12,6 +12,19 @@ authentication and reports a safe next command even when the pack is missing.
 For agents, use `mdp --json status --dir PACK_ROOT` and
 `mdp --json capabilities`; JSON is the authority, not a human summary.
 
+After saving a `fit`, `route`, `brief`, or verified-run result, render a
+read-only executive review without re-running the decision:
+
+```bash
+mdp decision-card --file <saved-result.json>
+mdp --json decision-card --file <saved-result.json>
+```
+
+The card shows the outcome, gate, safe reasons/evidence, blockers, next action,
+source digest, and canonical decision trace. It is a projection only: the
+source artifact or receipt remains authoritative and the card grants no
+drafting, sending, or approval authority.
+
 If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, output-rules, and bounded context for drafting.
 
 If one GTM pack needs shared company rules plus product-, capability-, solution-, or segment-specific pains, proof, hooks, and CTAs, read [Portfolio-Aware GTM Scope](portfolio-scope.md). Those dimensions filter the applicability of existing agnostic primitives; they do not create new primitives or require one pack per product.

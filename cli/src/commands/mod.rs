@@ -2,6 +2,7 @@ pub(crate) mod authoring;
 pub(crate) mod briefs;
 pub(crate) mod capabilities;
 pub(crate) mod conformance;
+pub(crate) mod decision_card;
 pub(crate) mod decision_trace;
 pub(crate) mod evals;
 pub(crate) mod health;
@@ -39,9 +40,11 @@ pub(crate) use conformance::{
     AssembleConformancePaths, BehavioralEvidencePaths, assemble_conformance,
     compile_candidate_file, project_conformance_report, validate_behavioral_files,
 };
+pub(crate) use decision_card::{
+    decision_card_schema, project_decision_card_with_source, render_decision_card_markdown,
+};
 pub(crate) use decision_trace::{
-    decision_trace_schema, project_conformance_file, project_prompt_output_validation_file,
-    project_run_files, project_source_file, render_mermaid,
+    decision_trace_schema, project_decision_card_inputs, project_trace_inputs, render_mermaid,
 };
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};

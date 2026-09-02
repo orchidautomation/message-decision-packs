@@ -1,7 +1,7 @@
 use super::{
     MAX_TRACE_NODES, TraceBuilder, TraceSource, add_driver_trace,
     project_prompt_output_validation_file, project_source_file, project_source_value,
-    read_trace_runner_audit, render_mermaid,
+    read_trace_runner_audit, render_mermaid, verified_run_trace_status,
 };
 use crate::artifact_hash::{canonical_json_sha256, pack_content_sha256};
 use crate::cli::SchemaTarget;
@@ -119,6 +119,51 @@ fn malformed_claimed_contract_is_unavailable() {
             .any(|item| item == "invalid-fit-shape")
     );
     assert_eq!(trace.authority.decision_authority, "none");
+}
+
+#[test]
+fn malformed_fit_items_fail_closed_instead_of_becoming_partial_evidence() {
+    for source in [
+        json!({
+            "contract": "mdp.fit.v0", "status": "fit",
+            "context": {"missing_requirements": [], "invalid_requirements": []},
+            "matches": [{"id": 42}], "disqualifiers": []
+        }),
+        json!({
+            "contract": "mdp.fit.v0", "status": "insufficient-context",
+            "context": {"missing_requirements": [{"reason": "private"}], "invalid_requirements": []},
+            "matches": [], "disqualifiers": []
+        }),
+        json!({
+            "contract": "mdp.fit.v0", "status": "disqualified",
+            "context": {"missing_requirements": [], "invalid_requirements": []},
+            "matches": [], "disqualifiers": [{}]
+        }),
+    ] {
+        let trace = project_source_value(&source, "7".repeat(64));
+        assert_unavailable_without_authority(&trace);
+        assert!(
+            trace
+                .limitations
+                .iter()
+                .any(|item| item == "invalid-fit-shape")
+        );
+    }
+}
+
+#[test]
+fn unsupported_contract_value_is_not_reflected() {
+    let trace = project_source_value(
+        &json!({"contract": format!("private@example.com-{}", "x".repeat(500))}),
+        "8".repeat(64),
+    );
+    assert_unavailable_without_authority(&trace);
+    assert_eq!(trace.source.contract, "unknown");
+    assert!(
+        !serde_json::to_string(&trace)
+            .unwrap()
+            .contains("private@example.com")
+    );
 }
 
 #[test]
@@ -613,4 +658,12 @@ fn trace_runner_audit_requires_exact_contained_authority_bytes() {
     assert!(read_trace_runner_audit(&root, &authority).is_none());
 
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn verified_run_no_draft_terminal_never_becomes_available() {
+    assert_eq!(verified_run_trace_status(true, false, false), "blocked");
+    assert_eq!(verified_run_trace_status(true, true, false), "available");
+    assert_eq!(verified_run_trace_status(true, true, true), "blocked");
+    assert_eq!(verified_run_trace_status(false, true, false), "blocked");
 }

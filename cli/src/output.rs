@@ -1,4 +1,4 @@
-use crate::cli::{Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+use crate::cli::{Commands, DecisionCardFormat, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
 use crate::diagnostics::{
     ACTIONABLE_DIAGNOSTICS_FIELD, contract_metadata, diagnostics_for_result, error_diagnostic,
     render_human, render_human_error,
@@ -108,6 +108,17 @@ fn match_trace(command: &Commands) -> Option<&'static str> {
     }
 }
 
+fn match_decision_card(command: &Commands) -> Option<&'static str> {
+    match command {
+        Commands::DecisionCard { format, .. } => match format {
+            Some(DecisionCardFormat::Markdown) => Some("markdown"),
+            Some(DecisionCardFormat::Json) => Some("json"),
+            None => None,
+        },
+        _ => None,
+    }
+}
+
 fn match_verify_output_readable(command: &Commands) -> Option<&'static str> {
     match command {
         Commands::VerifyOutput { readable, .. } => {
@@ -172,6 +183,15 @@ static PRESENTATION_SELECTORS: &[PresentationSelector] = &[
             SelectorValue::new("mermaid", false),
         ],
         match_trace,
+    ),
+    selector(
+        "decision-card --format",
+        "--format",
+        &[
+            SelectorValue::new("json", true),
+            SelectorValue::new("markdown", false),
+        ],
+        match_decision_card,
     ),
     selector(
         "verify-output --readable",
@@ -2030,7 +2050,9 @@ mod tests {
 
     #[test]
     fn resolve_presentation_flags_human_only_combinations() {
-        use crate::cli::{Cli, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+        use crate::cli::{
+            Cli, DecisionCardFormat, HumanBriefFormat, SampleLeadsFormat, TraceFormat,
+        };
         use clap::Parser;
 
         let cli = Cli::try_parse_from([
@@ -2043,6 +2065,31 @@ mod tests {
                 selector: "--format",
                 value: "mermaid"
             }
+        );
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "decision-card",
+            "--file",
+            "x.json",
+            "--format",
+            "markdown",
+        ])
+        .expect("decision-card markdown should parse");
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Conflict {
+                selector: "--format",
+                value: "markdown"
+            }
+        );
+
+        let cli = Cli::try_parse_from(["mdp", "--json", "decision-card", "--file", "x.json"])
+            .expect("decision-card default should parse");
+        assert_eq!(
+            resolve_presentation(cli.command.as_ref().unwrap()),
+            PresentationOutcome::Ok
         );
 
         let cli = Cli::try_parse_from([
@@ -2201,6 +2248,7 @@ mod tests {
             .expect("human-only trace should parse");
         let _ = TraceFormat::Mermaid;
         let _ = HumanBriefFormat::Markdown;
+        let _ = DecisionCardFormat::Markdown;
         let _ = SampleLeadsFormat::Yaml;
         assert_eq!(
             resolve_presentation(cli.command.as_ref().unwrap()),
