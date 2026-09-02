@@ -67,12 +67,12 @@ assert(
   'Release workflow must publish once so generated manifest entries are not duplicated.',
 )
 assert(
-  releaseWorkflow.includes('npm pack @orchid-labs/pluxx@0.1.43') &&
+  releaseWorkflow.includes('npm pack @orchid-labs/pluxx@0.1.44') &&
     releaseWorkflow.includes('npm install -g "$pluxx_tarball_path"') &&
     releaseWorkflow.includes(
-      '2851a386dc415fd37e124fa132d70af516fee062a8ac355310ea157fa8d2dfc3',
+      '4d8a5fb3ac5f9da5e37dbca1ad635dc0bd684616d88647fe1e9fb377a431c043',
     ),
-  'Release workflow must hash and install the same exact Pluxx 0.1.43 tarball.',
+  'Release workflow must hash and install the same exact Pluxx 0.1.44 tarball.',
 )
 assert(
   releaseWorkflow.includes('npm pack @openai/codex@0.148.0') &&

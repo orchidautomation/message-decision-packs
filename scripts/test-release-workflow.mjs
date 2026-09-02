@@ -468,7 +468,6 @@ function assertAssetParityCiContract(workflow) {
   assertCliJobWiring(workflow)
   assertCliPathFilter(workflow, 'plugin/assets/**')
   assertCliPathFilter(workflow, 'assets/**')
-  assertCliPathFilter(workflow, 'scripts/patch-agents-installer.mjs')
   assertCliPathFilter(workflow, 'scripts/patch-codex-installer.mjs')
   assertCliPathFilter(workflow, 'scripts/test-opencode-wrapper.mjs')
   const cliJob = jobBlock(workflow, 'cli').join('\n')
@@ -587,13 +586,6 @@ for (const [name, mutation] of [
 
 
 for (const [name, mutation] of [
-  [
-    'missing aggregate installer patch filter',
-    ciWorkflow.replace(
-      '              - "scripts/patch-agents-installer.mjs"',
-      '              - "scripts/patch-agents-installer.mjs.disabled"',
-    ),
-  ],
   [
     'missing Codex installer patch filter',
     ciWorkflow.replace(

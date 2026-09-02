@@ -155,9 +155,9 @@ The tag, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests must use the
 same semantic version. MDP `0.1.101` is bound to public
 `@orchid-labs/pluxx@0.1.42`, registry integrity
 `sha512-Mw63WOao0GXFVcqNw3w4Axs1+5nQhb+wtNWJWwOy8SYwuKvlF3r4G+NSjgGd+ZEoqfS1V1gKm3nXsNPjbOtKaw==`.
-Current CI and release generation are pinned to `@orchid-labs/pluxx@0.1.43`
+Current CI and release generation are pinned to `@orchid-labs/pluxx@0.1.44`
 and verify npm tarball SHA-256
-`2851a386dc415fd37e124fa132d70af516fee062a8ac355310ea157fa8d2dfc3`.
+`4d8a5fb3ac5f9da5e37dbca1ad635dc0bd684616d88647fe1e9fb377a431c043`.
 That release supplies `pluxx.install-results.v1`; MDP validates the envelope and
 adds only CLI/portable policy plus its branded aggregate summary.
 
