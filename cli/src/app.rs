@@ -1,7 +1,7 @@
 use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
 use crate::cli::{
     AuthorCommand, Cli, Commands, ConformanceCommand, ConformanceReportVisibility,
-    HumanBriefFormat, ReadmeCommand, SampleLeadsFormat, TraceFormat,
+    DecisionCardFormat, HumanBriefFormat, ReadmeCommand, SampleLeadsFormat, TraceFormat,
 };
 use crate::commands::briefs::prospect_brief_from_fit_with_context;
 use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
@@ -15,11 +15,11 @@ use crate::commands::{
     apply_pack_change_set, assemble_conformance, author_proof_output_file, capabilities,
     check_claims_scoped, check_readme, compile_candidate_file, demo_copy, doctor,
     emit_brief_scoped, eval_pack, explain, gaps, init_pack_targeted, init_pack_targeted_dry_run,
-    pack, preview_pack_change_set, project_conformance_file, project_conformance_report,
-    project_prompt_output_validation_file, project_run_files, project_source_file,
-    prospect_brief_with_context, readiness, rebind_synthetic_chain, recover_run_output,
-    refresh_readme, render_human_brief_file, render_human_brief_markdown, render_mermaid,
-    render_readable_prospect_brief, requirements, requirements_model_context,
+    pack, preview_pack_change_set, project_conformance_report, project_decision_card_inputs,
+    project_decision_card_with_source, project_trace_inputs, prospect_brief_with_context,
+    readiness, rebind_synthetic_chain, recover_run_output, refresh_readme,
+    render_decision_card_markdown, render_human_brief_file, render_human_brief_markdown,
+    render_mermaid, render_readable_prospect_brief, requirements, requirements_model_context,
     route_budget_preflight_command, route_budget_preflight_query_command, route_scoped,
     run_preflight_file, run_receipt, run_request_file_with_transport, sample_leads, schema, skills,
     status, validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
@@ -506,27 +506,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             format,
             out,
         } => {
-            let trace = match (file.as_deref(), bundle.as_deref(), receipt.as_deref()) {
-                (Some(path), None, None) => match (
-                    artifact_root.as_deref(),
-                    dir.as_deref(),
-                    prompt_output.as_deref(),
-                ) {
-                    (Some(root), None, None) => project_conformance_file(path, root)?,
-                    (None, Some(root), Some(output)) => project_prompt_output_validation_file(
-                        path,
-                        root,
-                        output,
-                        &validation_inputs,
-                    )?,
-                    (None, None, None) => project_source_file(path)?,
-                    _ => unreachable!("clap validates trace authority bindings"),
-                },
-                (None, Some(bundle), Some(receipt)) => {
-                    project_run_files(bundle, receipt, artifact_root.as_deref())?
-                }
-                _ => unreachable!("clap validates trace source arguments"),
-            };
+            let trace = project_trace_inputs(
+                file.as_deref(),
+                dir.as_deref(),
+                prompt_output.as_deref(),
+                &validation_inputs,
+                bundle.as_deref(),
+                receipt.as_deref(),
+                artifact_root.as_deref(),
+            )?;
             let data = serde_json::to_value(&trace)?;
             if format == TraceFormat::Mermaid {
                 let mermaid = render_mermaid(&trace);
@@ -544,6 +532,48 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                     write_json_file(path, &data)?;
                 }
                 print_output(json_mode, summary_mode, "trace", data)
+            }
+        }
+        Commands::DecisionCard {
+            file,
+            dir,
+            prompt_output,
+            validation_inputs,
+            bundle,
+            receipt,
+            artifact_root,
+            format,
+            out,
+        } => {
+            let resolved = project_decision_card_inputs(
+                file.as_deref(),
+                dir.as_deref(),
+                prompt_output.as_deref(),
+                &validation_inputs,
+                bundle.as_deref(),
+                receipt.as_deref(),
+                artifact_root.as_deref(),
+            )?;
+            let card =
+                project_decision_card_with_source(resolved.trace, resolved.source_value.as_ref());
+            let data = serde_json::to_value(&card)?;
+            let json_presentation = json_mode || matches!(format, Some(DecisionCardFormat::Json));
+            if json_presentation || summary_mode {
+                if let Some(path) = out.as_deref() {
+                    if json_presentation {
+                        write_json_file(path, &data)?;
+                    } else {
+                        fs::write(path, render_decision_card_markdown(&card))?;
+                    }
+                }
+                print_output(json_presentation, summary_mode, "decision-card", data)
+            } else {
+                let markdown = render_decision_card_markdown(&card);
+                if let Some(path) = out.as_deref() {
+                    fs::write(path, &markdown)?;
+                }
+                println!("{markdown}");
+                Ok(())
             }
         }
         Commands::ConsumeRun {

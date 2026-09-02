@@ -449,6 +449,53 @@ pub(crate) enum Commands {
         #[arg(long, help = "Write the projection or Mermaid view to a file")]
         out: Option<PathBuf>,
     },
+    #[command(
+        about = "Render a human-first executive projection of one saved decision or verified run",
+        group(ArgGroup::new("decision_card_source").required(true).multiple(false).args(["file", "bundle"]))
+    )]
+    DecisionCard {
+        #[arg(long, conflicts_with_all = ["bundle", "receipt"], help = "Saved CLI JSON result or supported raw contracted artifact")]
+        file: Option<PathBuf>,
+        #[arg(
+            long,
+            requires_all = ["file", "prompt_output"],
+            conflicts_with = "artifact_root",
+            help = "Pack root used to recompute prompt-output validation authority"
+        )]
+        dir: Option<PathBuf>,
+        #[arg(
+            long,
+            requires_all = ["file", "dir"],
+            conflicts_with = "artifact_root",
+            help = "Exact mdp.prompt-output.v0 bytes bound by a validation receipt"
+        )]
+        prompt_output: Option<PathBuf>,
+        #[arg(
+            long = "validation-input",
+            value_name = "LOGICAL_NAME=PATH",
+            requires_all = ["file", "dir", "prompt_output"],
+            conflicts_with = "artifact_root",
+            help = "Exact validator input bytes named by the receipt; repeat for each bound input"
+        )]
+        validation_inputs: Vec<String>,
+        #[arg(long, requires = "receipt", help = "mdp.run-bundle.v1 JSON file")]
+        bundle: Option<PathBuf>,
+        #[arg(long, requires = "bundle", help = "mdp.run-receipt.v1 JSON file")]
+        receipt: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Root containing receipt artifacts or a composite conformance authority"
+        )]
+        artifact_root: Option<PathBuf>,
+        #[arg(
+            long,
+            value_enum,
+            help = "Output presentation; defaults to Markdown unless global --json is active"
+        )]
+        format: Option<DecisionCardFormat>,
+        #[arg(long, help = "Write the selected projection to a file")]
+        out: Option<PathBuf>,
+    },
     #[command(about = "Atomically consume one verified receipt in the local conformance ledger")]
     ConsumeRun {
         #[arg(long, help = "Append-only local reference ledger path")]
@@ -1009,6 +1056,7 @@ pub(crate) enum SchemaTarget {
     RunVerificationV1,
     RunExecutionV1,
     DecisionTraceV1,
+    DecisionCardV1,
     CanonicalAuthorityBlockV1,
     ConformanceCandidateV1,
     ModelInvocationEvidenceV1,
@@ -1055,6 +1103,12 @@ pub(crate) enum HumanBriefFormat {
 pub(crate) enum TraceFormat {
     Json,
     Mermaid,
+}
+
+#[derive(Clone, ValueEnum, PartialEq, Eq)]
+pub(crate) enum DecisionCardFormat {
+    Markdown,
+    Json,
 }
 
 #[derive(Clone, ValueEnum, PartialEq, Eq)]
@@ -1330,6 +1384,44 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn decision_card_reuses_trace_source_bindings_and_defaults_presentation() {
+        let file = Cli::try_parse_from(["mdp", "decision-card", "--file", "fit.json"])
+            .expect("saved decision should parse");
+        assert!(matches!(
+            file.command,
+            Some(Commands::DecisionCard {
+                file: Some(_),
+                format: None,
+                ..
+            })
+        ));
+
+        let run = Cli::try_parse_from([
+            "mdp",
+            "decision-card",
+            "--bundle",
+            "bundle.json",
+            "--receipt",
+            "receipt.json",
+            "--format",
+            "json",
+        ])
+        .expect("verified run card should parse");
+        assert!(matches!(
+            run.command,
+            Some(Commands::DecisionCard {
+                bundle: Some(_),
+                receipt: Some(_),
+                format: Some(DecisionCardFormat::Json),
+                ..
+            })
+        ));
+
+        assert!(Cli::try_parse_from(["mdp", "decision-card"]).is_err());
+        assert!(Cli::try_parse_from(["mdp", "decision-card", "--bundle", "bundle.json"]).is_err());
     }
 
     #[test]
@@ -1740,6 +1832,7 @@ mod tests {
             ("run-verification-v1", SchemaTarget::RunVerificationV1),
             ("run-execution-v1", SchemaTarget::RunExecutionV1),
             ("decision-trace-v1", SchemaTarget::DecisionTraceV1),
+            ("decision-card-v1", SchemaTarget::DecisionCardV1),
             (
                 "prompt-output-validation-v1",
                 SchemaTarget::PromptOutputValidationV1,

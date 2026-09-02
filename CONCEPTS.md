@@ -84,6 +84,10 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
 - **Decision trace** — a bounded, read-only `mdp.decision-trace.v1`
   projection of existing decision artifacts. The source artifacts retain all
   decision, output, and assurance authority.
+- **Decision card** — a human-first `mdp.decision-card.v1` projection composed
+  from the canonical decision trace. It identifies the source digest, decision
+  gate, safe reasons and evidence references, gaps, and next action without
+  becoming a competing source of authority.
 - **Designed graph** — policy and gate relationships relevant to a decision.
 - **Observed path** — the bounded facts recorded for one decision. A
   **decision graph** is the JSON or Mermaid visualization of the designed

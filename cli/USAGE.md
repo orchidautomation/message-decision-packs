@@ -77,6 +77,8 @@ mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbou
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
 mdp --json trace --file examples/decision-trace/fixtures/fit-ready-result.json
 mdp trace --file examples/decision-trace/fixtures/fit-no-draft-result.json --format mermaid
+mdp decision-card --file examples/decision-trace/fixtures/fit-ready-result.json
+mdp --json decision-card --file examples/decision-trace/fixtures/fit-no-draft-result.json
 mdp --json trace --file /tmp/validation-result.json --dir /tmp/mdp-demo --prompt-output /tmp/prompt-output.json --validation-input source_audit=/tmp/source-audit.json --validation-input invocation_receipt=/tmp/invocation-receipt.json
 mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp brief --context --readable --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.md
@@ -242,6 +244,15 @@ artifacts. JSON is the default; `--format mermaid` renders the same canonical
 projection. `--out` is the only trace form that writes a file. The command
 never mutates pack policy or treats `.mdp/traces` as authority. Inspect the
 closed contract with `mdp --json schema decision-trace-v1`.
+
+`mdp decision-card` accepts the same authority bindings and composes the
+canonical trace into a concise executive review. Markdown is the human default;
+global `--json` or explicit `--format json` emits one `mdp.decision-card.v1`
+object in the normal JSON envelope. The card identifies the source contract and
+digest, outcome and action gate, safe rule/evidence IDs, blockers, next action,
+and bounded trace. It never reads arbitrary source prose or grants drafting,
+sending, or approval authority. Inspect its closed schema with
+`mdp --json schema decision-card-v1`.
 
 
 All commands support `--json`; add `--summary` for compact status output. Run `mdp --json capabilities` when an agent or wrapper needs to inspect the public CLI. The versioned `mdp.capabilities.v1` payload exposes an authoritative `mdp.cli-graph.v1` projection under `data.cli`; its commands, nested paths, canonical arguments, aliases, required/optional/repeatable semantics, conditional `requires_when_present` and `required_unless_present` edges, defaults, enum values, conflicts, and human-only display actions are generated from or parity-checked against Clap. The older `data.commands` summaries remain temporarily available for coarse side effects, output contracts, `--out`, dry-run, and strict-mode support, but are deprecated as a syntactic command graph. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.

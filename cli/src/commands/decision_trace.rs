@@ -105,17 +105,100 @@ pub(crate) struct TraceTruncation {
     pub(crate) labels_truncated: usize,
 }
 
+#[cfg(test)]
 pub(crate) fn project_source_file(path: &Path) -> Result<DecisionTrace> {
+    Ok(project_source_file_with_value(path)?.trace)
+}
+
+pub(crate) struct DecisionCardTraceInput {
+    pub(crate) trace: DecisionTrace,
+    pub(crate) source_value: Option<Value>,
+}
+
+fn project_source_file_with_value(path: &Path) -> Result<DecisionCardTraceInput> {
     let bytes = match read_trace_bytes(path) {
         Ok(bytes) => bytes,
-        Err(reason) => return Ok(unavailable(reason, String::new())),
+        Err(reason) => {
+            return Ok(DecisionCardTraceInput {
+                trace: unavailable(reason, String::new()),
+                source_value: None,
+            });
+        }
     };
     let hash = sha256_hex(&bytes);
     let value: Value = match parse_authority_json(&bytes, AuthorityJsonLimits::default()) {
         Ok(value) => value,
-        Err(_) => return Ok(unavailable("source-malformed", hash)),
+        Err(_) => {
+            return Ok(DecisionCardTraceInput {
+                trace: unavailable("source-malformed", hash),
+                source_value: None,
+            });
+        }
     };
-    Ok(project_source_value(&value, hash))
+    Ok(DecisionCardTraceInput {
+        trace: project_source_value(&value, hash),
+        source_value: Some(value),
+    })
+}
+
+/// Resolve the mutually exclusive public trace authority bindings once so
+/// every projection composes the same canonical decision trace.
+pub(crate) fn project_trace_inputs(
+    file: Option<&Path>,
+    pack_root: Option<&Path>,
+    prompt_output: Option<&Path>,
+    validation_inputs: &[String],
+    bundle: Option<&Path>,
+    receipt: Option<&Path>,
+    artifact_root: Option<&Path>,
+) -> Result<DecisionTrace> {
+    Ok(project_decision_card_inputs(
+        file,
+        pack_root,
+        prompt_output,
+        validation_inputs,
+        bundle,
+        receipt,
+        artifact_root,
+    )?
+    .trace)
+}
+
+pub(crate) fn project_decision_card_inputs(
+    file: Option<&Path>,
+    pack_root: Option<&Path>,
+    prompt_output: Option<&Path>,
+    validation_inputs: &[String],
+    bundle: Option<&Path>,
+    receipt: Option<&Path>,
+    artifact_root: Option<&Path>,
+) -> Result<DecisionCardTraceInput> {
+    match (file, bundle, receipt) {
+        (Some(path), None, None) => match (artifact_root, pack_root, prompt_output) {
+            (Some(root), None, None) => Ok(DecisionCardTraceInput {
+                trace: project_conformance_file(path, root).unwrap_or_else(|_| {
+                    unavailable("conformance-source-unverifiable", String::new())
+                }),
+                source_value: None,
+            }),
+            (None, Some(root), Some(output)) => Ok(DecisionCardTraceInput {
+                trace: project_prompt_output_validation_file(
+                    path,
+                    root,
+                    output,
+                    validation_inputs,
+                )?,
+                source_value: None,
+            }),
+            (None, None, None) => project_source_file_with_value(path),
+            _ => unreachable!("clap validates trace authority bindings"),
+        },
+        (None, Some(bundle), Some(receipt)) => Ok(DecisionCardTraceInput {
+            trace: project_run_files(bundle, receipt, artifact_root)?,
+            source_value: None,
+        }),
+        _ => unreachable!("clap validates trace source arguments"),
+    }
 }
 
 pub(crate) fn project_prompt_output_validation_file(
@@ -141,13 +224,19 @@ pub(crate) fn project_prompt_output_validation_file(
     let command_matches = command
         .as_deref()
         .is_none_or(|value| command_contract(value) == Some(PROMPT_OUTPUT_VALIDATION_CONTRACT));
+    let contract_matches = data["contract"].as_str() == Some(PROMPT_OUTPUT_VALIDATION_CONTRACT);
     let source = TraceSource {
-        contract: data["contract"].as_str().unwrap_or("unknown").to_string(),
-        command,
+        contract: if contract_matches {
+            PROMPT_OUTPUT_VALIDATION_CONTRACT.into()
+        } else {
+            "unknown".into()
+        },
+        command: command
+            .filter(|value| command_contract(value) == Some(PROMPT_OUTPUT_VALIDATION_CONTRACT)),
         sha256: validation_sha256,
         class: "prompt-output-validation",
     };
-    if !command_matches || data["contract"].as_str() != Some(PROMPT_OUTPUT_VALIDATION_CONTRACT) {
+    if !command_matches || !contract_matches {
         return Ok(unavailable_with_source(
             "prompt-output-validation-unbound",
             source,
@@ -888,13 +977,23 @@ pub(crate) fn project_run_files(
             .limitations
             .push("artifact-bytes-not-recomputed".into());
     }
-    Ok(
-        builder.finish(if verification.valid && !decision_blocks_output {
-            "available"
-        } else {
-            "blocked"
-        }),
-    )
+    Ok(builder.finish(verified_run_trace_status(
+        verification.valid,
+        receipt.terminal_state.is_success(),
+        decision_blocks_output,
+    )))
+}
+
+fn verified_run_trace_status(
+    verification_valid: bool,
+    terminal_success: bool,
+    decision_blocks_output: bool,
+) -> &'static str {
+    if verification_valid && terminal_success && !decision_blocks_output {
+        "available"
+    } else {
+        "blocked"
+    }
 }
 
 fn read_trace_runner_audit(
@@ -965,7 +1064,7 @@ pub(crate) fn project_source_value(value: &Value, source_sha256: String) -> Deci
     let Some(contract) = contract else {
         return unavailable("unsupported-source-contract", source_sha256);
     };
-    let source = TraceSource {
+    let mut source = TraceSource {
         contract: contract.clone(),
         command,
         sha256: source_sha256,
@@ -989,7 +1088,11 @@ pub(crate) fn project_source_value(value: &Value, source_sha256: String) -> Deci
         }
         RUN_EXECUTION_V1 => project_run_execution(data, source),
         JOB_CONFORMANCE_V1 => unavailable_with_source("composite-artifact-root-required", source),
-        _ => unavailable_with_source("unsupported-source-contract", source),
+        _ => {
+            source.contract = "unknown".into();
+            source.command = None;
+            unavailable_with_source("unsupported-source-contract", source)
+        }
     }
 }
 
@@ -1023,9 +1126,33 @@ fn project_fit(data: &Value, source: TraceSource) -> DecisionTrace {
     {
         return unavailable_with_source("invalid-fit-shape", source);
     }
+    let valid_field_reasons = |value: &Value| {
+        value
+            .as_array()
+            .is_some_and(|items| items.iter().all(|item| item["field"].as_str().is_some()))
+    };
+    let valid_ids = |value: &Value, key: &str| {
+        value.as_array().is_some_and(|items| {
+            items
+                .iter()
+                .all(|item| item[key].as_str().is_some_and(|id| !id.trim().is_empty()))
+        })
+    };
+    if !valid_field_reasons(&data["context"]["missing_requirements"])
+        || !valid_field_reasons(&data["context"]["invalid_requirements"])
+        || !valid_ids(&data["matches"], "id")
+        || !valid_ids(&data["disqualifiers"], "entry_id")
+    {
+        return unavailable_with_source("invalid-fit-shape", source);
+    }
     let status = data["status"].as_str().unwrap_or("unavailable");
     if !matches!(status, "fit" | "insufficient-context" | "disqualified") {
         return unavailable_with_source("invalid-fit-status", source);
+    }
+    if (status == "fit" && data["matches"].as_array().is_none_or(Vec::is_empty))
+        || (status == "disqualified" && data["disqualifiers"].as_array().is_none_or(Vec::is_empty))
+    {
+        return unavailable_with_source("invalid-fit-shape", source);
     }
     let blocked = status != "fit";
     let mut builder = TraceBuilder::new(source);
