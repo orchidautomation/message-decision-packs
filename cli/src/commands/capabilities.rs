@@ -1436,6 +1436,13 @@ mod tests {
         // its user-facing behavior has been reviewed.
         let expected = vec![
             json!({
+                "path": ["upgrade"],
+                "arguments": [
+                    {"canonical": "--yes", "conflicts_with": ["--check"]},
+                    {"canonical": "--check", "conflicts_with": ["--yes"]},
+                ],
+            }),
+            json!({
                 "path": ["rebind-synthetic-chain"],
                 "arguments": [
                     {"canonical": "--dry-run", "conflicts_with": ["--apply", "--force"]},
