@@ -371,9 +371,13 @@ MDP_INSTALL_DIR="$no_node_bootstrap_dir" \
 MDP_SKIP_CLI_UPDATE=0 \
 MDP_FORCE_CLI_UPDATE=0 \
 PATH="$minimal_path" \
-  "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-no-node.stdout"
+  "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-no-node.stdout" 2>"$TMP_DIR/bootstrap-no-node.stderr"
 test -x "$no_node_bootstrap_dir/mdp"
 grep -F "Installed mdp CLI to $no_node_bootstrap_dir/mdp" "$TMP_DIR/bootstrap-no-node.stdout" >/dev/null
+if grep -E '% Total|Xferd|Dload[[:space:]]+Upload' "$TMP_DIR/bootstrap-no-node.stderr" >/dev/null; then
+  echo "Bootstrap unexpectedly printed curl's transfer meter." >&2
+  exit 1
+fi
 
 forced_bootstrap_dir="$TMP_DIR/bootstrap-forced"
 MDP_RESOLVED_VERSION=0.1.101 \

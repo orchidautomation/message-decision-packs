@@ -72,7 +72,6 @@ jobs:
               - "scripts/mdp-proposal-mcp-server.mjs"
               - "scripts/mdp-proposal-runner.mjs"
               - "scripts/test-release-workflow.mjs"
-              - "scripts/patch-agents-installer.mjs"
               - "scripts/patch-codex-installer.mjs"
               - "scripts/test-opencode-wrapper.mjs"
               - "scripts/test-authority-mutations-contract.mjs"
@@ -161,9 +160,9 @@ jobs:
       - name: Install Pluxx
         run: |
           # MDP-221 public binding: install the registry artifact only after its
-          # exact npm tarball must match the reviewed Pluxx 0.1.43 release.
-          expected_sha256='2851a386dc415fd37e124fa132d70af516fee062a8ac355310ea157fa8d2dfc3'
-          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.43 --pack-destination "$RUNNER_TEMP" --silent)"
+          # exact npm tarball must match the reviewed Pluxx 0.1.44 release.
+          expected_sha256='4d8a5fb3ac5f9da5e37dbca1ad635dc0bd684616d88647fe1e9fb377a431c043'
+          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.44 --pack-destination "$RUNNER_TEMP" --silent)"
           pluxx_tarball_path="$RUNNER_TEMP/$pluxx_tarball"
           actual_sha256="$(shasum -a 256 "$pluxx_tarball_path" | awk '{print $1}')"
           test "$actual_sha256" = "$expected_sha256"

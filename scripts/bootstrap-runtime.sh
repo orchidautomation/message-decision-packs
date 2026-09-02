@@ -132,7 +132,7 @@ trap cleanup EXIT
 download() {
   local url="$1"
   local output="$2"
-  curl -fL "$url" -o "$output"
+  curl -fsSL --connect-timeout 10 --max-time 120 --retry 3 --retry-all-errors --retry-delay 1 "$url" -o "$output"
 }
 
 BINARY_PATH="$TMP_DIR/mdp"
