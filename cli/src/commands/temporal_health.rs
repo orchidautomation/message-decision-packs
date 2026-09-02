@@ -224,6 +224,23 @@ fn source_state(
         // source. Keep the row visible, but fail closed in the projection.
         return ("unknown", instant, hash_match);
     }
+    let transition = match life {
+        "revoked" => t.and_then(|x| x.revoked_at.as_ref()),
+        "superseded" => t.and_then(|x| x.superseded_at.as_ref()),
+        _ => None,
+    };
+    let shape_valid = (life == "revoked") == t.is_some_and(|x| x.revoked_at.is_some())
+        && (life == "superseded") == t.is_some_and(|x| x.superseded_at.is_some());
+    let origin = observed_at.max(published_at);
+    if !shape_valid
+        || (life != "current"
+            && !transition.is_some_and(|value| {
+                parse_utc_seconds(value)
+                    .is_some_and(|at| at <= as_of && origin.is_none_or(|o| at >= o))
+            }))
+    {
+        return ("unknown", instant, hash_match);
+    }
     if life == "revoked" {
         return ("revoked", instant, hash_match);
     }
@@ -246,6 +263,13 @@ fn source_state(
     } else {
         ("current", Some(at), hash_match)
     }
+}
+
+#[derive(Debug)]
+struct SourceRevisionAuthority {
+    sha256: Option<String>,
+    transition_at: Option<i64>,
+    transition_valid: bool,
 }
 
 fn source_hash_match(source: &LedgerSource, root: &Path) -> Option<bool> {
@@ -561,11 +585,6 @@ fn validate_governance_with_ledger(
             .filter(|s| !s.id.trim().is_empty())
             .map(|s| s.id.as_str())
             .collect();
-        let decision_ids: BTreeSet<_> = manifest
-            .decision_groups
-            .iter()
-            .map(|g| g.id.as_str())
-            .collect();
         for (i, group) in manifest.decision_groups.iter().enumerate() {
             if let Some(temporal) = &group.temporal {
                 for revision in &temporal.source_revisions {
@@ -574,15 +593,6 @@ fn validate_governance_with_ledger(
                             "source_revision_source_unknown",
                             format!("#/decision_groups/{i}/temporal/source_revisions"),
                             "source revision must reference an existing source",
-                        ));
-                    }
-                }
-                if let Some(replacement) = &temporal.replacement_group {
-                    if replacement == &group.id || !decision_ids.contains(replacement.as_str()) {
-                        d.push(diagnostic(
-                            "decision_replacement_group_invalid",
-                            format!("#/decision_groups/{i}/temporal/replacement_group"),
-                            "replacement_group must reference a distinct existing decision group",
                         ));
                     }
                 }
@@ -631,7 +641,7 @@ fn validate_governance_with_ledger(
                     as_of,
                     &mut d,
                 );
-                let imported = timestamp(
+                let _imported = timestamp(
                     t.imported_at.as_ref(),
                     &format!(".mdp/sources.yaml#/sources/{i}/temporal/imported_at"),
                     as_of,
@@ -639,13 +649,13 @@ fn validate_governance_with_ledger(
                 );
                 check_transition(
                     t.revoked_at.as_ref(),
-                    observed.max(published).max(imported),
+                    observed.max(published),
                     &format!(".mdp/sources.yaml#/sources/{i}/temporal/revoked_at"),
                     &mut d,
                 );
                 check_transition(
                     t.superseded_at.as_ref(),
-                    observed.max(published).max(imported),
+                    observed.max(published),
                     &format!(".mdp/sources.yaml#/sources/{i}/temporal/superseded_at"),
                     &mut d,
                 );
@@ -713,6 +723,26 @@ fn validate_governance_with_ledger(
             }
         }
     }
+    for (i, group) in manifest.decision_groups.iter().enumerate() {
+        if let Some(replacement) = group
+            .temporal
+            .as_ref()
+            .and_then(|t| t.replacement_group.as_ref())
+        {
+            if replacement == &group.id
+                || !manifest
+                    .decision_groups
+                    .iter()
+                    .any(|g| g.id == *replacement)
+            {
+                d.push(diagnostic(
+                    "decision_replacement_group_invalid",
+                    format!("#/decision_groups/{i}/temporal/replacement_group"),
+                    "replacement_group must reference a distinct existing decision group",
+                ));
+            }
+        }
+    }
     if let Some(publication) = &manifest.provenance.temporal {
         timestamp(
             publication.published_at.as_ref(),
@@ -757,7 +787,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
     ));
     let ledger = loaded.ledger;
     let mut sources = Vec::new();
-    let mut source_map: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut source_map: BTreeMap<String, SourceRevisionAuthority> = BTreeMap::new();
     let mut source_local_mismatch: BTreeSet<String> = BTreeSet::new();
     // Only an exact, unique nonblank identity is authoritative. Duplicate
     // rows remain visible in the projection, but cannot silently become a
@@ -786,7 +816,42 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         // Blank source IDs are invalid and must never become authoritative
         // revision lookup keys. Their decision bindings remain unverifiable.
         if source_id_counts.get(s.id.as_str()) == Some(&1) {
-            source_map.insert(s.id.clone(), declared_sha);
+            let temporal = s.temporal.as_ref();
+            let lifecycle = temporal
+                .and_then(|t| t.lifecycle.as_deref())
+                .unwrap_or("current");
+            let transition_text = match lifecycle {
+                "revoked" => temporal.and_then(|t| t.revoked_at.as_ref()),
+                "superseded" => temporal.and_then(|t| t.superseded_at.as_ref()),
+                _ => None,
+            };
+            let transition_at = transition_text.and_then(|value| parse_utc_seconds(value));
+            let observed_origin = temporal
+                .and_then(|t| t.observed_at.as_ref())
+                .and_then(|value| parse_utc_seconds(value));
+            let published_origin = temporal
+                .and_then(|t| t.published_at.as_ref())
+                .and_then(|value| parse_utc_seconds(value));
+            let origin = observed_origin.max(published_origin);
+            let lifecycle_valid = matches!(lifecycle, "current" | "revoked" | "superseded");
+            let lifecycle_shape_valid = lifecycle_valid
+                && ((lifecycle == "revoked") == temporal.is_some_and(|t| t.revoked_at.is_some()))
+                && ((lifecycle == "superseded")
+                    == temporal.is_some_and(|t| t.superseded_at.is_some()));
+            let transition_valid = lifecycle_valid
+                && lifecycle_shape_valid
+                && (!matches!(lifecycle, "revoked" | "superseded")
+                    || transition_at.is_some_and(|transition| {
+                        transition <= as_of && origin.is_none_or(|start| transition >= start)
+                    }));
+            source_map.insert(
+                s.id.clone(),
+                SourceRevisionAuthority {
+                    sha256: declared_sha,
+                    transition_at,
+                    transition_valid,
+                },
+            );
         }
         let t = s.temporal.as_ref();
         let origin = at.map(format_timestamp);
@@ -817,28 +882,50 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         let changed_invalid = t
             .and_then(|x| x.changed_at.as_ref())
             .is_some_and(|_| changed.is_none());
+        let decision_transition_valid = t.is_none_or(|temporal| {
+            let transition = match temporal.lifecycle.as_str() {
+                "revoked" => temporal.revoked_at.as_ref(),
+                "superseded" => temporal.superseded_at.as_ref(),
+                _ => None,
+            };
+            let shape = (temporal.lifecycle == "revoked") == temporal.revoked_at.is_some()
+                && (temporal.lifecycle == "superseded") == temporal.superseded_at.is_some();
+            shape
+                && transition.is_none_or(|value| {
+                    parse_utc_seconds(value)
+                        .is_some_and(|at| at <= as_of && changed.is_none_or(|origin| at >= origin))
+                })
+        });
         let mismatch = t.is_some_and(|x| {
             x.source_revisions
                 .iter()
                 .any(|r| match source_map.get(&r.source_id) {
-                    Some(Some(hash)) if valid_sha256(&r.sha256) => {
-                        hash != &r.sha256 || source_local_mismatch.contains(&r.source_id)
+                    Some(authority)
+                        if authority.transition_valid
+                            && authority.sha256.is_some()
+                            && valid_sha256(&r.sha256) =>
+                    {
+                        authority.sha256.as_ref() != Some(&r.sha256)
+                            || source_local_mismatch.contains(&r.source_id)
+                            || authority.transition_at.is_some_and(|transition| {
+                                reviewed.is_some_and(|review| transition > review)
+                            })
                     }
                     _ => true,
                 })
         });
         if let Some(t) = t {
             for r in &t.source_revisions {
-                if source_map
-                    .get(&r.source_id)
-                    .and_then(|v| v.as_ref())
-                    .is_none()
-                {
-                    diagnostics.push(diagnostic("source_revision_unverifiable", format!("#/decision_groups/{group_index}/temporal/source_revisions"), "source revision cannot be compared because the source has no declared digest"));
+                if source_map.get(&r.source_id).is_none_or(|authority| {
+                    authority.sha256.is_none() || !authority.transition_valid
+                }) {
+                    diagnostics.push(diagnostic("source_revision_unverifiable", format!("#/decision_groups/{group_index}/temporal/source_revisions"), "source revision cannot be compared because identity, digest, or lifecycle evidence is invalid or unavailable"));
                 }
             }
         }
-        let state = if lifecycle == "revoked" {
+        let state = if !decision_transition_valid {
+            "review-due"
+        } else if lifecycle == "revoked" {
             "revoked"
         } else if lifecycle == "superseded" {
             "superseded"
@@ -1200,6 +1287,53 @@ mod tests {
             output["recommendation"],
             "Review decision groups that are due for review."
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn source_transition_before_or_after_review_controls_mismatch_only() {
+        let root = governed_pack("source-transition");
+        let source_path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let source = fs::read_to_string(&source_path)
+            .unwrap()
+            .replace(
+                "observed_at: 2026-01-01T00:00:00Z",
+                "observed_at: 2026-01-01T00:00:00Z\n    revoked_at: 2026-02-01T00:00:00Z",
+            )
+            .replace("lifecycle: current", "lifecycle: revoked")
+            .replace(
+                "imported_at: 2026-09-01T00:00:00Z",
+                "imported_at: 2026-03-01T00:00:00Z",
+            );
+        fs::write(source_path, source).unwrap();
+        let after = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(after["decision_review"][0]["state"], "review-current");
+        assert_eq!(
+            after["decision_review"][0]["source_revision_mismatch"],
+            false
+        );
+        let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&path)
+            .unwrap()
+            .replace(
+                "reviewed_at: 2026-09-01T00:00:00Z",
+                "reviewed_at: 2026-01-15T00:00:00Z",
+            )
+            .replace(
+                "changed_at: 2026-08-01T00:00:00Z",
+                "changed_at: 2026-01-01T00:00:00Z",
+            )
+            .replace("cadence: P10D", "cadence: P1000D")
+            .replace("aging_after_days: 10", "aging_after_days: 1000")
+            .replace("stale_after_days: 20", "stale_after_days: 2000");
+        fs::write(path, manifest).unwrap();
+        let before = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(before["decision_review"][0]["state"], "review-due");
+        assert_eq!(
+            before["decision_review"][0]["source_revision_mismatch"],
+            true
+        );
+        assert_eq!(before["sources"][0]["state"], "revoked");
         let _ = fs::remove_dir_all(root);
     }
 

@@ -2924,8 +2924,8 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
         },
         "$defs": {
             "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": "^P[1-9][0-9]*D$"}, "aging_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}, "stale_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}}},
-            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": {"type": "string"}, "reviewed_at": {"type": "string"}, "revoked_at": {"type": "string"}, "superseded_at": {"type": "string"}, "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
-            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": {"type": "string"}, "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "reviewed_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "revoked_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "superseded_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
+            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
         }
     })
 }
@@ -6901,6 +6901,39 @@ mod tests {
         assert_eq!(result["properties"]["now_utc"]["format"], "date-time");
         assert_eq!(result["properties"]["date_utc"]["format"], "date");
         assert_eq!(result["properties"]["timezone"]["const"], "UTC");
+    }
+
+    #[test]
+    fn temporal_authored_timestamps_require_strict_utc_shape() {
+        let pack = schema(SchemaTarget::Manifest);
+        let temporal = pack["$defs"]["decision_temporal"].clone();
+        for field in ["changed_at", "reviewed_at", "revoked_at", "superseded_at"] {
+            assert_eq!(temporal["properties"][field]["format"], "date-time");
+            assert!(temporal["properties"][field]["pattern"].is_string());
+        }
+        let publication = pack["$defs"]["publication_temporal"].clone();
+        assert_eq!(
+            publication["properties"]["published_at"]["format"],
+            "date-time"
+        );
+        let wrap = |definition: Value, value: Value| {
+            jsonschema::draft202012::validate(&definition, &value).is_ok()
+        };
+        let valid = json!({"lifecycle":"current","changed_at":"2026-01-02T03:04:05Z"});
+        assert!(wrap(temporal.clone(), valid));
+        for invalid in [
+            "2026-01-02T03:04:05+00:00",
+            "2026-99-02T03:04:05Z",
+            "2026-01-02T99:04:05Z",
+        ] {
+            assert!(
+                !wrap(
+                    temporal.clone(),
+                    json!({"lifecycle":"current","changed_at":invalid})
+                ),
+                "{invalid} should be rejected"
+            );
+        }
     }
 
     #[test]
