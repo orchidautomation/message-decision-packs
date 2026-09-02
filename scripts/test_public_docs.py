@@ -48,6 +48,7 @@ class PublicDocumentationTests(unittest.TestCase):
             "llms-full.txt",
             "docs/getting-started.md",
             "docs/distribution.md",
+            "docs/what-this-repo-is.md",
         ):
             with self.subTest(path=path):
                 text = (ROOT / path).read_text()
@@ -61,6 +62,7 @@ class PublicDocumentationTests(unittest.TestCase):
             "README.md",
             "llms.txt",
             "llms-full.txt",
+            "docs/what-this-repo-is.md",
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
             ".github/workflows/authority-mutations.yml",
@@ -76,6 +78,25 @@ class PublicDocumentationTests(unittest.TestCase):
         )["redirects"]
         self.assertFalse(
             any(route["source"].startswith("/eve") for route in redirects)
+        )
+
+    def test_repo_explainer_is_navigation_not_a_served_release_asset(self):
+        explainer = (ROOT / "docs/what-this-repo-is.md").read_text()
+        docs_index = (ROOT / "docs/README.md").read_text()
+        root_readme = (ROOT / "README.md").read_text()
+        release_workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        redirects = json.loads(
+            (ROOT / "deploy/mdp-installer/vercel.json").read_text()
+        )["redirects"]
+
+        self.assertIn("[What This Repo Is](what-this-repo-is.md)", docs_index)
+        self.assertIn(
+            "[What This Repo Is](docs/what-this-repo-is.md)", root_readme
+        )
+        self.assertIn("not a release asset or vanity", explainer)
+        self.assertNotIn("what-this-repo-is", release_workflow)
+        self.assertFalse(
+            any("what-this-repo-is" in route["source"] for route in redirects)
         )
 
     def test_four_skill_contract_matches_the_authored_inventory(self):

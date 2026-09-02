@@ -136,6 +136,7 @@ unsupported claims and defaults while keeping Pluxx rather than switching.
 
 ## Documentation
 
+- [What This Repo Is](docs/what-this-repo-is.md)
 - [Getting Started](docs/getting-started.md)
 - [Pack Authoring](docs/pack-authoring.md)
 - [Decision Input Contracts](docs/decision-input-contracts.md)

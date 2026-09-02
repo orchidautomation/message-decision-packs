@@ -2,6 +2,9 @@
 
 These are the current public docs:
 
+- [What This Repo Is](what-this-repo-is.md): the durable product boundary,
+  maintained components, repository map, and relationship between MDP and
+  external runtimes.
 - [Getting Started](getting-started.md): installation and first use.
 - [Local MCP](local-mcp.md): the canonical four-tool local stdio path and bounded proposal v0 migration guidance.
 - [Conceptual Decision Flow](conceptual-decision-flow.md): pack layers, routing, fit, briefs, and drafting boundaries.
@@ -24,7 +27,9 @@ These are the current public docs:
 - [Concepts](../CONCEPTS.md): canonical product, evidence, assurance, and public-safety vocabulary.
 - [Extension boundary](extension-boundary.md): canonical template/profile/skill/host ownership, compatibility, and reviewed extension checklist.
 
-The root [README](../README.md) is the product overview. [llms.txt](../llms.txt) and [llms-full.txt](../llms-full.txt) are the curated agent briefings.
+The root [README](../README.md) is the short product and installation overview.
+[llms.txt](../llms.txt) and [llms-full.txt](../llms-full.txt) are the curated
+agent briefings shipped with releases.
 
 ## Contributor Workflow Material
 
