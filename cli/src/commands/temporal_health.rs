@@ -108,12 +108,19 @@ fn source_state(
     // source-origin clock; never substitute imported_at.
     let observed = t.and_then(|x| x.observed_at.as_ref());
     let published = t.and_then(|x| x.published_at.as_ref());
-    let instant = timestamp(
-        observed.or(published),
-        &format!(".mdp/sources.yaml#/sources/{index}/temporal"),
+    let observed_at = timestamp(
+        observed,
+        &format!(".mdp/sources.yaml#/sources/{index}/temporal/observed_at"),
         as_of,
         diagnostics,
     );
+    let published_at = timestamp(
+        published,
+        &format!(".mdp/sources.yaml#/sources/{index}/temporal/published_at"),
+        as_of,
+        diagnostics,
+    );
+    let instant = observed_at.or(published_at);
     let hash_match = source_hash_match(source, root);
     if hash_match == Some(false) {
         diagnostics.push(diagnostic(
@@ -148,6 +155,11 @@ fn source_state(
 
 fn source_hash_match(source: &LedgerSource, root: &Path) -> Option<bool> {
     let expected = source.temporal.as_ref()?.sha256.as_ref()?;
+    if !valid_sha256(expected) {
+        // A malformed declaration is not revision evidence.  Validation
+        // reports it, but the evaluator must not compare against it.
+        return None;
+    }
     let locator = source.locator.as_deref()?;
     let path = Path::new(locator);
     if path.is_absolute()
@@ -166,6 +178,13 @@ fn source_hash_match(source: &LedgerSource, root: &Path) -> Option<bool> {
     }
     let bytes = fs::read(resolved).ok()?;
     Some(format!("{:x}", Sha256::digest(bytes)) == *expected)
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) -> Vec<Value> {
     let mut d = Vec::new();
@@ -512,14 +531,21 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
     };
     let mut sources = Vec::new();
     let mut source_map: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut source_local_mismatch: BTreeSet<String> = BTreeSet::new();
     for (i, s) in ledger.sources.iter().enumerate() {
         let (state, at, hash_match) = source_state(s, root, as_of, &mut diagnostics, i);
         // Revision comparison is against the source's declared digest. Local
         // byte verification is a separate, optional fact.
-        source_map.insert(
-            s.id.clone(),
-            s.temporal.as_ref().and_then(|t| t.sha256.clone()),
-        );
+        let declared_sha = s
+            .temporal
+            .as_ref()
+            .and_then(|t| t.sha256.as_deref())
+            .filter(|sha| valid_sha256(sha))
+            .map(str::to_owned);
+        if hash_match == Some(false) {
+            source_local_mismatch.insert(s.id.clone());
+        }
+        source_map.insert(s.id.clone(), declared_sha);
         let t = s.temporal.as_ref();
         let origin = at.map(format_timestamp);
         let next_review_at = t.and_then(|t| t.review_policy.as_ref()).and_then(|p| {
@@ -539,15 +565,22 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         let lifecycle = t.map(|x| x.lifecycle.as_str()).unwrap_or("unknown");
         let reviewed = t
             .and_then(|x| x.reviewed_at.as_ref())
-            .and_then(|x| parse_utc_seconds(x));
+            .and_then(|x| parse_utc_seconds(x))
+            .filter(|seconds| *seconds <= as_of);
         let changed = t
             .and_then(|x| x.changed_at.as_ref())
-            .and_then(|x| parse_utc_seconds(x));
+            .and_then(|x| parse_utc_seconds(x))
+            .filter(|seconds| *seconds <= as_of);
+        let changed_invalid = t
+            .and_then(|x| x.changed_at.as_ref())
+            .is_some_and(|_| changed.is_none());
         let mismatch = t.is_some_and(|x| {
             x.source_revisions
                 .iter()
                 .any(|r| match source_map.get(&r.source_id) {
-                    Some(Some(hash)) => hash != &r.sha256,
+                    Some(Some(hash)) if valid_sha256(&r.sha256) => {
+                        hash != &r.sha256 || source_local_mismatch.contains(&r.source_id)
+                    }
                     _ => true,
                 })
         });
@@ -566,6 +599,11 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             "revoked"
         } else if lifecycle == "superseded" {
             "superseded"
+        } else if changed_invalid {
+            // An invalid change clock cannot establish that a review is
+            // current.  Keep the decision authority untouched, but require
+            // a new review rather than failing open.
+            "review-due"
         } else if reviewed.is_none() {
             "never-reviewed"
         } else if mismatch {
@@ -588,6 +626,8 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         let next_review_at = t
             .and_then(|x| x.reviewed_at.as_ref())
             .and_then(|value| parse_utc_seconds(value))
+            .filter(|reviewed| *reviewed <= as_of)
+            .filter(|_| !changed_invalid)
             .and_then(|reviewed| {
                 g.review_policy
                     .as_ref()
@@ -606,8 +646,13 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 && h.chars()
                     .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
         });
-    let complete_binding =
-        publication_temporal.is_some_and(|x| x.receipt_ref.is_some() && receipt_hash_valid);
+    let publication_time = publication_temporal
+        .and_then(|x| x.published_at.as_ref())
+        .and_then(|value| parse_utc_seconds(value))
+        .filter(|published| *published <= as_of);
+    let complete_binding = publication_time.is_some_and(|_| {
+        publication_temporal.is_some_and(|x| x.receipt_ref.is_some() && receipt_hash_valid)
+    });
     if publication_temporal.is_some_and(|x| x.receipt_ref.is_some() ^ x.receipt_sha256.is_some()) {
         diagnostics.push(diagnostic(
             "publication_binding_partial",
@@ -615,7 +660,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             "receipt_ref and a valid receipt_sha256 are both required for receipt-bound authority",
         ));
     }
-    let publication = json!({"state":publication_temporal.and_then(|x|x.published_at.as_ref()).map(|_|"known").unwrap_or("unknown"),"published_at":publication_temporal.and_then(|x|x.published_at.clone()),"receipt_ref":publication_temporal.and_then(|x|x.receipt_ref.clone()),"receipt_sha256":publication_temporal.and_then(|x|x.receipt_sha256.clone()),"authority":if complete_binding {"receipt-bound"} else if publication_temporal.is_some() {"declared-unverified"} else {"unknown"}});
+    let publication = json!({"state":publication_time.map(|_|"known").unwrap_or("unknown"),"published_at":publication_temporal.and_then(|x|x.published_at.clone()),"receipt_ref":publication_temporal.and_then(|x|x.receipt_ref.clone()),"receipt_sha256":publication_temporal.and_then(|x|x.receipt_sha256.clone()),"authority":if complete_binding {"receipt-bound"} else if publication_time.is_some() {"declared-unverified"} else {"unknown"}});
     let recommendation = if !diagnostics.is_empty() {
         "Review the listed temporal diagnostics and unknown evidence."
     } else if decisions
@@ -651,4 +696,87 @@ fn format_timestamp(s: i64) -> String {
         (day_seconds % 3_600) / 60,
         day_seconds % 60
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn persisted_timestamps_fail_closed_at_evaluation_boundary() {
+        let mut diagnostics = Vec::new();
+        let as_of = parse_utc_seconds("2026-09-02T00:00:00Z").unwrap();
+        assert_eq!(
+            timestamp(
+                Some(&"2026-09-02T00:00:00Z".to_owned()),
+                "/reviewed_at",
+                as_of,
+                &mut diagnostics
+            ),
+            Some(as_of)
+        );
+        assert!(
+            timestamp(
+                Some(&"2026-09-02T00:00:01Z".to_owned()),
+                "/future",
+                as_of,
+                &mut diagnostics
+            )
+            .is_none()
+        );
+        assert!(
+            timestamp(
+                Some(&"2026-09-02T00:00:00+00:00".to_owned()),
+                "/malformed",
+                as_of,
+                &mut diagnostics
+            )
+            .is_none()
+        );
+        assert_eq!(diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn malformed_hash_is_not_revision_evidence() {
+        assert!(valid_sha256(&"a".repeat(64)));
+        assert!(!valid_sha256(&"A".repeat(64)));
+        assert!(!valid_sha256("not-a-sha"));
+    }
+
+    #[test]
+    fn pack_local_hash_mismatch_is_stable_review_evidence() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-temporal-health-{nonce}"));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(root.join(DEFAULT_DIR)).unwrap();
+        fs::write(root.join(DEFAULT_DIR).join("source.txt"), b"actual bytes").unwrap();
+        let source = LedgerSource {
+            id: "source".into(),
+            locator: Some("source.txt".into()),
+            temporal: Some(SourceTemporal {
+                sha256: Some("0".repeat(64)),
+                observed_at: Some("2026-09-01T00:00:00Z".into()),
+                ..SourceTemporal::default()
+            }),
+        };
+        let mut diagnostics = Vec::new();
+        let (_, _, hash_match) = source_state(
+            &source,
+            &root,
+            parse_utc_seconds("2026-09-02T00:00:00Z").unwrap(),
+            &mut diagnostics,
+            0,
+        );
+        assert_eq!(hash_match, Some(false));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d["code"] == "source_hash_mismatch")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
 }
