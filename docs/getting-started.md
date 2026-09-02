@@ -532,23 +532,29 @@ Unsupported claims, execution claims, compliance/security claims, named-customer
 
 ## Update
 
-Rerun the installer:
+Update the CLI and every supported agent bundle as one aligned operation:
 
 ```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+mdp upgrade
 ```
 
-For CLI-only installs, rerun:
+Use explicit confirmation for a noninteractive terminal:
 
 ```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+mdp upgrade -y
 ```
 
-To check whether your local CLI/plugin version is current:
+Check the target CLI version without installing anything:
 
 ```bash
-scripts/check-update.sh
+mdp upgrade --check
 ```
+
+Use `mdp upgrade --version VERSION` to pin a release. The command downloads the
+fixed HTTPS installer, updates the CLI and supported agent bundles together,
+reports each target, and reminds you to restart or reload affected open agent
+applications. Rerun the raw installer from the Install section only for
+bootstrap or repair when the installed CLI cannot run.
 
 ## Long-Tail Skill Clients
 

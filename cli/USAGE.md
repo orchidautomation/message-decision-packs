@@ -14,6 +14,15 @@ Agents should use `mdp --json capabilities` and
 are only projections. `--job` always requires the exact canonical `jobs[].id`,
 not a natural-language approximation.
 
+## Update the installed runtime
+
+Use `mdp upgrade` to update the CLI and all supported agent bundles as one
+aligned operation. It asks before downloading; noninteractive sessions must use
+`mdp upgrade -y`. Use `mdp upgrade --check` for a read-only version check or
+`mdp upgrade --version VERSION` to pin a release. Mutating execution rejects
+global `--json` before side effects; `mdp --json upgrade --check` is supported.
+After a successful update, restart or reload affected open agent applications.
+
 ```bash
 mdp init --template gtm --name "Example Company Messaging" \
   --target-name "Example Company" --target-kind company --dir /tmp/example-company-mdp

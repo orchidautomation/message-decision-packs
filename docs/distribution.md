@@ -187,15 +187,21 @@ Use `mdp --json skills` as the machine-readable skill inventory.
 ## Updates and drift
 
 The plugin must not silently replace the CLI or itself during ordinary pack
-work. Use the explicit installer for updates and `scripts/check-update.sh` for
-a read-only drift check:
+work. Use the installed CLI for aligned updates and its check mode for a
+read-only version check:
 
 ```bash
-scripts/check-update.sh
+mdp upgrade
+mdp upgrade --check
 ```
 
-The script compares the installed CLI and nearby plugin version with the
-latest release and prints the appropriate installer command when they differ.
+`mdp upgrade` updates the CLI and all supported native agent bundles through the
+fixed HTTPS installer. It requires an interactive confirmation or `-y`, accepts
+`--version VERSION`, and tells the operator to restart or reload affected open
+agent applications. `--check` reports CLI currency; bundle drift remains
+explicitly unassessed when installed bundle versions cannot be observed.
+The raw installer remains the bootstrap and repair fallback when the installed
+CLI cannot run.
 
 ## Release closeout
 

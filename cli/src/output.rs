@@ -473,6 +473,14 @@ fn attach_actionable_fields(envelope: &mut Value, diagnostics: Option<&Value>) {
 
 fn summarize(command: &str, data: &Value) -> Value {
     match command {
+        "upgrade" => json!({
+            "contract": data["contract"],
+            "status": data["status"],
+            "running_version": data["running_version"],
+            "target_version": data["target_version"],
+            "agent_bundle_status": data["agent_bundles"]["status"],
+            "next_command": data["next_command"]
+        }),
         "author-preview" | "author-apply" => json!({
             "contract": data["contract"],
             "status": data["status"],
@@ -1055,7 +1063,9 @@ pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
 
 fn classify_error(message: &str, details: &[String]) -> &'static str {
     let lower = format!("{} {}", message, details.join(" ")).to_lowercase();
-    if lower.contains("output_mode_conflict") {
+    if lower.contains("upgrade_json_execution_unsupported") {
+        "upgrade_json_execution_unsupported"
+    } else if lower.contains("output_mode_conflict") {
         OUTPUT_MODE_CONFLICT_CODE
     } else if lower.contains("route_budget_filter_not_found") {
         "route_budget_filter_not_found"
@@ -1097,6 +1107,35 @@ fn classify_error(message: &str, details: &[String]) -> &'static str {
 
 fn print_human(command: &str, data: &Value) -> Result<()> {
     match command {
+        "upgrade" => {
+            println!(
+                "upgrade check: {}",
+                data["status"].as_str().unwrap_or("unavailable")
+            );
+            println!(
+                "running CLI: {}",
+                data["running_version"].as_str().unwrap_or("unknown")
+            );
+            println!(
+                "target CLI: {}",
+                data["target_version"].as_str().unwrap_or("unavailable")
+            );
+            println!(
+                "agent bundles: {}",
+                data["agent_bundles"]["status"]
+                    .as_str()
+                    .unwrap_or("unassessed")
+            );
+            if let Some(reason) = data["reason"].as_str() {
+                println!("reason: {reason}");
+            }
+            println!(
+                "Next: {}",
+                data["next_command"]
+                    .as_str()
+                    .unwrap_or("mdp upgrade --check")
+            );
+        }
         "status" => {
             println!(
                 "status: {}",
@@ -1181,6 +1220,12 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
             println!(
                 "installation: {}",
                 data["installation"]["state"].as_str().unwrap_or("unknown")
+            );
+            println!(
+                "update check: {}",
+                data["installation"]["update_check"]
+                    .as_str()
+                    .unwrap_or("mdp upgrade --check")
             );
             println!(
                 "pack validity: {}",

@@ -14,15 +14,16 @@ use crate::commands::{
     AssembleConformancePaths, BehavioralEvidencePaths, RunReceiptOptions, TargetInitOptions,
     apply_pack_change_set, assemble_conformance, author_proof_output_file, capabilities,
     check_claims_scoped, check_readme, compile_candidate_file, demo_copy, doctor,
-    emit_brief_scoped, eval_pack, explain, gaps, init_pack_targeted, init_pack_targeted_dry_run,
-    pack, preview_pack_change_set, project_conformance_report, project_decision_card_inputs,
-    project_decision_card_with_source, project_trace_inputs, prospect_brief_with_context,
-    readiness, rebind_synthetic_chain, recover_run_output, refresh_readme,
-    render_decision_card_markdown, render_human_brief_file, render_human_brief_markdown,
-    render_mermaid, render_readable_prospect_brief, requirements, requirements_model_context,
-    route_budget_preflight_command, route_budget_preflight_query_command, route_scoped,
-    run_preflight_file, run_receipt, run_request_file_with_transport, sample_leads, schema, skills,
-    status, validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
+    emit_brief_scoped, eval_pack, execute_upgrade, explain, gaps, init_pack_targeted,
+    init_pack_targeted_dry_run, pack, preview_pack_change_set, project_conformance_report,
+    project_decision_card_inputs, project_decision_card_with_source, project_trace_inputs,
+    prospect_brief_with_context, readiness, rebind_synthetic_chain, recover_run_output,
+    refresh_readme, render_decision_card_markdown, render_human_brief_file,
+    render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
+    requirements_model_context, route_budget_preflight_command,
+    route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
+    run_request_file_with_transport, sample_leads, schema, skills, status, upgrade_check,
+    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
     validate_source_binding_file, verify_output_file, verify_output_readable_file,
     verify_run_files,
 };
@@ -41,6 +42,7 @@ use crate::run_request_compiler::{
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
@@ -70,6 +72,70 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
     match command {
         Commands::Capabilities => {
             print_output(json_mode, summary_mode, "capabilities", capabilities())
+        }
+        Commands::Upgrade {
+            yes,
+            check,
+            version,
+        } => {
+            if check {
+                let data = upgrade_check(version.as_deref());
+                let available = data["status"] != "unavailable";
+                print_output_with_status(json_mode, summary_mode, "upgrade", data, available)?;
+                if !available {
+                    std::process::exit(1);
+                }
+                Ok(())
+            } else {
+                if json_mode {
+                    return Err(anyhow!(
+                        "upgrade_json_execution_unsupported: use `mdp upgrade --check` for JSON output or run `mdp upgrade -y` without --json"
+                    ));
+                }
+                if !yes {
+                    if !crate::commands::upgrade::can_prompt_interactively() {
+                        return Err(anyhow!(
+                            "confirmation required in a non-interactive session; run `mdp upgrade -y`"
+                        ));
+                    }
+                    if !crate::commands::upgrade::confirm()? {
+                        println!("upgrade cancelled; no download or installation was started");
+                        return Ok(());
+                    }
+                }
+                let result = execute_upgrade(version.as_deref())?;
+                io::stdout().write_all(&result.stdout)?;
+                io::stdout().flush()?;
+                io::stderr().write_all(&result.stderr)?;
+                io::stderr().flush()?;
+                if !result.status.success() {
+                    eprintln!(
+                        "upgrade failed; review the installer output above, then rerun `mdp upgrade -y`"
+                    );
+                    std::process::exit(result.status.code().unwrap_or(1));
+                }
+                println!(
+                    "CLI result: installer succeeded{}",
+                    result
+                        .installed_version
+                        .as_deref()
+                        .map(|v| format!(" (observed version {v})"))
+                        .unwrap_or_default()
+                );
+                println!(
+                    "Agent bundle results: aligned installer succeeded; see its target summary above"
+                );
+                let combined = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&result.stdout),
+                    String::from_utf8_lossy(&result.stderr)
+                )
+                .to_ascii_lowercase();
+                if !combined.contains("reload or restart updated agent hosts") {
+                    println!("Restart or reload affected open agent applications.");
+                }
+                Ok(())
+            }
         }
         Commands::Conformance { command } => match command {
             ConformanceCommand::Compile {
