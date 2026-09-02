@@ -15,6 +15,20 @@ pub(crate) const CONTRACT: &str = "mdp.temporal-health.v1";
 fn diagnostic(code: &str, path: impl Into<String>, message: &str) -> Value {
     json!({"code": code, "path": path.into(), "message": message})
 }
+
+fn deduplicate_diagnostics(diagnostics: &mut Vec<Value>) {
+    let mut seen = BTreeSet::new();
+    diagnostics.retain(|diagnostic| {
+        seen.insert((
+            diagnostic["code"].as_str().unwrap_or_default().to_owned(),
+            diagnostic["path"].as_str().unwrap_or_default().to_owned(),
+            diagnostic["message"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        ))
+    });
+}
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct Ledger {
@@ -836,6 +850,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             "receipt_ref and a valid receipt_sha256 are both required for receipt-bound authority",
         ));
     }
+    deduplicate_diagnostics(&mut diagnostics);
     let publication = json!({"state":publication_time.map(|_|"known").unwrap_or("unknown"),"published_at":publication_temporal.and_then(|x|x.published_at.clone()),"receipt_ref":publication_temporal.and_then(|x|x.receipt_ref.clone()),"receipt_sha256":publication_temporal.and_then(|x|x.receipt_sha256.clone()),"authority":if complete_binding {"receipt-bound"} else if publication_time.is_some() {"declared-unverified"} else {"unknown"}});
     let recommendation = if !diagnostics.is_empty() {
         "Review the listed temporal diagnostics and unknown evidence."
@@ -1284,14 +1299,15 @@ mod tests {
     fn decision_temporal_diagnostics_are_indexed_and_unique() {
         let root = governed_pack("indexed-diagnostics");
         let path = root.join(DEFAULT_DIR).join("manifest.yaml");
-        let manifest = fs::read_to_string(&path)
-            .unwrap()
+        let original = fs::read_to_string(&path).unwrap();
+        let manifest = original
+            .clone()
             .replace(
                 "reviewed_at: 2026-09-01T00:00:00Z",
                 "reviewed_at: not-a-timestamp",
             )
             .replace("cadence: P10D", "cadence: P0D");
-        fs::write(path, manifest).unwrap();
+        fs::write(&path, manifest).unwrap();
         let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
         let diagnostics = output["diagnostics"].as_array().unwrap();
         let keys = diagnostics
@@ -1313,6 +1329,63 @@ mod tests {
             d["code"] == "temporal_cadence_invalid"
                 && d["path"] == "#/decision_groups/0/review_policy/cadence"
         }));
+
+        for (lifecycle, transition) in [("revoked", "revoked_at"), ("superseded", "superseded_at")]
+        {
+            let transition_manifest = original
+                .replace(
+                    "lifecycle: current\n    changed_at:",
+                    &format!(
+                        "lifecycle: {lifecycle}\n    {transition}: 2026-07-01T00:00:00Z\n    changed_at:"
+                    ),
+                );
+            fs::write(&path, transition_manifest).unwrap();
+            let transition_output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            let matching = transition_output["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|d| {
+                    d["code"] == "temporal_transition_before_origin"
+                        && d["path"] == format!("#/decision_groups/0/temporal/{transition}")
+                })
+                .count();
+            assert_eq!(matching, 1, "{lifecycle} transition should be unique");
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn existing_nonregular_ledger_is_diagnostic_but_absent_optional_ledger_is_not() {
+        let root = governed_pack("ledger-regularity");
+        let ledger_path = root.join(DEFAULT_DIR).join("sources.yaml");
+        fs::remove_file(&ledger_path).unwrap();
+        fs::create_dir(&ledger_path).unwrap();
+        let nonregular = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(nonregular["contract"], CONTRACT);
+        assert_eq!(
+            nonregular["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|d| d["code"] == "temporal_source_ledger_malformed")
+                .count(),
+            1
+        );
+
+        fs::remove_dir(&ledger_path).unwrap();
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path).unwrap();
+        let without_groups = manifest.split("decision_groups:").next().unwrap();
+        fs::write(manifest_path, without_groups).unwrap();
+        let absent = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert!(
+            absent["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|d| d["code"] != "temporal_source_ledger_malformed")
+        );
         let _ = fs::remove_dir_all(root);
     }
 
