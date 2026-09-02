@@ -1436,7 +1436,10 @@ mod tests {
             let path = root.join(DEFAULT_DIR).join("sources.yaml");
             let source = fs::read_to_string(&path)
                 .unwrap()
-                .replace("lifecycle: current", "lifecycle: revoked")
+                .replace(
+                    "lifecycle: current",
+                    "lifecycle: revoked\n    revoked_at: 2026-02-01T00:00:00Z",
+                )
                 .replace(
                     "observed_at: 2026-01-01T00:00:00Z",
                     "observed_at: not-a-time",
