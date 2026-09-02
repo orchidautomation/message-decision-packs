@@ -62,9 +62,23 @@ fn policy_days(
             "cadence must be a positive P<n>D",
         ));
     }
-    if p.aging_after_days == Some(0)
-        || p.stale_after_days == Some(0)
-        || matches!((p.aging_after_days,p.stale_after_days),(Some(a),Some(s)) if s<a)
+    let aging = p.aging_after_days.or(cadence);
+    let stale = match p
+        .stale_after_days
+        .or_else(|| cadence.and_then(|d| d.checked_mul(2)))
+    {
+        Some(value) => Some(value),
+        None if cadence.is_some() => {
+            diagnostics.push(diagnostic(
+                "temporal_threshold_invalid",
+                path,
+                "derived stale threshold overflows",
+            ));
+            None
+        }
+        None => None,
+    };
+    if aging == Some(0) || stale == Some(0) || matches!((aging, stale), (Some(a), Some(s)) if s < a)
     {
         diagnostics.push(diagnostic(
             "temporal_threshold_invalid",
@@ -72,10 +86,7 @@ fn policy_days(
             "thresholds must be positive and non-contradictory",
         ));
     }
-    (
-        p.aging_after_days.or(cadence),
-        p.stale_after_days.or(cadence.map(|d| d.saturating_mul(2))),
-    )
+    (aging, stale)
 }
 
 fn check_transition(
@@ -197,6 +208,59 @@ fn valid_sha256(value: &str) -> bool {
         && value
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+}
+
+fn verify_publication_receipt(
+    root: &Path,
+    receipt_ref: &str,
+    expected: &str,
+    diagnostics: &mut Vec<Value>,
+) -> bool {
+    if !valid_sha256(expected) {
+        return false;
+    }
+    let resolved = match crate::pack_io::resolve_pack_path(root, receipt_ref) {
+        Ok(path) => path,
+        Err(_) => {
+            diagnostics.push(diagnostic(
+                "publication_receipt_unverifiable",
+                "#/provenance/temporal/receipt_ref",
+                "publication receipt reference is unsafe or outside the pack",
+            ));
+            return false;
+        }
+    };
+    if !fs::symlink_metadata(&resolved)
+        .ok()
+        .is_some_and(|metadata| metadata.file_type().is_file())
+    {
+        diagnostics.push(diagnostic(
+            "publication_receipt_unverifiable",
+            "#/provenance/temporal/receipt_ref",
+            "publication receipt must resolve to a readable regular file",
+        ));
+        return false;
+    }
+    let bytes = match fs::read(&resolved) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            diagnostics.push(diagnostic(
+                "publication_receipt_unverifiable",
+                "#/provenance/temporal/receipt_ref",
+                "publication receipt bytes are unavailable",
+            ));
+            return false;
+        }
+    };
+    if format!("{:x}", Sha256::digest(bytes)) != expected {
+        diagnostics.push(diagnostic(
+            "publication_receipt_mismatch",
+            "#/provenance/temporal/receipt_sha256",
+            "publication receipt bytes do not match the declared digest",
+        ));
+        return false;
+    }
+    true
 }
 pub(crate) fn validate_governance(root: &Path, manifest: &Manifest, as_of: i64) -> Vec<Value> {
     let mut d = Vec::new();
@@ -675,9 +739,12 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         .and_then(|x| x.published_at.as_ref())
         .and_then(|value| parse_utc_seconds(value))
         .filter(|published| *published <= as_of);
-    let complete_binding = publication_time.is_some_and(|_| {
-        publication_temporal.is_some_and(|x| x.receipt_ref.is_some() && receipt_hash_valid)
-    });
+    let receipt_verified = publication_temporal
+        .and_then(|x| x.receipt_ref.as_deref().zip(x.receipt_sha256.as_deref()))
+        .is_some_and(|(receipt_ref, receipt_sha)| {
+            verify_publication_receipt(root, receipt_ref, receipt_sha, &mut diagnostics)
+        });
+    let complete_binding = publication_time.is_some_and(|_| receipt_verified && receipt_hash_valid);
     if publication_temporal.is_some_and(|x| x.receipt_ref.is_some() ^ x.receipt_sha256.is_some()) {
         diagnostics.push(diagnostic(
             "publication_binding_partial",
@@ -726,6 +793,7 @@ fn format_timestamp(s: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::ReviewPolicy;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -829,6 +897,9 @@ mod tests {
         copy_tree(&template, &root.join(DEFAULT_DIR));
         let card = root.join(DEFAULT_DIR).join("cards/positioning.yaml");
         let sha = format!("{:x}", Sha256::digest(fs::read(&card).unwrap()));
+        let receipt = b"synthetic publication receipt\n";
+        let receipt_sha = format!("{:x}", Sha256::digest(receipt));
+        fs::write(root.join(DEFAULT_DIR).join("receipt.json"), receipt).unwrap();
         fs::write(
             root.join(DEFAULT_DIR).join("sources.yaml"),
             format!(
@@ -839,8 +910,7 @@ mod tests {
         let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
         let mut manifest = fs::read_to_string(&manifest_path).unwrap();
         manifest.push_str(&format!(
-            "  temporal:\n    published_at: 2026-09-01T00:00:00Z\n    receipt_ref: receipt.json\n    receipt_sha256: {}\ndecision_groups:\n- id: positioning-decision\n  label: Positioning decision\n  entries:\n  - card_id: positioning\n    entry_id: decision-layer\n  jobs:\n  - prospect-fit-or-brief\n  review_policy:\n    cadence: P10D\n    aging_after_days: 10\n    stale_after_days: 20\n  temporal:\n    lifecycle: current\n    changed_at: 2026-08-01T00:00:00Z\n    reviewed_at: 2026-09-01T00:00:00Z\n    source_revisions:\n    - source_id: source\n      sha256: {sha}\n",
-            "a".repeat(64)
+            "  temporal:\n    published_at: 2026-09-01T00:00:00Z\n    receipt_ref: receipt.json\n    receipt_sha256: {receipt_sha}\ndecision_groups:\n- id: positioning-decision\n  label: Positioning decision\n  entries:\n  - card_id: positioning\n    entry_id: decision-layer\n  jobs:\n  - prospect-fit-or-brief\n  review_policy:\n    cadence: P10D\n    aging_after_days: 10\n    stale_after_days: 20\n  temporal:\n    lifecycle: current\n    changed_at: 2026-08-01T00:00:00Z\n    reviewed_at: 2026-09-01T00:00:00Z\n    source_revisions:\n    - source_id: source\n      sha256: {sha}\n"
         ));
         fs::write(manifest_path, manifest).unwrap();
         root
@@ -998,5 +1068,69 @@ mod tests {
             true
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn publication_receipt_must_be_present_safe_and_byte_matching() {
+        let root = governed_pack("receipt");
+        let receipt = root.join(DEFAULT_DIR).join("receipt.json");
+        fs::write(&receipt, b"tampered receipt\n").unwrap();
+        let tampered = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(
+            tampered["pack_publication"]["authority"],
+            "declared-unverified"
+        );
+        assert!(
+            tampered["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["code"] == "publication_receipt_mismatch")
+        );
+
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path)
+            .unwrap()
+            .replace("receipt_ref: receipt.json", "receipt_ref: ../receipt.json");
+        fs::write(manifest_path, manifest).unwrap();
+        let unsafe_ref = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(
+            unsafe_ref["pack_publication"]["authority"],
+            "declared-unverified"
+        );
+        assert!(
+            unsafe_ref["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["code"] == "publication_receipt_unverifiable")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cadence_defaults_are_checked_after_resolution() {
+        let mut diagnostics = Vec::new();
+        let policy = ReviewPolicy {
+            cadence: Some("P90D".into()),
+            aging_after_days: None,
+            stale_after_days: Some(30),
+        };
+        let (aging, stale) = policy_days(Some(&policy), &mut diagnostics, "source/review_policy");
+        assert_eq!((aging, stale), (Some(90), Some(30)));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d["code"] == "temporal_threshold_invalid")
+        );
+        let _ = policy_days(
+            Some(&ReviewPolicy {
+                cadence: Some("P4294967295D".into()),
+                ..ReviewPolicy::default()
+            }),
+            &mut diagnostics,
+            "source/review_policy",
+        );
+        assert!(diagnostics.len() >= 2);
     }
 }
