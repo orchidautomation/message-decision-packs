@@ -1,7 +1,0 @@
-id: claim-check-unsupported
-command: check-claims
-expect_valid: false
-persona: Founder
-job: initial email outbound message
-subject: Guaranteed meetings
-text: MDP guarantees 40% reply rates, creates pipeline, sends emails, and updates CRM records automatically.

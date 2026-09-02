@@ -33,7 +33,7 @@ message-decision-packs/
   cli/      # Rust `mdp` CLI
   plugin/   # Pluxx plugin package source: skills, assets, hooks, scripts
   docs/     # current user and maintainer docs
-  examples/ # one canonical runnable Eve example
+  examples/ # synthetic contract and conformance fixtures
 ```
 
 CLI behavior, schema contracts, starter templates, docs, and skills must stay aligned.
@@ -46,13 +46,11 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. The installer uses GitHub release assets and pairs agent instructions with the matching CLI. Rerun it to update or set `MDP_VERSION` to pin a release.
 
-MDP `0.1.101` publicly ships a separate Agent Plugins v1 package built with
-Pluxx `0.1.42`. The package contains exactly the four MDP skills and no portable
-MCP, hooks, scripts, assets, commands, or agents. Its installer requires an
-explicit absolute client-managed destination and fails closed on native-tree
-overlap or unknown ownership. Cursor has a documented local path but no real
-Cursor proof was available here. MDP does not guess an undocumented generic
-Codex import path.
+MDP ships a separate Agent Plugins v1 package built with Pluxx. The package
+contains exactly the four MDP skills and no portable MCP, hooks, scripts,
+assets, commands, or agents. Its installer requires an explicit absolute
+client-managed destination and fails closed on native-tree overlap or unknown
+ownership. MDP does not guess undocumented host import paths.
 
 Verify:
 
@@ -213,19 +211,11 @@ MDP ships exactly four skills:
 
 Use `mdp --json skills --dir <pack> --job <job-id>` before profile-sensitive work. `packaged_skill_ids` is the released inventory; `eligibility` is pack policy; `host_discovery.status: unobserved` means MDP does not claim to hide or expose skills in the agent host. Unknown and profile-crossing jobs have no fallback.
 
-## Canonical Runnable Example
+## Contract Fixtures
 
-[AI SDR Eve on Vercel](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/ai-sdr-eve-vercel) is the sole canonical runnable example. Eve is the runtime; MDP provides versioned decision context and remains the local decision/context authority for the run. Hashes and receipts bind artifacts but do not prove source truth.
-
-The example:
-
-- loads a synthetic MDP pack and reviewed source strategy;
-- gathers bounded public-source evidence through approved provider tools;
-- targets three qualified people per live run, continuing across approved strategy prompts until the target or bounded exhaustion;
-- uses pack-owned `qualification_gates` to require person-level public receipts and source-backed fit/why-now evidence;
-- runs MDP validation, fit, brief, and claim gates;
-- appends reviewed ledger rows;
-- does not send outreach or sync a CRM.
+The repository's `examples/` directories are synthetic contract and
+conformance fixtures used by validation. They are not hosted products, starter
+apps, or recommended agent-runtime architectures.
 
 ## Agent Operating Rules
 

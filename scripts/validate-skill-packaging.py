@@ -34,7 +34,6 @@ REPO_ONLY_DOC_REFERENCES = (
 CURRENT_AGENT_SURFACES = (
     Path("llms.txt"),
     Path("llms-full.txt"),
-    Path("examples/ai-sdr-eve-vercel/agent/instructions.md"),
 )
 REMOVED_SURFACE_TERMS = (
     "agent" + "-surface",
@@ -462,12 +461,6 @@ def main() -> int:
     errors: list[str] = []
     if Path("skills").exists():
         errors.append("duplicate authored skill root is forbidden: skills/")
-    if Path("examples/ai-sdr-eve-vercel/agent/skills").exists():
-        errors.append(
-            "vendored example skill copies are forbidden: "
-            "examples/ai-sdr-eve-vercel/agent/skills/"
-        )
-
     expected = canonical_skill_inventory(args.inventory, errors)
     validate_source_inventory(args.source, expected, errors)
     if args.source.is_dir():

@@ -1,5 +1,7 @@
 # Flue vs Eve For MDP Webhook Drafting
 
+Status: superseded; retained as historical runtime exploration
+
 Date: 2026-06-25
 
 ## Decision

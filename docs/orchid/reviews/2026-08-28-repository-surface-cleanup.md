@@ -3,6 +3,8 @@
 Date: 2026-08-28
 Linear: MDP-282
 
+> Superseded by the [MDP-341 repository streamlining audit](2026-09-02-repository-streamlining-audit.md). The Eve example retained by this audit was removed on 2026-09-02.
+
 ## Decision
 
 Keep `docs/orchid/` as Orchid Relay's durable, public-safe workflow namespace.

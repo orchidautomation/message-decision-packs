@@ -50,7 +50,7 @@ failed summary. Missing hosts are normal skips. Single-host flags remain strict:
 `--codex`, `--cursor`, `--claude-code`, and `--opencode` fail if their requested
 installation cannot complete.
 
-MDP `0.1.107` also ships a separate Agent Plugins v1 skills package. Set
+MDP also ships a separate Agent Plugins v1 skills package. Set
 `MDP_AGENT_PLUGINS_INSTALL_DIR` to an explicit absolute client-managed
 destination and pass `--agent-plugins`. The installer refuses native-tree
 overlaps and unknown nonempty destinations. There is no guessed generic Codex
@@ -60,10 +60,7 @@ mode, not together with `--agents` or `--cursor`. See
 Ordinary `--agents` runs do not mention or guess a portable destination; setting
 `MDP_AGENT_PLUGINS_INSTALL_DIR` explicitly opts that package into the run.
 
-In `0.1.107`, `mdp-pack-apply` replaces the former `mdp-gtm-brief` and
-`mdp-proposal-review` discovery entries. Rediscover the installed skills after
-upgrade, then resolve an exact job with `mdp --json skills --dir PACK_ROOT
---job JOB_ID`; the removed names are not compatibility aliases.
+Resolve an exact job with `mdp --json skills --dir PACK_ROOT --job JOB_ID`.
 
 ## Verify
 
