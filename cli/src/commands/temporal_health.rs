@@ -896,20 +896,26 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         let changed_invalid = t
             .and_then(|x| x.changed_at.as_ref())
             .is_some_and(|_| changed.is_none());
-        let decision_transition_valid = t.is_none_or(|temporal| {
-            let transition = match temporal.lifecycle.as_str() {
-                "revoked" => temporal.revoked_at.as_ref(),
-                "superseded" => temporal.superseded_at.as_ref(),
-                _ => None,
-            };
-            let shape = (temporal.lifecycle == "revoked") == temporal.revoked_at.is_some()
-                && (temporal.lifecycle == "superseded") == temporal.superseded_at.is_some();
-            shape
-                && transition.is_none_or(|value| {
-                    parse_utc_seconds(value)
-                        .is_some_and(|at| at <= as_of && changed.is_none_or(|origin| at >= origin))
-                })
-        });
+        let reviewed_invalid = t
+            .and_then(|temporal| temporal.reviewed_at.as_ref())
+            .is_some_and(|value| reviewed.is_none());
+        let decision_transition_valid = !changed_invalid
+            && !reviewed_invalid
+            && t.is_none_or(|temporal| {
+                let transition = match temporal.lifecycle.as_str() {
+                    "revoked" => temporal.revoked_at.as_ref(),
+                    "superseded" => temporal.superseded_at.as_ref(),
+                    _ => None,
+                };
+                let shape = (temporal.lifecycle == "revoked") == temporal.revoked_at.is_some()
+                    && (temporal.lifecycle == "superseded") == temporal.superseded_at.is_some();
+                shape
+                    && transition.is_none_or(|value| {
+                        parse_utc_seconds(value).is_some_and(|at| {
+                            at <= as_of && changed.is_none_or(|origin| at >= origin)
+                        })
+                    })
+            });
         let mismatch = t.is_some_and(|x| {
             x.source_revisions
                 .iter()
@@ -1419,6 +1425,48 @@ mod tests {
             );
             let validation = crate::commands::health::validate_pack(&root).unwrap();
             assert_eq!(validation["valid"], false);
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn transitioned_source_invalid_origin_is_unknown_and_unverifiable() {
+        for field in ["observed_at", "published_at"] {
+            let root = governed_pack("invalid-transition-origin");
+            let path = root.join(DEFAULT_DIR).join("sources.yaml");
+            let source = fs::read_to_string(&path)
+                .unwrap()
+                .replace("lifecycle: current", "lifecycle: revoked")
+                .replace(
+                    "observed_at: 2026-01-01T00:00:00Z",
+                    "observed_at: not-a-time",
+                )
+                .replace(
+                    "imported_at: 2026-09-01T00:00:00Z",
+                    "imported_at: 2026-03-01T00:00:00Z",
+                );
+            let source = if field == "published_at" {
+                source.replace(
+                    "observed_at: not-a-time",
+                    "observed_at: 2026-01-01T00:00:00Z\n    published_at: not-a-time",
+                )
+            } else {
+                source
+            };
+            fs::write(path, source).unwrap();
+            let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(output["sources"][0]["state"], "unknown");
+            assert_eq!(
+                output["decision_review"][0]["source_revision_mismatch"],
+                true
+            );
+            assert!(
+                output["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d["code"] == "source_revision_unverifiable")
+            );
             let _ = fs::remove_dir_all(root);
         }
     }
