@@ -232,7 +232,14 @@ fn source_state(
     let shape_valid = (life == "revoked") == t.is_some_and(|x| x.revoked_at.is_some())
         && (life == "superseded") == t.is_some_and(|x| x.superseded_at.is_some());
     let origin = observed_at.max(published_at);
+    let origin_invalid = t.is_some_and(|x| {
+        [x.observed_at.as_ref(), x.published_at.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|value| parse_utc_seconds(value).is_none())
+    });
     if !shape_valid
+        || origin_invalid
         || (life != "current"
             && !transition.is_some_and(|value| {
                 parse_utc_seconds(value)
@@ -833,6 +840,12 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 .and_then(|t| t.published_at.as_ref())
                 .and_then(|value| parse_utc_seconds(value));
             let origin = observed_origin.max(published_origin);
+            let origin_invalid = temporal.is_some_and(|t| {
+                [t.observed_at.as_ref(), t.published_at.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|value| parse_utc_seconds(value).is_none())
+            });
             let lifecycle_valid = matches!(lifecycle, "current" | "revoked" | "superseded");
             let lifecycle_shape_valid = lifecycle_valid
                 && ((lifecycle == "revoked") == temporal.is_some_and(|t| t.revoked_at.is_some()))
@@ -840,6 +853,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                     == temporal.is_some_and(|t| t.superseded_at.is_some()));
             let transition_valid = lifecycle_valid
                 && lifecycle_shape_valid
+                && !origin_invalid
                 && (!matches!(lifecycle, "revoked" | "superseded")
                     || transition_at.is_some_and(|transition| {
                         transition <= as_of && origin.is_none_or(|start| transition >= start)
@@ -1335,6 +1349,42 @@ mod tests {
         );
         assert_eq!(before["sources"][0]["state"], "revoked");
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn source_transition_invalid_evidence_fails_closed_for_both_lifecycles() {
+        for lifecycle in ["revoked", "superseded"] {
+            for transition in [
+                "",
+                "not-a-time",
+                "2027-02-01T00:00:00Z",
+                "2025-12-01T00:00:00Z",
+            ] {
+                let root = governed_pack("invalid-source-transition");
+                let source_path = root.join(DEFAULT_DIR).join("sources.yaml");
+                let mut source = fs::read_to_string(&source_path).unwrap();
+                source = source.replace("lifecycle: current", &format!("lifecycle: {lifecycle}"));
+                source = source.replace(
+                    &format!("    lifecycle: {lifecycle}"),
+                    &format!("    lifecycle: {lifecycle}\n    {lifecycle}_at: {transition}"),
+                );
+                fs::write(source_path, source).unwrap();
+                let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+                assert_eq!(output["sources"][0]["state"], "unknown");
+                assert_eq!(
+                    output["decision_review"][0]["source_revision_mismatch"],
+                    true
+                );
+                assert!(
+                    output["diagnostics"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|d| d["code"] == "source_revision_unverifiable")
+                );
+                let _ = fs::remove_dir_all(root);
+            }
+        }
     }
 
     #[test]
