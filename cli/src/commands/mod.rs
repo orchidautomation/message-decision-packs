@@ -41,9 +41,11 @@ pub(crate) use conformance::{
     compile_candidate_file, project_conformance_report, validate_behavioral_files,
 };
 pub(crate) use decision_card::{
-    decision_card_schema, project_decision_card, render_decision_card_markdown,
+    decision_card_schema, project_decision_card_with_source, render_decision_card_markdown,
 };
-pub(crate) use decision_trace::{decision_trace_schema, project_trace_inputs, render_mermaid};
+pub(crate) use decision_trace::{
+    decision_trace_schema, project_decision_card_inputs, project_trace_inputs, render_mermaid,
+};
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};
 pub(crate) use human_brief::{render_human_brief_file, render_human_brief_markdown};

@@ -266,7 +266,7 @@ pub(crate) fn capabilities() -> Value {
             "source_authority_retained": true,
             "trace_contract": DECISION_TRACE_V1,
             "formats": ["markdown", "json"],
-            "privacy": "closed allowlist derived from the bounded canonical trace; private row payloads are not rendered"
+            "privacy": "canonical trace plus a closed contract-specific allowlist from the same parsed source; private row payloads are not rendered"
         },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",

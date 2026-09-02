@@ -34,6 +34,8 @@ const required = new Set([
   'mdp-205-detached-governed-input-unavailable',
   'mdp-208-raw-prompt-output-no-trace-authority',
   'mdp-209-profile-activation-block',
+  'mdp-339-decision-card-blocked-preserves-block',
+  'mdp-339-decision-card-unavailable-preserves-unavailable',
 ])
 const ids = new Set()
 for (const entry of corpus.cases) {

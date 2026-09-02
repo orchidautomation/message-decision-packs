@@ -92,9 +92,12 @@ Markdown is the default. Global `--json` or `--format json` emits the stable
 machine object. Explicit `--format markdown` is human-only and conflicts with
 global `--json`. The relationship is strict: **source artifact = authority;
 trace = bounded explanation; decision card = operator projection**. The card
-derives only from the bounded trace, so private row fields and arbitrary source
-prose are not copied. If the trace cannot safely name a person or record, the
-card says that the subject label is unavailable.
+reuses the bounded trace and, from the same parsed source bytes, adds only a
+closed contract-specific allowlist such as exact fit rule IDs, declared
+classification fields, persona resolution state, and lineage receipt metadata.
+Private row fields and arbitrary source prose are not copied. If the source
+cannot safely name a person or record, the card says that the subject label is
+unavailable.
 
 ## Inspect v1 run authority
 
