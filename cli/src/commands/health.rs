@@ -292,9 +292,22 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
                 .and_then(crate::time::parse_utc_seconds)
         });
     if let Some(as_of) = as_of {
-        issues.extend(crate::commands::temporal_health::validate_governance(
-            root, &manifest, as_of,
-        ));
+        issues.extend(
+            crate::commands::temporal_health::validate_governance(root, &manifest, as_of)
+                .into_iter()
+                .map(|diagnostic| {
+                    issue(
+                        diagnostic["code"]
+                            .as_str()
+                            .unwrap_or("temporal_governance_invalid"),
+                        "error",
+                        diagnostic["path"].as_str().unwrap_or("#"),
+                        diagnostic["message"]
+                            .as_str()
+                            .unwrap_or("temporal governance validation failed"),
+                    )
+                }),
+        );
     }
     validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
