@@ -1397,6 +1397,33 @@ mod tests {
     }
 
     #[test]
+    fn replacement_group_validation_does_not_require_source_ledger() {
+        for replacement in ["positioning-decision", "missing-group"] {
+            let root = governed_pack("replacement-without-ledger");
+            fs::remove_file(root.join(DEFAULT_DIR).join("sources.yaml")).unwrap();
+            let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+            let manifest = fs::read_to_string(&path).unwrap().replace(
+                "    reviewed_at: 2026-09-01T00:00:00Z",
+                &format!(
+                    "    reviewed_at: 2026-09-01T00:00:00Z\n    replacement_group: {replacement}"
+                ),
+            );
+            fs::write(path, manifest).unwrap();
+            let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert!(
+                health["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| d["code"] == "decision_replacement_group_invalid")
+            );
+            let validation = crate::commands::health::validate_pack(&root).unwrap();
+            assert_eq!(validation["valid"], false);
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
     fn invalid_decision_lifecycle_fails_closed_even_with_current_review() {
         let root = governed_pack("invalid-decision-lifecycle");
         let path = root.join(DEFAULT_DIR).join("manifest.yaml");
