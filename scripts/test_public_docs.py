@@ -42,10 +42,16 @@ class PublicDocumentationTests(unittest.TestCase):
                     self.assertIn(f"`{skill}`", summary)
 
     def test_entry_point_docs_do_not_pin_point_release_narratives(self):
-        for path in ("README.md", "llms.txt", "llms-full.txt", "docs/getting-started.md"):
+        for path in (
+            "README.md",
+            "llms.txt",
+            "llms-full.txt",
+            "docs/getting-started.md",
+            "docs/distribution.md",
+        ):
             with self.subTest(path=path):
                 text = (ROOT / path).read_text()
-                self.assertIsNone(re.search(r"MDP `0\.1\.\d+`", text))
+                self.assertIsNone(re.search(r"(?:MDP|Pluxx) `0\.1\.\d+`", text))
 
     def test_removed_repository_surfaces_do_not_return_through_current_entry_points(self):
         self.assertFalse((ROOT / ".mdp").exists())
@@ -56,13 +62,14 @@ class PublicDocumentationTests(unittest.TestCase):
             "llms.txt",
             "llms-full.txt",
             ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
+            ".github/workflows/authority-mutations.yml",
             "scripts/validate-skill-packaging.py",
         )
         for path in current_surfaces:
             with self.subTest(path=path):
                 text = (ROOT / path).read_text().lower()
-                self.assertNotIn("ai-sdr-eve-vercel", text)
-                self.assertNotIn("eve on vercel", text)
+                self.assertIsNone(re.search(r"\beve\b", text))
 
         redirects = json.loads(
             (ROOT / "deploy/mdp-installer/vercel.json").read_text()
