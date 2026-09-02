@@ -219,6 +219,11 @@ fn source_state(
             "pack-local source bytes do not match the declared digest",
         ));
     }
+    if !matches!(life, "current" | "revoked" | "superseded") {
+        // Invalid lifecycle declarations are not evidence of a current
+        // source. Keep the row visible, but fail closed in the projection.
+        return ("unknown", instant, hash_match);
+    }
     if life == "revoked" {
         return ("revoked", instant, hash_match);
     }
@@ -837,6 +842,9 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             "revoked"
         } else if lifecycle == "superseded" {
             "superseded"
+        } else if !matches!(lifecycle, "current" | "revoked" | "superseded") {
+            // Do not let an invalid lifecycle claim a current review state.
+            "review-due"
         } else if changed_invalid {
             // An invalid change clock cannot establish that a review is
             // current.  Keep the decision authority untouched, but require
@@ -916,7 +924,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
     {
         "Review overdue decision groups before relying on them."
     } else if decisions.iter().any(|value| value["state"] == "review-due") {
-        "Review decision groups whose source revisions changed."
+        "Review decision groups that are due for review."
     } else if sources.iter().any(|value| value["state"] == "stale") {
         "Review stale source evidence before relying on it."
     } else if sources.iter().any(|value| value["state"] == "unknown") {
@@ -930,7 +938,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         "No action required; continue periodic review."
     };
     Ok(
-        json!({"contract":CONTRACT,"evaluation":{"as_of":format_timestamp(as_of),"timezone":"UTC"},"sources":sources,"decision_review":decisions,"pack_publication":publication,"diagnostics":diagnostics,"recommendation":recommendation,"status":if recommendation.starts_with("No action") {"available"} else {"available-with-diagnostics"}}),
+        json!({"contract":CONTRACT,"evaluation":{"as_of":format_timestamp(as_of),"timezone":"UTC"},"sources":sources,"decision_review":decisions,"pack_publication":publication,"diagnostics":diagnostics,"recommendation":recommendation,"status":if diagnostics.is_empty() {"available"} else {"available-with-diagnostics"}}),
     )
 }
 fn format_timestamp(s: i64) -> String {
@@ -1159,6 +1167,7 @@ mod tests {
             health["decision_review"][0]["source_revision_mismatch"],
             true
         );
+        assert_eq!(health["sources"][0]["state"], "unknown");
 
         let validation = crate::commands::health::validate_pack(&root).unwrap();
         assert_eq!(validation["valid"], false);
@@ -1170,6 +1179,47 @@ mod tests {
                 .any(|issue| {
                     issue["code"] == "source_id_empty" && issue["severity"] == "error"
                 })
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn due_review_without_diagnostics_remains_available_and_is_cause_neutral() {
+        let root = governed_pack("cadence-due");
+        let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&path).unwrap().replace(
+            "reviewed_at: 2026-09-01T00:00:00Z",
+            "reviewed_at: 2026-08-20T00:00:00Z",
+        );
+        fs::write(path, manifest).unwrap();
+        let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(output["decision_review"][0]["state"], "review-due");
+        assert!(output["diagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(output["status"], "available");
+        assert_eq!(
+            output["recommendation"],
+            "Review decision groups that are due for review."
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invalid_decision_lifecycle_fails_closed_even_with_current_review() {
+        let root = governed_pack("invalid-decision-lifecycle");
+        let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&path).unwrap().replace(
+            "lifecycle: current\n    changed_at:",
+            "lifecycle: invalid\n    changed_at:",
+        );
+        fs::write(path, manifest).unwrap();
+        let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(output["decision_review"][0]["state"], "review-due");
+        assert!(
+            output["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["code"] == "decision_lifecycle_invalid")
         );
         let _ = fs::remove_dir_all(root);
     }
