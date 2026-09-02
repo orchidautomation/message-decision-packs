@@ -550,7 +550,12 @@ fn validate_governance_with_ledger(
         }
     }
     if ledger_usable {
-        let source_ids: BTreeSet<_> = ledger.sources.iter().map(|s| s.id.as_str()).collect();
+        let source_ids: BTreeSet<_> = ledger
+            .sources
+            .iter()
+            .filter(|s| !s.id.trim().is_empty())
+            .map(|s| s.id.as_str())
+            .collect();
         let decision_ids: BTreeSet<_> = manifest
             .decision_groups
             .iter()
@@ -579,7 +584,19 @@ fn validate_governance_with_ledger(
             }
         }
         for (i, source) in ledger.sources.iter().enumerate() {
-            if !source_ids_seen.insert(source.id.as_str()) {
+            // A blank ID is invalid identity, not a usable lookup key. Keep it
+            // out of both the duplicate/authoritative source index and the
+            // revision comparison path below; otherwise two invalid blanks
+            // could appear to match and incorrectly clear mismatch state.
+            let source_id_valid = !source.id.trim().is_empty();
+            if !source_id_valid {
+                d.push(diagnostic(
+                    "source_id_empty",
+                    format!(".mdp/sources.yaml#/sources/{i}/id"),
+                    "source ID must not be empty or whitespace-only",
+                ));
+            }
+            if source_id_valid && !source_ids_seen.insert(source.id.as_str()) {
                 d.push(diagnostic(
                     "source_duplicate_id",
                     format!(".mdp/sources.yaml#/sources/{i}/id"),
@@ -750,7 +767,11 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         if hash_match == Some(false) {
             source_local_mismatch.insert(s.id.clone());
         }
-        source_map.insert(s.id.clone(), declared_sha);
+        // Blank source IDs are invalid and must never become authoritative
+        // revision lookup keys. Their decision bindings remain unverifiable.
+        if !s.id.trim().is_empty() {
+            source_map.insert(s.id.clone(), declared_sha);
+        }
         let t = s.temporal.as_ref();
         let origin = at.map(format_timestamp);
         let next_review_at = t.and_then(|t| t.review_policy.as_ref()).and_then(|p| {
@@ -1088,6 +1109,55 @@ mod tests {
                 .iter()
                 .all(|d| {
                     d.get("code").is_some() && d.get("path").is_some() && d.get("message").is_some()
+                })
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn blank_source_identity_is_unverifiable_and_strict_validation_error() {
+        let root = governed_pack("blank-source-id");
+        let sources_path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let sources = fs::read_to_string(&sources_path)
+            .unwrap()
+            .replace("- id: source", "- id: '   '")
+            .replace("lifecycle: current", "lifecycle: invalid");
+        fs::write(sources_path, sources).unwrap();
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest_text = fs::read_to_string(&manifest_path)
+            .unwrap()
+            .replace("source_id: source", "source_id: '   '");
+        fs::write(manifest_path, manifest_text).unwrap();
+
+        let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        let diagnostics = health["diagnostics"].as_array().unwrap();
+        assert!(diagnostics.iter().any(|d| {
+            d["code"] == "source_id_empty" && d["path"] == ".mdp/sources.yaml#/sources/0/id"
+        }));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d["code"] == "source_lifecycle_invalid")
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d["code"] == "source_revision_unverifiable")
+        );
+        assert_eq!(
+            health["decision_review"][0]["source_revision_mismatch"],
+            true
+        );
+
+        let validation = crate::commands::health::validate_pack(&root).unwrap();
+        assert_eq!(validation["valid"], false);
+        assert!(
+            validation["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "source_id_empty" && issue["severity"] == "error"
                 })
         );
         let _ = fs::remove_dir_all(root);
