@@ -18,12 +18,12 @@
     "observedServiceTier": "priority",
     "taskId": "01a063a9-ff45-7bf1-9250-122210db6e7b",
     "finalDispatchHash": "2e6e2071a7f50aaf2e25e0f7cdbd0c75d9404283f68244d9b7dc7f3fd7b09ec0",
-    "implementationHead": "533a09f61f5327b6a3b2c03b5782b15028bbacb0",
-    "integratedHead": "272f56fd69d597dabb0528b70628c52b9234322a"
+    "implementationHead": "0ad635732256a67453485ffdc76ec80bc0a9f59f",
+    "integratedHead": "28449035dec3582cb9081cf88f7af9cdeaa983ef"
   },
   "validation": {
-    "issueHead": "Cargo formatting and check passed; all 24 temporal-health focused tests passed",
-    "integratedHead": "905 unit tests and all integration suites passed",
+    "issueHead": "Cargo formatting and check passed; all 27 temporal-health focused tests plus command, JSON stdout, human diagnostic, and authored schema contract tests passed",
+    "integratedHead": "Cargo formatting and check passed; 908 unit tests and all integration suites passed",
     "compatibility": "Focused template, skill, packaging, asset-sync, plugin, version-sync, public-artifact, and llms validation gates passed",
     "externalAuthority": "Exact pull-request-head GitHub Actions and Codex review remain the authoritative external gates"
   },
@@ -33,6 +33,6 @@
     "targetRef": "main",
     "pullRequest": 301
   },
-  "recovery": "Sol integration review rejected premature completion claims and decomposed lifecycle, source-transition, schema-time, cadence, and replacement-reference gaps into bounded Luna repairs before final exact-head acceptance.",
-  "observedAt": "2026-09-03T00:30:00Z"
+  "recovery": "Sol integration review rejected premature completion claims and decomposed lifecycle, source-transition, schema-time, cadence, and replacement-reference gaps into bounded Luna repairs. The exact-head Codex review then identified missing ledger discrimination, partial publication binding, and absent-metadata semantics; Luna repaired those bounded findings, and Sol's acceptance audit caught and repaired the remaining schema-parity and recommendation gap before a new external review.",
+  "observedAt": "2026-09-03T00:48:00Z"
 }
