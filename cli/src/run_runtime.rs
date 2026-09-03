@@ -99,6 +99,10 @@ pub(crate) struct RunExecution {
     pub(crate) bundle_sha256: String,
     pub(crate) receipt_sha256: String,
     pub(crate) authority_block: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_phase: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1590,6 +1594,15 @@ where
         },
         "authority_notice": "Only this block and its hash-bound artifacts are authoritative; surrounding conversation commentary is outside the receipt."
     });
+    // The bounded rejection reason travels inline so receipt-only consumers
+    // can see the code and phase without opening runner-audit.json. Omit both
+    // when no governed diagnostic was classified.
+    if let Some(code) = receipt.diagnostic_code.as_deref() {
+        authority_block["diagnostic_code"] = json!(code);
+    }
+    if let Some(phase) = receipt.diagnostic_phase.as_deref() {
+        authority_block["diagnostic_phase"] = json!(phase);
+    }
     if !diagnostics.is_empty() {
         authority_block["diagnostics"] = serde_json::to_value(&diagnostics)?;
     }
@@ -1617,6 +1630,8 @@ where
         bundle_sha256,
         receipt_sha256: receipt.receipt_sha256,
         authority_block,
+        diagnostic_code: receipt.diagnostic_code.clone(),
+        diagnostic_phase: receipt.diagnostic_phase.clone(),
     })
 }
 
@@ -2052,6 +2067,7 @@ where
     let mut provider_response_body_sha256 = None;
     let mut provider_observation = None;
     let mut diagnostic_code = None;
+    let mut diagnostic_phase = None;
     let (mut terminal_state, mut success_values) = if request.mode == RunMode::Generative {
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
             run_failure(RunFailureKind::PolicyBlocked, "generative-prompt-missing")
@@ -2076,6 +2092,7 @@ where
         provider_response_body_sha256 = outcome.provider_response_body_sha256.clone();
         provider_observation = outcome.provider_observation.clone();
         diagnostic_code = outcome.diagnostic_code.clone();
+        diagnostic_phase = outcome.diagnostic_phase.clone();
         driver_request_sha256 = Some(outcome.driver_request_sha256);
         driver_result_sha256 = Some(outcome.driver_result_sha256);
         validation = outcome.validation;
@@ -2551,6 +2568,7 @@ where
         identity_observations,
         deadline: deadline_observation.clone(),
         diagnostic_code,
+        diagnostic_phase,
         terminal_state,
         assurance: assurance.clone(),
         limitations: vec![
@@ -2623,6 +2641,8 @@ where
         validation: validation_authority,
         runner_audit: audit_authority,
         deadline: deadline_observation.clone(),
+        diagnostic_code: audit.diagnostic_code.clone(),
+        diagnostic_phase: audit.diagnostic_phase.clone(),
         assurance,
         limitations: audit.limitations,
         receipt_sha256: String::new(),
@@ -2675,8 +2695,25 @@ struct GenerativeOutcome {
     provider_response_body_sha256: Option<String>,
     provider_observation: Option<DriverProviderObservationV2>,
     diagnostic_code: Option<String>,
+    diagnostic_phase: Option<String>,
     driver_request_sha256: String,
     driver_result_sha256: String,
+}
+
+/// Bounded phase labels reuse the existing `DeadlinePhase` vocabulary; no new
+/// phase names are invented for diagnostics.
+fn deadline_phase_label(phase: DeadlinePhase) -> &'static str {
+    match phase {
+        DeadlinePhase::Preflight => "preflight",
+        DeadlinePhase::Staging => "staging",
+        DeadlinePhase::Driver => "driver",
+        DeadlinePhase::Provider => "provider",
+        DeadlinePhase::Validation => "validation",
+        DeadlinePhase::Finalization => "finalization",
+        DeadlinePhase::Cancellation => "cancellation",
+        DeadlinePhase::Transport => "transport",
+        DeadlinePhase::Cleanup => "cleanup",
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2803,7 +2840,7 @@ where
     seal_driver_request(&mut driver_request)?;
 
     if driver_timeout_ms.is_none() {
-        return failed_generative_outcome(driver_request, "driver_budget_exhausted");
+        return failed_generative_outcome(driver_request, "driver_budget_exhausted", "driver");
     }
     deadline.mark_phase(DeadlinePhase::Driver);
     let result = match driver(
@@ -2822,7 +2859,7 @@ where
                 "cancelled" | "driver-cancelled" | "provider-cancelled"
             ) {
                 deadline.record_cancelled(DeadlinePhase::Cancellation);
-                return failed_generative_outcome(driver_request, "cancelled");
+                return failed_generative_outcome(driver_request, "cancelled", "cancellation");
             }
             if matches!(
                 code,
@@ -2833,9 +2870,13 @@ where
                     DeadlinePhase::Provider,
                     TerminalState::NoDraftRunnerFailed,
                 ));
-                return failed_generative_outcome(driver_request, "driver-timeout");
+                return failed_generative_outcome(
+                    driver_request,
+                    "driver-timeout",
+                    deadline_phase_label(DeadlinePhase::Provider),
+                );
             }
-            return failed_generative_outcome(driver_request, code);
+            return failed_generative_outcome(driver_request, code, "driver");
         }
     };
     if deadline.expired() {
@@ -2844,7 +2885,11 @@ where
             DeadlinePhase::Provider,
             TerminalState::NoDraftRunnerFailed,
         ));
-        return failed_generative_outcome(driver_request, "driver-timeout");
+        return failed_generative_outcome(
+            driver_request,
+            "driver-timeout",
+            deadline_phase_label(DeadlinePhase::Provider),
+        );
     }
     deadline.mark_phase(DeadlinePhase::Validation);
     if validate_driver_result(&driver_request, &result).is_err() {
@@ -2856,7 +2901,8 @@ where
             provider_request_schema_id: None,
             provider_response_body_sha256: None,
             provider_observation: None,
-            diagnostic_code: None,
+            diagnostic_code: Some("driver-result-invalid".into()),
+            diagnostic_phase: Some("driver".into()),
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -2880,7 +2926,8 @@ where
             provider_request_schema_id: result.provider_request_schema_id,
             provider_response_body_sha256: result.provider_response_body_sha256,
             provider_observation: result.provider_observation,
-            diagnostic_code: None,
+            diagnostic_code: result.diagnostic_code.clone(),
+            diagnostic_phase: Some("driver".into()),
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -2961,11 +3008,18 @@ where
             deadline.current_phase(),
             TerminalState::NoDraftRunnerFailed,
         ));
-        return failed_generative_outcome(driver_request, "validation-timeout");
+        return failed_generative_outcome(
+            driver_request,
+            "validation-timeout",
+            deadline_phase_label(deadline.current_phase()),
+        );
     }
     let valid = validation["valid"].as_bool() == Some(true);
     let validation_diagnostic =
         (!valid).then(|| sanitized_prompt_validation_diagnostic(&validation));
+    let diagnostic_phase = validation_diagnostic
+        .is_some()
+        .then(|| "validation".to_string());
     Ok(GenerativeOutcome {
         terminal_state: if valid {
             TerminalState::Success
@@ -2989,6 +3043,7 @@ where
         provider_response_body_sha256: result.provider_response_body_sha256,
         provider_observation: result.provider_observation,
         diagnostic_code: validation_diagnostic,
+        diagnostic_phase,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
     })
@@ -2997,6 +3052,7 @@ where
 fn failed_generative_outcome(
     driver_request: DriverRequestV2,
     diagnostic_code: &str,
+    diagnostic_phase: &'static str,
 ) -> Result<GenerativeOutcome> {
     let mut failed_result = DriverResultV2 {
         contract: DRIVER_RESULT_V2.into(),
@@ -3022,6 +3078,7 @@ fn failed_generative_outcome(
         provider_response_body_sha256: None,
         provider_observation: None,
         diagnostic_code: Some(diagnostic_code.into()),
+        diagnostic_phase: Some(diagnostic_phase.into()),
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: failed_result.result_sha256,
     })
@@ -3041,6 +3098,7 @@ fn host_envelope_failure_outcome(
         provider_response_body_sha256: result.provider_response_body_sha256,
         provider_observation: result.provider_observation,
         diagnostic_code: Some(diagnostic_code.into()),
+        diagnostic_phase: Some("validation".into()),
         driver_request_sha256: driver_request.request_sha256.clone(),
         driver_result_sha256: result.result_sha256,
     }
@@ -3060,6 +3118,8 @@ fn sanitized_host_envelope_diagnostic(error: &anyhow::Error) -> &'static str {
     match code {
         "host-envelope-metadata-missing"
         | "host-envelope-metadata-invalid"
+        | "normalization-host-envelope-metadata-missing"
+        | "normalization-host-envelope-metadata-invalid"
         | "semantic-output-malformed"
         | "semantic-output-not-object"
         | "host-owned-field-injection"
@@ -6239,6 +6299,20 @@ mod tests {
     }
 
     #[test]
+    fn normalization_host_envelope_codes_are_preserved_not_collapsed() {
+        // The v3 normalization host envelope emits its own static, host-owned
+        // metadata codes. They are bounded policy codes, so they must survive
+        // the sanitizer instead of collapsing to host-envelope-failed.
+        for code in [
+            "normalization-host-envelope-metadata-missing",
+            "normalization-host-envelope-metadata-invalid",
+        ] {
+            let failure = super::run_failure(RunFailureKind::PolicyBlocked, code);
+            assert_eq!(sanitized_host_envelope_diagnostic(&failure), code);
+        }
+    }
+
+    #[test]
     fn prompt_validation_diagnostics_preserve_only_safe_local_issue_codes() {
         let validation = serde_json::json!({
             "valid": false,
@@ -6549,12 +6623,17 @@ mod tests {
                 r#"{"contract":"mdp.prompt-output.v0","selected_authority":[],"artifact":{},"gaps":[],"rejected_claims":[]}"#,
                 "host-owned-field-injection",
             ),
+            (
+                "{\"raw_private_model_sentinel\":",
+                "semantic-output-malformed",
+            ),
         ]
         .into_iter()
         .enumerate()
         {
             let run = root.join(format!("published-run-{index}"));
             let model_output = model_output.to_string();
+            let carries_raw_sentinel = model_output.contains("raw_private_model_sentinel");
             let result = execute_run_inner_with_driver(
                 &request,
                 &run,
@@ -6606,10 +6685,14 @@ mod tests {
                     .unwrap();
             assert!(receipt["output"].is_null());
             assert!(receipt["decision"].is_null());
+            assert_eq!(receipt["terminal_state"], "no-draft:output-invalid");
+            assert_eq!(receipt["diagnostic_code"].as_str(), Some(diagnostic_code));
+            assert_eq!(receipt["diagnostic_phase"].as_str(), Some("validation"));
             let audit: crate::run_contracts::RunnerAuditV1 =
                 serde_json::from_slice(&fs::read(run.join("runner-audit.json")).unwrap())
                     .unwrap();
             assert_eq!(audit.diagnostic_code.as_deref(), Some(diagnostic_code));
+            assert_eq!(audit.diagnostic_phase.as_deref(), Some("validation"));
             assert_eq!(audit.provider_response_body_sha256, Some("4".repeat(64)));
             let observation = audit
                 .provider_observation
@@ -6626,8 +6709,94 @@ mod tests {
                 .unwrap()["valid"],
                 true
             );
+            if carries_raw_sentinel {
+                assert_published_tree_excludes(&run, "raw_private_model_sentinel");
+            }
         }
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn driver_result_rejection_codes_pass_through_with_driver_phase() {
+        // Canary case 2: a transport-side runner failure and a
+        // received-but-invalid output must stay distinguishable through their
+        // stable bounded codes, both classified in the driver phase.
+        for (index, (terminal_state, diagnostic_code, expected_receipt_state)) in [
+            (
+                TerminalState::NoDraftRunnerFailed,
+                "provider-http-error",
+                "no-draft:runner-failed",
+            ),
+            (
+                TerminalState::NoDraftOutputInvalid,
+                "model-output-invalid-json",
+                "no-draft:output-invalid",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let root = temp_path(&format!("driver-rejection-{index}"));
+            let pack = root.join("pack");
+            let raw = root.join("raw-row.json");
+            fs::create_dir_all(&root).unwrap();
+            crate::commands::init::init_pack(&pack, "Driver Rejection Pack", "gtm", true, false)
+                .unwrap();
+            fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+            let request = generative_request_fixture(&pack, &raw);
+            let run = root.join("published-run");
+            let result = execute_run_inner_with_driver(
+                &request,
+                &run,
+                || Ok(()),
+                move |driver_request, _| {
+                    let mut result = DriverResultV2 {
+                        contract: DRIVER_RESULT_V2.into(),
+                        execution_id: driver_request.execution_id.clone(),
+                        operation: driver_request.operation.clone(),
+                        terminal_state,
+                        output: None,
+                        provider_request_body_sha256: Some("d".repeat(64)),
+                        provider_request_schema_id: Some(
+                            "openai.responses.json-schema-request.v1".into(),
+                        ),
+                        provider_response_body_sha256: None,
+                        provider_output_schema_sha256: Some(
+                            driver_request.provider_output_schema_sha256.clone(),
+                        ),
+                        provider_observation: None,
+                        diagnostic_code: Some(diagnostic_code.into()),
+                        result_sha256: String::new(),
+                    };
+                    seal_driver_result(&mut result)?;
+                    Ok(result)
+                },
+            )
+            .unwrap();
+            assert_eq!(result.terminal_state, terminal_state);
+            assert_eq!(result.diagnostic_code.as_deref(), Some(diagnostic_code));
+            assert_eq!(result.diagnostic_phase.as_deref(), Some("driver"));
+
+            let receipt: serde_json::Value =
+                serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
+            assert_eq!(receipt["terminal_state"], expected_receipt_state);
+            assert_eq!(receipt["diagnostic_code"].as_str(), Some(diagnostic_code));
+            assert_eq!(receipt["diagnostic_phase"].as_str(), Some("driver"));
+            let audit: crate::run_contracts::RunnerAuditV1 =
+                serde_json::from_slice(&fs::read(run.join("runner-audit.json")).unwrap()).unwrap();
+            assert_eq!(audit.diagnostic_code.as_deref(), Some(diagnostic_code));
+            assert_eq!(audit.diagnostic_phase.as_deref(), Some("driver"));
+            assert_eq!(
+                crate::commands::run_verification::verify_run_files(
+                    Some(&run.join("run-bundle.json")),
+                    &run.join("run-receipt.json"),
+                    Some(&run),
+                )
+                .unwrap()["valid"],
+                true
+            );
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]
@@ -8215,6 +8384,27 @@ mod tests {
 
     fn temp_path(label: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("mdp-run-runtime-{label}-{}", nonce()))
+    }
+
+    fn assert_published_tree_excludes(run: &std::path::Path, needle: &str) {
+        fn walk(dir: &std::path::Path, needle: &str) {
+            for entry in fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    walk(&entry.path(), needle);
+                } else {
+                    let bytes = fs::read(entry.path()).unwrap();
+                    assert!(
+                        !bytes
+                            .windows(needle.len())
+                            .any(|window| window == needle.as_bytes()),
+                        "raw model output bytes leaked into {}",
+                        entry.path().display()
+                    );
+                }
+            }
+        }
+        walk(run, needle);
     }
 
     fn nonce() -> u128 {
