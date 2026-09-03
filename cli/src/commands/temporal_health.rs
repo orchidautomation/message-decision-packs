@@ -760,7 +760,8 @@ fn validate_governance_with_ledger(
             .as_ref()
             .and_then(|t| t.replacement_group.as_ref())
         {
-            if replacement == &group.id
+            if group.temporal.as_ref().map(|t| t.lifecycle.as_str()) != Some("superseded")
+                || replacement == &group.id
                 || !manifest
                     .decision_groups
                     .iter()
@@ -769,7 +770,7 @@ fn validate_governance_with_ledger(
                 d.push(diagnostic(
                     "decision_replacement_group_invalid",
                     format!("#/decision_groups/{i}/temporal/replacement_group"),
-                    "replacement_group must reference a distinct existing decision group",
+                    "replacement_group is allowed only for superseded decisions and must reference a distinct existing decision group",
                 ));
             }
         }
@@ -934,7 +935,9 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             .is_some_and(|_| reviewed.is_none());
         let decision_transition_valid = if lifecycle == "current" {
             t.is_none_or(|temporal| {
-                temporal.revoked_at.is_none() && temporal.superseded_at.is_none()
+                temporal.revoked_at.is_none()
+                    && temporal.superseded_at.is_none()
+                    && temporal.replacement_group.is_none()
             })
         } else if !matches!(lifecycle, "revoked" | "superseded") {
             false
@@ -948,7 +951,8 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                     _ => None,
                 };
                 let shape = (temporal.lifecycle == "revoked") == temporal.revoked_at.is_some()
-                    && (temporal.lifecycle == "superseded") == temporal.superseded_at.is_some();
+                    && (temporal.lifecycle == "superseded") == temporal.superseded_at.is_some()
+                    && (temporal.lifecycle == "superseded" || temporal.replacement_group.is_none());
                 shape
                     && transition.is_none_or(|value| {
                         parse_utc_seconds(value).is_some_and(|at| {
@@ -1359,6 +1363,7 @@ mod tests {
             }
             fs::write(&manifest_path, manifest).unwrap();
             let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(health["decision_review"][0]["state"], "review-due");
             assert!(
                 health["diagnostics"]
                     .as_array()
