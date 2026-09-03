@@ -1363,7 +1363,6 @@ mod tests {
             }
             fs::write(&manifest_path, manifest).unwrap();
             let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
-            assert_eq!(health["decision_review"][0]["state"], "review-due");
             assert!(
                 health["diagnostics"]
                     .as_array()
@@ -1675,6 +1674,7 @@ mod tests {
             );
             fs::write(path, manifest).unwrap();
             let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(health["decision_review"][0]["state"], "review-due");
             assert!(
                 health["diagnostics"]
                     .as_array()
