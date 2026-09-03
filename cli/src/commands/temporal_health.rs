@@ -250,7 +250,8 @@ fn source_state(
         _ => None,
     };
     let shape_valid = (life == "revoked") == t.is_some_and(|x| x.revoked_at.is_some())
-        && (life == "superseded") == t.is_some_and(|x| x.superseded_at.is_some());
+        && (life == "superseded") == t.is_some_and(|x| x.superseded_at.is_some())
+        && (life == "superseded" || t.is_none_or(|x| x.superseded_by.is_none()));
     let origin = observed_at.max(published_at);
     let origin_invalid = t.is_some_and(|x| {
         [x.observed_at.as_ref(), x.published_at.as_ref()]
@@ -721,11 +722,14 @@ fn validate_governance_with_ledger(
                     ));
                 }
                 if let Some(id) = &t.superseded_by {
-                    if id == &source.id || !source_ids.contains(id.as_str()) {
+                    if t.lifecycle.as_deref() != Some("superseded")
+                        || id == &source.id
+                        || !source_ids.contains(id.as_str())
+                    {
                         d.push(diagnostic(
                             "source_superseded_by_invalid",
                             format!(".mdp/sources.yaml#/sources/{i}/temporal/superseded_by"),
-                            "superseded_by must reference a distinct existing source",
+                            "superseded_by is allowed only for superseded sources and must reference a distinct existing source",
                         ));
                     }
                 }
@@ -1529,6 +1533,28 @@ mod tests {
             "2026-09-11T00:00:00Z"
         );
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn current_source_cannot_declare_a_replacement() {
+        let root = governed_pack("current-source-replacement");
+        let path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let source = fs::read_to_string(&path).unwrap().replace(
+            "lifecycle: current",
+            "lifecycle: current\n    superseded_by: replacement",
+        ) + "\n- id: replacement\n  locator: .mdp/cards/positioning.yaml\n";
+        fs::write(path, source).unwrap();
+
+        let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(output["sources"][0]["state"], "unknown");
+        assert!(output["diagnostics"].as_array().unwrap().iter().any(|d| {
+            d["code"] == "source_superseded_by_invalid"
+                && d["path"] == ".mdp/sources.yaml#/sources/0/temporal/superseded_by"
+        }));
+
+        let validation = crate::commands::health::validate_pack(&root).unwrap();
+        assert_eq!(validation["valid"], false);
         let _ = fs::remove_dir_all(root);
     }
 
