@@ -37,7 +37,12 @@
     "docs/native-api-normalization-runner.md",
     "docs/prompt-extraction-contract.md",
     "scripts/test-native-model-driver.mjs",
-    "scripts/test-universal-native-parity.mjs"
+    "scripts/test-universal-native-parity.mjs",
+    "cli/tests/upgrade.rs",
+    "cli/Cargo.toml",
+    "cli/Cargo.lock",
+    "plugin/.codex-plugin/plugin.json",
+    "pluxx.config.ts"
   ],
   "exceptionJustification": "Canonical Orchid dispatch was attempted after the exact plan pin and failed closed because the visible dispatch path was unavailable. The normal dispatch could not use the local app-server state; the escalated adapter then observed a model-list refresh 404 and a thread-start reasoning-effort mismatch instead of the required Luna medium execution. Direct implementation stayed on the issue-bound branch, and no hidden worker or Fast claim is made.",
   "validation": [
@@ -48,8 +53,10 @@
     "node scripts/test-universal-native-parity.mjs: passed",
     "node scripts/test-run-v1-golden.mjs: passed (8 accepted, 14 rejected)",
     "bash scripts/test-native-runner.sh: passed",
-    "cargo test --manifest-path cli/Cargo.toml: all changed-surface tests passed; one unrelated baseline upgrade-fixture test failed against the stale v0.1.112 expectation"
+    "cargo test --manifest-path cli/Cargo.toml: the exact CI failure was traced to the stale v0.1.112 upgrade fixture; version-derived fixture coverage now passes at 0.1.114. A local full run also encountered an unrelated timing-sensitive deadline assertion, which passes in isolation.",
+    "./scripts/validate-version-sync.sh: passed (Version sync OK: 0.1.114)",
+    "cargo test --manifest-path cli/Cargo.toml --test upgrade -- --nocapture: 11 passed, 0 failed"
   ],
   "verdict": "valid",
-  "observedAt": "2026-09-03T16:45:00Z"
+  "observedAt": "2026-09-03T17:45:30Z"
 }
