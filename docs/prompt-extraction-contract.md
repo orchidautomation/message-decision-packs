@@ -4,6 +4,18 @@
 
 New GTM and proposal normalization producers use `mdp.normalized-decision-input.v3`. The host compiles job-scoped collection requirements and classification taxonomies, collects attempted-complete evidence, and invokes the model for semantic-only `classifications`, `gaps`, and `rejected_claims`. Every classification must use an allowed value, exact taxonomy identity, bounded basis, and `derived_from` IDs that resolve to eligible observed attempts. The host—not the model—adds hashes, observations, `normalized_input`, outcome, and other control fields. Deterministic policy then owns fit, pursuit, routing, readiness, and generation authority.
 
+The provider projection preserves the same semantic branches as local v3
+validation: `classified` requires `value`, while `ambiguous`, `no-match`, and
+`unsupported` omit it. `gaps.items` and `rejected_claims.items` retain their
+declared fields rather than becoming empty objects during OpenAI projection.
+Because the OpenAI strict subset does not express `uniqueItems`, the host
+stably removes repeated `derived_from` attempt IDs before applying the
+canonical schema; the references are set-like evidence and malformed
+non-string entries still fail validation.
+Rejected structured output is reported with a bounded code, sanitized JSON
+path, expected category, and observed category; raw output and validator prose
+are never receipt authority.
+
 The remainder of this document describes retained prompt-output and card-extraction compatibility contracts. References to `mdp.prompt-output.v0`, `normalized_prospect`, `normalized_opportunity`, and `existing_pack_context` are legacy-reader guidance, not the current producer architecture.
 
 MDP prompt files are local, reusable prompt contracts. This document covers two legacy-compatible `mdp.prompt.v0` jobs:

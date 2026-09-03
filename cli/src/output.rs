@@ -685,6 +685,9 @@ fn summarize(command: &str, data: &Value) -> Value {
             "run_dir": data["run_dir"],
             "bundle_sha256": data["bundle_sha256"],
             "receipt_sha256": data["receipt_sha256"],
+            "diagnostic_code": data["diagnostic_code"],
+            "diagnostic_phase": data["diagnostic_phase"],
+            "diagnostic_detail": data["diagnostic_detail"],
             "authority_block": data["authority_block"]
         }),
         "verify-output" => json!({

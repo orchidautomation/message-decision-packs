@@ -601,6 +601,59 @@ pub(crate) struct DriverResultV2 {
     pub(crate) result_sha256: String,
 }
 
+/// Safe, bounded detail for a rejected structured output. The fields are
+/// deliberately categorical: a receipt may identify where and why a schema
+/// rejected an instance, but it must never retain the rejected value or raw
+/// provider error text.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DiagnosticDetailV1 {
+    pub(crate) code: String,
+    pub(crate) path: String,
+    pub(crate) expected: String,
+    pub(crate) observed: String,
+}
+
+impl DiagnosticDetailV1 {
+    /// Keep deserialized diagnostic projections subject to the same bounded,
+    /// categorical contract as host-generated details. This is used by
+    /// presentation and verification boundaries before they echo a detail.
+    pub(crate) fn is_bounded_safe(&self) -> bool {
+        is_diagnostic_token(&self.code)
+            && is_diagnostic_path(&self.path)
+            && is_diagnostic_token(&self.expected)
+            && is_diagnostic_token(&self.observed)
+    }
+}
+
+fn is_diagnostic_token(value: &str) -> bool {
+    value.len() <= 96
+        && !value.is_empty()
+        && value.split('-').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+}
+
+fn is_diagnostic_path(value: &str) -> bool {
+    if value.is_empty() || value.len() > 256 || !value.starts_with('$') {
+        return false;
+    }
+    let remainder = &value[1..];
+    if remainder.is_empty() {
+        return true;
+    }
+    remainder.starts_with('/')
+        && remainder.split('/').skip(1).all(|segment| {
+            !segment.is_empty()
+                && segment.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'*' | b'-')
+                })
+        })
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RunnerAuditV1 {
@@ -626,6 +679,8 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) diagnostic_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) diagnostic_phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_detail: Option<DiagnosticDetailV1>,
     pub(crate) terminal_state: TerminalState,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,
@@ -662,6 +717,8 @@ pub(crate) struct RunReceiptV1 {
     pub(crate) diagnostic_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) diagnostic_phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_detail: Option<DiagnosticDetailV1>,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,
     pub(crate) receipt_sha256: String,

@@ -1,6 +1,6 @@
 use crate::artifact_hash::{AuthorityJsonLimits, parse_authority_json};
 use crate::authority::SourceAuthority;
-use crate::run_contracts::RunRequestV1;
+use crate::run_contracts::{DiagnosticDetailV1, RunRequestV1};
 use crate::run_runtime::{
     RunDiagnostic, RunFailure, RunFailureKind, deadline_preflight, execute_run_with_transport,
 };
@@ -107,6 +107,7 @@ pub(crate) fn run_request_file_with_transport(
                     failure.code(),
                     failure.diagnostics(),
                     failure.deadline(),
+                    failure.diagnostic_detail(),
                 ))
             } else {
                 Ok(failure_result(
@@ -114,6 +115,7 @@ pub(crate) fn run_request_file_with_transport(
                     RunFailureKind::RunnerFailed,
                     "runner-failed",
                     &[],
+                    None,
                     None,
                 ))
             }
@@ -143,6 +145,7 @@ pub(crate) fn run_preflight_file(
                     failure.code(),
                     failure.diagnostics(),
                     failure.deadline(),
+                    failure.diagnostic_detail(),
                 ))
             } else {
                 Ok(preflight_refusal(&request.execution_id, "preflight-failed"))
@@ -158,6 +161,7 @@ fn preflight_refusal(execution_id: &str, reason_code: &str) -> Value {
         reason_code,
         &[],
         None,
+        None,
     )
 }
 
@@ -167,6 +171,7 @@ fn failure_result(
     reason_code: &str,
     diagnostics: &[RunDiagnostic],
     deadline: Option<&crate::run_contracts::DeadlineObservationV1>,
+    diagnostic_detail: Option<&DiagnosticDetailV1>,
 ) -> Value {
     let (terminal_state, limitation, notice) = match kind {
         RunFailureKind::Preflight => (
@@ -226,7 +231,11 @@ fn failure_result(
         // deadline observation and governed policy diagnostics.
         authority_block["diagnostic_code"] = json!(reason_code);
     }
-    json!({
+    if let Some(detail) = diagnostic_detail {
+        authority_block["diagnostic_detail"] =
+            serde_json::to_value(detail).unwrap_or_else(|_| json!({}));
+    }
+    let mut result = json!({
         "contract": "mdp.run-execution.v1",
         "valid": false,
         "execution_id": execution_id,
@@ -236,7 +245,13 @@ fn failure_result(
         "bundle_sha256": null,
         "receipt_sha256": null,
         "authority_block": authority_block
-    })
+    });
+    if let Some(detail) = diagnostic_detail {
+        // Keep the bounded detail at the run-execution root so summary mode
+        // and receipt-free callers do not need to inspect the authority block.
+        result["diagnostic_detail"] = serde_json::to_value(detail).unwrap_or_else(|_| json!({}));
+    }
+    result
 }
 
 #[cfg(test)]
@@ -301,6 +316,7 @@ mod tests {
             super::RunFailureKind::RunnerFailed,
             "runner-failed",
             &[],
+            None,
             None,
         );
         assert_eq!(

@@ -38,6 +38,7 @@ use crate::models::{
     ClassificationTaxonomy as ClassificationTaxonomyV3, NORMALIZATION_HOST_ENVELOPE_CONTRACT,
     NORMALIZATION_HOST_ENVELOPE_OWNED_FIELDS,
 };
+use crate::run_contracts::DiagnosticDetailV1;
 
 #[cfg(test)]
 use crate::models::{
@@ -128,6 +129,315 @@ impl V3Issue {
     }
 }
 
+const V3_DIAGNOSTIC_PATH_MAX_CHARS: usize = 256;
+const V3_DIAGNOSTIC_TOKEN_MAX_CHARS: usize = 96;
+
+/// Convert the first local JSON Schema error into a bounded, content-free
+/// diagnostic. `ValidationError::to_string()` is intentionally not used:
+/// it can include a rejected value, a property name supplied by the model,
+/// or provider-specific implementation text.
+pub(crate) fn v3_schema_error_detail(
+    schema: &Value,
+    value: &Value,
+    code: &str,
+) -> DiagnosticDetailV1 {
+    if let Some(detail) = jsonschema::draft202012::new(schema)
+        .ok()
+        .and_then(|validator| {
+            validator.iter_errors(value).next().map(|error| {
+                let (path, expected, observed) = schema_error_fields(&error);
+                DiagnosticDetailV1 {
+                    code: safe_diagnostic_token(code, "v3-schema-invalid"),
+                    path,
+                    expected: expected.into(),
+                    observed: observed.into(),
+                }
+            })
+        })
+    {
+        detail
+    } else {
+        DiagnosticDetailV1 {
+            code: safe_diagnostic_token(code, "v3-schema-invalid"),
+            path: "$".into(),
+            expected: "schema-constraint".into(),
+            observed: "unavailable".into(),
+        }
+    }
+}
+
+/// JSON Schema reports an `anyOf` failure at the branch boundary and stores
+/// the useful type/required/additional-property failure in its context. Walk
+/// that context for a more actionable category while keeping all values and
+/// schema-library prose out of the public detail record.
+fn schema_error_fields(
+    error: &jsonschema::ValidationError<'_>,
+) -> (String, &'static str, &'static str) {
+    match error.kind() {
+        jsonschema::error::ValidationErrorKind::AnyOf { context }
+        | jsonschema::error::ValidationErrorKind::OneOfNotValid { context }
+        | jsonschema::error::ValidationErrorKind::OneOfMultipleValid { context } => context
+            .iter()
+            .flatten()
+            .map(schema_error_fields)
+            .find(|(_, expected, _)| *expected != "semantic-branch")
+            .unwrap_or_else(|| schema_error_leaf_fields(error)),
+        jsonschema::error::ValidationErrorKind::PropertyNames { error: nested } => {
+            schema_error_fields(nested)
+        }
+        _ => schema_error_leaf_fields(error),
+    }
+}
+
+fn schema_error_leaf_fields(
+    error: &jsonschema::ValidationError<'_>,
+) -> (String, &'static str, &'static str) {
+    let keyword = error.kind().keyword();
+    let observed = if keyword == "required" {
+        "missing"
+    } else if keyword == "additionalProperties" {
+        "undeclared-field"
+    } else {
+        json_value_kind(error.instance().as_ref())
+    };
+    (
+        safe_json_pointer_path(error.instance_path().as_str()),
+        schema_keyword_expectation(keyword),
+        observed,
+    )
+}
+
+/// Project a semantic validator issue without copying the issue's expected or
+/// observed strings. Those strings are useful to local Rust callers but may
+/// contain taxonomy values, evidence identifiers, or other model-controlled
+/// content that does not belong in a public run receipt.
+pub(crate) fn v3_issue_diagnostic_detail(issue: &V3Issue, code: &str) -> DiagnosticDetailV1 {
+    DiagnosticDetailV1 {
+        code: safe_diagnostic_token(code, "v3-semantic-output-invalid"),
+        path: safe_v3_issue_path(&issue.path),
+        expected: issue_expected_category(issue.code).into(),
+        observed: issue_observed_category(issue.code).into(),
+    }
+}
+
+/// Build a detail record for a static host rejection whose validator did not
+/// produce a `V3Issue`. Callers may provide only already-categorical labels.
+pub(crate) fn v3_static_diagnostic_detail(
+    code: &str,
+    path: &str,
+    expected: &str,
+    observed: &str,
+) -> DiagnosticDetailV1 {
+    DiagnosticDetailV1 {
+        code: safe_diagnostic_token(code, "v3-semantic-output-invalid"),
+        path: safe_v3_issue_path(path),
+        expected: safe_diagnostic_token(expected, "schema-constraint"),
+        observed: safe_diagnostic_token(observed, "invalid"),
+    }
+}
+
+fn safe_diagnostic_token(value: &str, fallback: &str) -> String {
+    let mut token = value
+        .chars()
+        .take(V3_DIAGNOSTIC_TOKEN_MAX_CHARS)
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    while token.contains("--") {
+        token = token.replace("--", "-");
+    }
+    let token = token.trim_matches('-').to_string();
+    if token.is_empty() {
+        fallback.into()
+    } else {
+        token
+    }
+}
+
+fn json_value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+fn schema_keyword_expectation(keyword: &str) -> &'static str {
+    match keyword {
+        "required" => "required-property",
+        "type" => "json-type",
+        "enum" => "allowed-value",
+        "const" => "exact-value",
+        "additionalProperties" | "unevaluatedProperties" => "declared-field-only",
+        "anyOf" | "oneOf" => "semantic-branch",
+        "minItems" | "maxItems" | "minLength" | "maxLength" | "minProperties" | "maxProperties"
+        | "uniqueItems" => "bounded-value",
+        _ => "schema-constraint",
+    }
+}
+
+fn issue_expected_category(code: &str) -> &'static str {
+    match code {
+        "v3_classification_invalid_status" | "v3_classification_unknown_value" => "allowed-value",
+        "v3_classification_missing_value" => "required-property",
+        "v3_classification_forbidden_value" => "property-absent",
+        "v3_classification_missing_derived_from" => "required-evidence",
+        "v3_classification_derived_from_overflow" | "v3_classification_envelope_overflow" => {
+            "bounded-value"
+        }
+        "v3_classification_unknown_taxonomy" => "selected-taxonomy",
+        "v3_classification_unknown_evidence_ref" | "v3_gap_unknown_evidence_ref" => {
+            "collected-attempt-id"
+        }
+        "v3_classification_unknown_attribute" | "v3_gap_unknown_attribute" => {
+            "compiled-attribute-id"
+        }
+        "v3_classification_basis_empty" | "v3_rejected_claim_empty" => "non-empty-string",
+        "v3_classification_basis_too_long" => "bounded-string",
+        "v3_semantic_payload_malformed" => "semantic-object",
+        "v3_output_not_object" | "v3_envelope_not_object" => "json-object",
+        _ => "schema-constraint",
+    }
+}
+
+fn issue_observed_category(code: &str) -> &'static str {
+    match code {
+        "v3_classification_missing_value" | "v3_classification_missing_derived_from" => "missing",
+        "v3_classification_forbidden_value" => "present",
+        "v3_classification_basis_empty" | "v3_rejected_claim_empty" => "empty",
+        "v3_classification_derived_from_overflow"
+        | "v3_classification_envelope_overflow"
+        | "v3_classification_basis_too_long" => "over-limit",
+        "v3_semantic_payload_malformed" => "malformed",
+        "v3_output_not_object" | "v3_envelope_not_object" => "non-object",
+        "v3_classification_unknown_taxonomy"
+        | "v3_classification_unknown_value"
+        | "v3_classification_unknown_evidence_ref"
+        | "v3_classification_unknown_attribute"
+        | "v3_gap_unknown_evidence_ref"
+        | "v3_gap_unknown_attribute"
+        | "v3_classification_invalid_status" => "unrecognized",
+        _ => "invalid",
+    }
+}
+
+fn safe_json_pointer_path(pointer: &str) -> String {
+    let segments = pointer
+        .strip_prefix('/')
+        .unwrap_or(pointer)
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.replace("~1", "/").replace("~0", "~"))
+        .collect::<Vec<_>>();
+    safe_path_segments(&segments)
+}
+
+fn safe_v3_issue_path(path: &str) -> String {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut chars = path.strip_prefix('$').unwrap_or(path).chars().peekable();
+    while let Some(character) = chars.next() {
+        match character {
+            '.' => {
+                if !current.is_empty() {
+                    segments.push(std::mem::take(&mut current));
+                }
+            }
+            '[' => {
+                if !current.is_empty() {
+                    segments.push(std::mem::take(&mut current));
+                }
+                let mut bracket = String::new();
+                while let Some(next) = chars.next() {
+                    if next == ']' {
+                        break;
+                    }
+                    bracket.push(next);
+                }
+                if !bracket.is_empty() {
+                    segments.push(bracket);
+                }
+            }
+            _ => current.push(character),
+        }
+    }
+    if !current.is_empty() {
+        segments.push(current);
+    }
+    safe_path_segments(&segments)
+}
+
+fn safe_path_segments(segments: &[String]) -> String {
+    let mut output = String::from("$");
+    for (index, segment) in segments.iter().enumerate() {
+        let safe = if index > 0
+            && segments.get(index - 1).map(String::as_str) == Some("classifications")
+        {
+            // Classification map keys originate in provider output. Keep the
+            // structural path but not an attacker-controlled key, including
+            // keys made only from digits that could otherwise look like an
+            // array index.
+            "*"
+        } else if segment.chars().all(|character| character.is_ascii_digit()) && segment.len() <= 6
+        {
+            segment.as_str()
+        } else if is_safe_path_field(segment) {
+            segment.as_str()
+        } else {
+            "*"
+        };
+        output.push('/');
+        output.push_str(safe);
+        if output.chars().count() >= V3_DIAGNOSTIC_PATH_MAX_CHARS {
+            output = output.chars().take(V3_DIAGNOSTIC_PATH_MAX_CHARS).collect();
+            break;
+        }
+    }
+    output
+}
+
+fn is_safe_path_field(segment: &str) -> bool {
+    matches!(
+        segment,
+        "contract"
+            | "job_id"
+            | "decision_input_contracts"
+            | "normalization"
+            | "requirements_sha256"
+            | "taxonomy_set_sha256"
+            | "source_binding_sha256"
+            | "source_attempt_request_sha256"
+            | "collected_attempt_results_sha256"
+            | "invocation_receipt_sha256"
+            | "attributes"
+            | "classifications"
+            | "signal_observations"
+            | "normalized_input"
+            | "fields"
+            | "signals"
+            | "gaps"
+            | "rejected_claims"
+            | "outcome"
+            | "status"
+            | "value"
+            | "taxonomy_id"
+            | "taxonomy_version"
+            | "derived_from"
+            | "basis"
+            | "attribute"
+            | "reason"
+            | "claim"
+    )
+}
+
 /// Reasons a v3 envelope seals successfully but the deterministic decision
 /// evaluator should not produce a ready route. The runtime uses these to
 /// build the deterministic read paths without consuming semantic authority.
@@ -155,7 +465,7 @@ pub(crate) fn v3_semantic_provider_schema() -> Value {
         "title": "MDP Semantic Normalization v3 Provider Payload",
         "type": "object",
         "additionalProperties": false,
-        "required": ["classifications"],
+        "required": ["classifications", "gaps", "rejected_claims"],
         "properties": {
             "classifications": {
                 "type": "object",
@@ -177,76 +487,128 @@ pub(crate) fn v3_semantic_provider_schema() -> Value {
 }
 
 fn v3_classification_object_schema() -> Value {
+    let common = json!({
+        "taxonomy_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+            "minLength": 1,
+            "maxLength": V3_IDENTIFIER_MAX_LEN
+        },
+        "taxonomy_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": V3_IDENTIFIER_MAX_LEN
+        },
+        "derived_from": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+            "uniqueItems": true,
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": V3_IDENTIFIER_MAX_LEN
+            }
+        },
+        "basis": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": V3_BASIS_MAX_CHARS_HARD_LIMIT
+        }
+    });
     json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["status", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
-        "properties": {
-            "status": { "enum": V3_CLASSIFICATION_STATUSES },
-            "value": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": V3_IDENTIFIER_MAX_LEN
-            },
-            "taxonomy_id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
-                "minLength": 1,
-                "maxLength": V3_IDENTIFIER_MAX_LEN
-            },
-            "taxonomy_version": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": V3_IDENTIFIER_MAX_LEN
-            },
-            "derived_from": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
-                "uniqueItems": true,
-                "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": V3_IDENTIFIER_MAX_LEN
+        "anyOf": [
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "value", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
+                "properties": {
+                    "status": { "type": "string", "const": V3_CLASSIFICATION_STATUS_CLASSIFIED },
+                    "value": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": V3_IDENTIFIER_MAX_LEN
+                    },
+                    "taxonomy_id": common["taxonomy_id"].clone(),
+                    "taxonomy_version": common["taxonomy_version"].clone(),
+                    "derived_from": common["derived_from"].clone(),
+                    "basis": common["basis"].clone()
                 }
             },
-            "basis": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": V3_BASIS_MAX_CHARS_HARD_LIMIT
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            V3_CLASSIFICATION_STATUS_AMBIGUOUS,
+                            V3_CLASSIFICATION_STATUS_NO_MATCH,
+                            V3_CLASSIFICATION_STATUS_UNSUPPORTED
+                        ]
+                    },
+                    "taxonomy_id": common["taxonomy_id"].clone(),
+                    "taxonomy_version": common["taxonomy_version"].clone(),
+                    "derived_from": common["derived_from"].clone(),
+                    "basis": common["basis"].clone()
+                }
             }
-        }
+        ]
     })
 }
 
 fn v3_gap_object_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["attribute", "reason"],
-        "properties": {
-            "attribute": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": V3_IDENTIFIER_MAX_LEN
-            },
-            "reason": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": V3_IDENTIFIER_MAX_LEN
-            },
-            "derived_from": {
-                "type": "array",
-                "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
-                "items": { "type": "string", "minLength": 1 }
-            },
-            "taxonomy_id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
-                "minLength": 1,
-                "maxLength": V3_IDENTIFIER_MAX_LEN
-            }
+    let attribute = json!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": V3_IDENTIFIER_MAX_LEN
+    });
+    let reason = json!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": V3_IDENTIFIER_MAX_LEN
+    });
+    let derived_from = json!({
+        "type": "array",
+        "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+        "uniqueItems": true,
+        "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": V3_IDENTIFIER_MAX_LEN
         }
+    });
+    let taxonomy_id = json!({
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+        "minLength": 1,
+        "maxLength": V3_IDENTIFIER_MAX_LEN
+    });
+    let branch = |extra: Vec<(&str, Value)>| {
+        let mut properties = Map::from_iter([
+            ("attribute".into(), attribute.clone()),
+            ("reason".into(), reason.clone()),
+        ]);
+        let mut required = vec![json!("attribute"), json!("reason")];
+        for (name, schema) in extra {
+            properties.insert(name.into(), schema);
+            required.push(json!(name));
+        }
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": required,
+            "properties": properties
+        })
+    };
+    json!({
+        "anyOf": [
+            branch(vec![]),
+            branch(vec![("derived_from", derived_from.clone())]),
+            branch(vec![("taxonomy_id", taxonomy_id.clone())]),
+            branch(vec![("derived_from", derived_from), ("taxonomy_id", taxonomy_id)])
+        ]
     })
 }
 
@@ -350,7 +712,11 @@ pub(crate) fn v3_sealed_envelope_schema() -> Value {
             "collected_attempt_results_sha256": sha256.clone(),
             "invocation_receipt_sha256": sha256.clone(),
             "attributes": attributes,
-            "classifications": { "type": "object" },
+            "classifications": {
+                "type": "object",
+                "maxProperties": V3_MAX_CLASSIFICATIONS_PER_ENVELOPE,
+                "additionalProperties": v3_classification_object_schema()
+            },
             "signal_observations": {
                 "type": "array",
                 "items": { "type": "object" }
@@ -358,11 +724,13 @@ pub(crate) fn v3_sealed_envelope_schema() -> Value {
             "normalized_input": normalized_input,
             "gaps": {
                 "type": "array",
-                "items": { "type": "object" }
+                "maxItems": V3_MAX_GAPS_PER_ENVELOPE,
+                "items": v3_gap_object_schema()
             },
             "rejected_claims": {
                 "type": "array",
-                "items": { "type": "object" }
+                "maxItems": V3_MAX_REJECTED_CLAIMS_PER_ENVELOPE,
+                "items": v3_rejected_claim_object_schema()
             },
             "outcome": { "type": "string" }
         }
@@ -493,6 +861,37 @@ pub(crate) fn reject_host_field_injection(provider_output: &Value) -> Result<(),
     Ok(())
 }
 
+/// OpenAI's strict schema subset does not carry `uniqueItems` through the
+/// provider projection. Attempt references are set-like semantic evidence,
+/// so remove repeated string IDs before applying the canonical schema. Keep
+/// malformed non-string entries untouched so the schema still rejects them.
+pub(crate) fn normalize_v3_semantic_reference_arrays(value: &mut Value) {
+    if let Some(classifications) = value
+        .get_mut("classifications")
+        .and_then(Value::as_object_mut)
+    {
+        for classification in classifications.values_mut() {
+            deduplicate_v3_reference_array(classification.get_mut("derived_from"));
+        }
+    }
+    if let Some(gaps) = value.get_mut("gaps").and_then(Value::as_array_mut) {
+        for gap in gaps {
+            deduplicate_v3_reference_array(gap.get_mut("derived_from"));
+        }
+    }
+}
+
+fn deduplicate_v3_reference_array(value: Option<&mut Value>) {
+    let Some(Value::Array(items)) = value else {
+        return;
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    items.retain(|item| {
+        item.as_str()
+            .is_none_or(|attempt_id| seen.insert(attempt_id.to_owned()))
+    });
+}
+
 // =============================================================================
 // Validators for v3 sealed input.
 // =============================================================================
@@ -507,9 +906,7 @@ pub(crate) fn validate_v3_sealed_envelope(value: &Value) -> Result<(), Vec<V3Iss
             "v3_envelope_not_object",
             "$",
             "object",
-            serde_json::to_string(value)
-                .unwrap_or_else(|_| "<unserializable>".into())
-                .as_str(),
+            "non-object",
         ));
         return Err(issues);
     };
@@ -551,12 +948,13 @@ pub(crate) fn validate_v3_sealed_envelope(value: &Value) -> Result<(), Vec<V3Iss
         ));
     }
     let schema = v3_sealed_envelope_schema();
-    if let Err(error) = jsonschema::draft202012::validate(&schema, value) {
+    if jsonschema::draft202012::validate(&schema, value).is_err() {
+        let detail = v3_schema_error_detail(&schema, value, "v3-sealed-envelope-schema-mismatch");
         issues.push(V3Issue::new(
             "v3_envelope_schema_mismatch",
-            "$",
-            "matches mdp.normalized-decision-input.v3",
-            error.to_string().as_str(),
+            detail.path,
+            detail.expected.as_str(),
+            detail.observed.as_str(),
         ));
     }
     if issues.is_empty() {
@@ -756,12 +1154,12 @@ pub(crate) fn validate_v3_semantic_payload(
 }
 
 fn parse_semantic_payload(value: &Value) -> Result<SemanticProviderPayloadV3, V3Issue> {
-    serde_json::from_value::<SemanticProviderPayloadV3>(value.clone()).map_err(|error| {
+    serde_json::from_value::<SemanticProviderPayloadV3>(value.clone()).map_err(|_| {
         V3Issue::new(
             "v3_semantic_payload_malformed",
             "$",
             "object matching mdp.normalization-semantic-provider.v3",
-            error.to_string().as_str(),
+            "malformed",
         )
     })
 }
@@ -841,16 +1239,17 @@ pub(crate) fn project_v3_semantic_provider_schema_for_openai() -> Result<Value, 
             return Err("v3-semantic-required-field-missing-from-schema");
         }
     }
+    let projected_properties = required
+        .iter()
+        .filter_map(|field| {
+            properties
+                .get(field)
+                .map(|schema| ((*field).clone(), schema.clone()))
+        })
+        .collect::<Map<_, _>>();
     Ok(json!({
         "type": "object",
-        "properties": {
-            "classifications": {
-                "type": "object",
-                "additionalProperties": {"type": "object"}
-            },
-            "gaps": {"type": "array", "items": {"type": "object"}},
-            "rejected_claims": {"type": "array", "items": {"type": "object"}}
-        },
+        "properties": projected_properties,
         "required": required,
         "additionalProperties": false
     }))
@@ -1367,6 +1766,102 @@ mod tests {
                 "missing provider property {field}"
             );
         }
+    }
+
+    #[test]
+    fn provider_schema_projection_preserves_status_and_item_semantics() {
+        let projected = project_v3_semantic_provider_schema_for_openai().unwrap();
+        let classification = &projected["properties"]["classifications"]["additionalProperties"];
+        let branches = classification["anyOf"]
+            .as_array()
+            .expect("classification must use explicit status branches");
+        assert_eq!(branches.len(), 2);
+        assert!(
+            branches[0]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field == "value")
+        );
+        assert!(
+            !branches[1]["properties"]
+                .as_object()
+                .unwrap()
+                .contains_key("value")
+        );
+
+        for status in ["classified", "ambiguous", "no-match", "unsupported"] {
+            let mut classification_value = json!({
+                "status": status,
+                "taxonomy_id": "buyer-persona",
+                "taxonomy_version": "1",
+                "derived_from": ["attempt-1"],
+                "basis": "synthetic basis"
+            });
+            if status == "classified" {
+                classification_value["value"] = json!("GTM Systems Owner");
+            }
+            let payload = json!({
+                "classifications": {"persona": classification_value},
+                "gaps": [{"attribute": "person_title", "reason": "not found"}],
+                "rejected_claims": [{"claim": "unsupported claim", "reason": "not evidenced"}]
+            });
+            jsonschema::draft202012::validate(&projected, &payload).unwrap_or_else(|error| {
+                panic!("{status} provider payload should validate: {error}")
+            });
+        }
+
+        assert!(
+            jsonschema::draft202012::validate(
+                &projected,
+                &json!({
+                    "classifications": {"persona": {
+                        "status": "ambiguous",
+                        "value": "GTM Systems Owner",
+                        "taxonomy_id": "buyer-persona",
+                        "taxonomy_version": "1",
+                        "derived_from": ["attempt-1"],
+                        "basis": "synthetic basis"
+                    }},
+                    "gaps": [],
+                    "rejected_claims": []
+                })
+            )
+            .is_err(),
+            "non-classified provider status must not require or accept value"
+        );
+
+        for field in ["gaps", "rejected_claims"] {
+            let items = projected["properties"][field]["items"]
+                .as_object()
+                .expect("semantic item schema should be explicit");
+            assert!(items.contains_key("anyOf") || items.contains_key("required"));
+            assert_ne!(
+                items,
+                &serde_json::Map::from_iter([("type".into(), json!("object"))])
+            );
+        }
+    }
+
+    #[test]
+    fn schema_rejection_detail_is_bounded_and_content_free() {
+        let schema = v3_semantic_provider_schema();
+        let payload = json!({
+            "classifications": {},
+            "gaps": [{"attribute": 7, "reason": "raw-secret-sentinel"}],
+            "rejected_claims": []
+        });
+        let detail = v3_schema_error_detail(&schema, &payload, "v3-semantic-output-invalid");
+        assert_eq!(detail.code, "v3-semantic-output-invalid");
+        assert!(detail.path.starts_with("$/"));
+        assert!(detail.path.chars().count() <= V3_DIAGNOSTIC_PATH_MAX_CHARS);
+        assert_eq!(detail.expected, "json-type");
+        assert_eq!(detail.observed, "number");
+        assert!(
+            !serde_json::to_string(&detail)
+                .unwrap()
+                .contains("raw-secret-sentinel")
+        );
     }
 
     #[test]

@@ -1,0 +1,62 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "codex/mdp-372-openai-schema-parity",
+  "sourceCommit": "21b3510d1e77ae4bcb28dfbca6f1dbb310bad31f",
+  "plan": {
+    "path": "docs/orchid/plans/2026-09-03-mdp-372-openai-v3-schema-projection-parity.md",
+    "sha256": "f0ec3f8870629738684ee3914699066117ff26f31ed5bbe1e3ada9455bc865b5",
+    "sourceRef": "codex/mdp-372-openai-schema-parity",
+    "sourceCommit": "21b3510d1e77ae4bcb28dfbca6f1dbb310bad31f"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "sol-implementation-exception",
+  "delivery": {
+    "shape": "cumulative-pr",
+    "sourceRef": "codex/mdp-372-openai-schema-parity",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    "docs/orchid/qa"
+  ],
+  "lunaLanes": [],
+  "exceptionReason": "visible-dispatch-unavailable",
+  "exceptionPaths": [
+    "cli/src/commands/decision_trace/tests.rs",
+    "cli/src/commands/requirements.rs",
+    "cli/src/commands/run.rs",
+    "cli/src/commands/run_verification.rs",
+    "cli/src/commands/schemas.rs",
+    "cli/src/commands/v3_normalization.rs",
+    "cli/src/diagnostics.rs",
+    "cli/src/output.rs",
+    "cli/src/run_contracts.rs",
+    "cli/src/run_runtime.rs",
+    "docs/native-api-normalization-runner.md",
+    "docs/prompt-extraction-contract.md",
+    "scripts/test-native-model-driver.mjs",
+    "scripts/test-universal-native-parity.mjs",
+    "cli/tests/upgrade.rs",
+    "cli/Cargo.toml",
+    "cli/Cargo.lock",
+    "plugin/.codex-plugin/plugin.json",
+    "pluxx.config.ts"
+  ],
+  "exceptionJustification": "Canonical Orchid dispatch was attempted after the exact plan pin and failed closed because the visible dispatch path was unavailable. The normal dispatch could not use the local app-server state; the escalated adapter then observed a model-list refresh 404 and a thread-start reasoning-effort mismatch instead of the required Luna medium execution. Direct implementation stayed on the issue-bound branch, and no hidden worker or Fast claim is made.",
+  "validation": [
+    "cargo fmt --manifest-path cli/Cargo.toml --all -- --check: passed",
+    "cargo test --manifest-path cli/Cargo.toml v3_ -- --nocapture: 44 passed, 0 failed",
+    "cargo test --manifest-path cli/Cargo.toml run_runtime -- --nocapture: 70 passed, 0 failed, including duplicate semantic reference normalization",
+    "node scripts/test-native-model-driver.mjs: passed",
+    "node scripts/test-universal-native-parity.mjs: passed",
+    "node scripts/test-run-v1-golden.mjs: passed (8 accepted, 14 rejected)",
+    "bash scripts/test-native-runner.sh: passed",
+    "cargo test --manifest-path cli/Cargo.toml: the exact CI failure was traced to the stale v0.1.112 upgrade fixture; version-derived fixture coverage now passes at 0.1.114. A local full run also encountered an unrelated timing-sensitive deadline assertion, which passes in isolation.",
+    "./scripts/validate-version-sync.sh: passed (Version sync OK: 0.1.114)",
+    "cargo test --manifest-path cli/Cargo.toml --test upgrade -- --nocapture: 11 passed, 0 failed"
+  ],
+  "verdict": "valid",
+  "observedAt": "2026-09-03T17:45:30Z"
+}

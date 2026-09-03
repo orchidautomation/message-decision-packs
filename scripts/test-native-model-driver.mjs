@@ -134,6 +134,96 @@ assert.deepEqual(projectOutputSchemaForOpenAI(conditionalSchema), {
   additionalProperties: false,
 })
 
+// v3 semantic schemas must express conditional value presence as explicit
+// provider-safe branches. OpenAI's projection makes every property in each
+// object branch required, so the classified branch owns `value` while each
+// non-classified branch has no value property at all.
+const semanticSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['classifications', 'gaps', 'rejected_claims'],
+  properties: {
+    classifications: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        persona: {
+          anyOf: [
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['status', 'value', 'taxonomy_id', 'taxonomy_version', 'derived_from', 'basis'],
+              properties: {
+                status: { const: 'classified' },
+                value: { type: 'string', enum: ['GTM Systems Owner'] },
+                taxonomy_id: { const: 'buyer-persona' },
+                taxonomy_version: { const: '1' },
+                derived_from: { type: 'array', items: { type: 'string' } },
+                basis: { type: 'string' },
+              },
+            },
+            {
+              type: 'object',
+              additionalProperties: false,
+              required: ['status', 'taxonomy_id', 'taxonomy_version', 'derived_from', 'basis'],
+              properties: {
+                status: { enum: ['ambiguous', 'no-match', 'unsupported'] },
+                taxonomy_id: { const: 'buyer-persona' },
+                taxonomy_version: { const: '1' },
+                derived_from: { type: 'array', items: { type: 'string' } },
+                basis: { type: 'string' },
+              },
+            },
+          ],
+        },
+      },
+    },
+    gaps: {
+      type: 'array',
+      items: {
+        anyOf: [
+          {
+            type: 'object',
+            additionalProperties: false,
+            required: ['attribute', 'reason'],
+            properties: { attribute: { type: 'string' }, reason: { type: 'string' } },
+          },
+          {
+            type: 'object',
+            additionalProperties: false,
+            required: ['attribute', 'reason', 'derived_from'],
+            properties: {
+              attribute: { type: 'string' },
+              reason: { type: 'string' },
+              derived_from: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        ],
+      },
+    },
+    rejected_claims: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['claim', 'reason'],
+        properties: { claim: { type: 'string' }, reason: { type: 'string' } },
+      },
+    },
+  },
+}
+const semanticProjected = projectOutputSchemaForOpenAI(semanticSchema)
+const semanticBranches = semanticProjected.properties.classifications.properties.persona.anyOf
+assert.equal(semanticBranches.length, 2)
+assert.ok(semanticBranches[0].required.includes('value'))
+assert.ok(!('value' in semanticBranches[1].properties))
+assert.deepEqual(semanticProjected.properties.rejected_claims.items.required, ['claim', 'reason'])
+assert.equal(semanticProjected.properties.gaps.items.anyOf.length, 2)
+for (const status of ['classified', 'ambiguous', 'no-match', 'unsupported']) {
+  const branch = status === 'classified' ? semanticBranches[0] : semanticBranches[1]
+  assert.ok(branch.properties.status.const === status || branch.properties.status.enum.includes(status))
+}
+
 const inferredPrimitiveSchema = {
   type: 'object',
   properties: {
