@@ -98,10 +98,19 @@ fn load_ledger(root: &Path) -> LedgerLoad {
         return malformed();
     };
     match serde_yaml::from_str::<Ledger>(&raw) {
-        Ok(ledger) => LedgerLoad {
+        Ok(ledger) if ledger.format.as_deref() == Some("mdp.sources.v0") => LedgerLoad {
             ledger,
             usable: true,
             diagnostics: Vec::new(),
+        },
+        Ok(_) => LedgerLoad {
+            ledger: Ledger::default(),
+            usable: false,
+            diagnostics: vec![diagnostic(
+                "temporal_source_ledger_format_invalid",
+                ".mdp/sources.yaml#/format",
+                "source ledger format must be exactly mdp.sources.v0",
+            )],
         },
         Err(_) => malformed(),
     }
@@ -769,6 +778,13 @@ fn validate_governance_with_ledger(
                 "receipt_sha256 must be exactly 64 lowercase hexadecimal characters",
             ));
         }
+        if publication.receipt_ref.is_some() ^ publication.receipt_sha256.is_some() {
+            d.push(diagnostic(
+                "publication_binding_partial",
+                "#/provenance/temporal",
+                "receipt_ref and a valid receipt_sha256 are both required for receipt-bound authority",
+            ));
+        }
     }
     d
 }
@@ -947,7 +963,9 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 }
             }
         }
-        let state = if !decision_transition_valid {
+        let state = if t.is_none() {
+            "unassessed"
+        } else if !decision_transition_valid {
             "review-due"
         } else if lifecycle == "revoked" {
             "revoked"
@@ -1242,6 +1260,150 @@ mod tests {
                 })
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn absent_temporal_metadata_is_unassessed_but_declared_invalid_is_due() {
+        let root = governed_pack("unassessed-decision");
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let mut manifest = fs::read_to_string(&manifest_path).unwrap();
+        let temporal_start = manifest
+            .find("  temporal:\n    lifecycle: current\n    changed_at:")
+            .unwrap();
+        manifest.truncate(temporal_start);
+        fs::write(&manifest_path, manifest).unwrap();
+        let absent = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(absent["decision_review"][0]["state"], "unassessed");
+        let _ = fs::remove_dir_all(root);
+
+        let root = governed_pack("declared-invalid-decision");
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path).unwrap().replace(
+            "    lifecycle: current\n    changed_at:",
+            "    lifecycle: invalid\n    changed_at:",
+        );
+        fs::write(manifest_path, manifest).unwrap();
+        let invalid = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(invalid["decision_review"][0]["state"], "review-due");
+        assert!(
+            invalid["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| { d["code"] == "decision_lifecycle_invalid" })
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn publication_receipt_binding_is_required_by_primary_validation() {
+        for (label, expected_valid) in [("missing-hash", false), ("missing-ref", false)] {
+            let root = governed_pack(label);
+            let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+            let mut manifest = fs::read_to_string(&manifest_path).unwrap();
+            if label == "missing-hash" {
+                manifest = manifest
+                    .lines()
+                    .filter(|line| !line.trim_start().starts_with("receipt_sha256:"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            } else {
+                manifest = manifest
+                    .lines()
+                    .filter(|line| !line.trim_start().starts_with("receipt_ref:"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            }
+            fs::write(&manifest_path, manifest).unwrap();
+            let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert!(
+                health["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|d| { d["code"] == "publication_binding_partial" })
+            );
+            let validation = crate::commands::health::validate_pack(&root).unwrap();
+            assert_eq!(validation["valid"], expected_valid);
+            assert!(
+                validation["issues"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|issue| {
+                        issue["code"] == "publication_binding_partial"
+                            && issue["severity"] == "error"
+                    })
+            );
+            assert_ne!(crate::commands::health::doctor(&root)["status"], "ready");
+            let _ = fs::remove_dir_all(root);
+        }
+
+        let both_absent = governed_pack("no-receipt-binding");
+        let manifest_path = both_absent.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&manifest_path)
+            .unwrap()
+            .lines()
+            .filter(|line| {
+                !line.trim_start().starts_with("receipt_ref:")
+                    && !line.trim_start().starts_with("receipt_sha256:")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&manifest_path, manifest).unwrap();
+        let validation = crate::commands::health::validate_pack(&both_absent).unwrap();
+        assert_eq!(validation["valid"], true);
+        let _ = fs::remove_dir_all(both_absent);
+    }
+
+    #[test]
+    fn source_ledger_requires_the_v0_format_discriminator() {
+        for (label, format) in [
+            ("missing-format", None),
+            ("unsupported-format", Some("mdp.sources.v99")),
+        ] {
+            let root = governed_pack(label);
+            let path = root.join(DEFAULT_DIR).join("sources.yaml");
+            let mut source = fs::read_to_string(&path).unwrap();
+            if let Some(format) = format {
+                source = source.replace("format: mdp.sources.v0", &format!("format: {format}"));
+            } else {
+                source = source
+                    .lines()
+                    .filter(|line| !line.starts_with("format:"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            }
+            fs::write(path, source).unwrap();
+            let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert!(health["sources"].as_array().unwrap().is_empty());
+            assert_eq!(health["decision_review"][0]["state"], "review-due");
+            assert_eq!(
+                health["decision_review"][0]["source_revision_mismatch"],
+                true
+            );
+            assert!(health["diagnostics"].as_array().unwrap().iter().any(|d| {
+                d["code"] == "temporal_source_ledger_format_invalid"
+                    && d["path"] == ".mdp/sources.yaml#/format"
+            }));
+            let validation = crate::commands::health::validate_pack(&root).unwrap();
+            assert!(
+                validation["issues"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|issue| {
+                        issue["code"] == "temporal_source_ledger_format_invalid"
+                            && issue["severity"] == "error"
+                    })
+            );
+            let _ = fs::remove_dir_all(root);
+        }
+
+        let valid = governed_pack("valid-v0-format");
+        let health = temporal_health(&valid, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(health["sources"][0]["id"], "source");
+        let _ = fs::remove_dir_all(valid);
     }
 
     #[test]
