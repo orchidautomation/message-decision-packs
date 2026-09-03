@@ -2894,7 +2894,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "primitive_map": primitive_map_schema(),
             "decision_input_contracts": decision_input_contracts_schema(),
             "classification_taxonomies": classification_taxonomies_schema(),
-            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "entries", "jobs"], "properties": {"id": {"type": "string", "minLength": 1, "pattern": "\\S"}, "label": {"type": "string", "minLength": 1, "pattern": "\\S"}, "entries": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string", "minLength": 1}, "entry_id": {"type": "string", "minLength": 1}}}}, "jobs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "owner": {"type": "string", "minLength": 1, "pattern": "\\S"}, "review_policy": {"$ref": "#/$defs/review_policy"}, "temporal": {"$ref": "#/$defs/decision_temporal"}}}},
+            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "entries", "jobs"], "properties": {"id": {"type": "string", "minLength": 1, "pattern": "\\S"}, "label": {"type": "string", "minLength": 1, "pattern": "\\S"}, "entries": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string", "minLength": 1}, "entry_id": {"type": "string", "minLength": 1}}}}, "jobs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "owner": {"anyOf": [{"type": "string", "minLength": 1, "pattern": "\\S"}, {"type": "null"}]}, "review_policy": {"anyOf": [{"$ref": "#/$defs/review_policy"}, {"type": "null"}]}, "temporal": {"anyOf": [{"$ref": "#/$defs/decision_temporal"}, {"type": "null"}]}}}},
             "input_contracts": input_contracts_schema(),
             "jobs": profile_jobs_schema(),
             "profile_eval": profile_eval_schema(),
@@ -2931,14 +2931,14 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
                     "owner": {"type": "string"},
                     "created_by": {"type": "string"},
                     "notes": {"type": "array", "items": {"type": "string"}},
-                    "temporal": {"$ref": "#/$defs/publication_temporal"}
+                    "temporal": {"anyOf": [{"$ref": "#/$defs/publication_temporal"}, {"type": "null"}]}
                 }
             }
         },
         "$defs": {
-            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": DAY_CADENCE_PATTERN}, "aging_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}, "stale_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}}},
-            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": strict_utc_timestamp_schema(), "reviewed_at": strict_utc_timestamp_schema(), "revoked_at": strict_utc_timestamp_schema(), "superseded_at": strict_utc_timestamp_schema(), "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
-            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": strict_utc_timestamp_schema(), "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"anyOf": [{"type": "string", "pattern": DAY_CADENCE_PATTERN}, {"type": "null"}]}, "aging_after_days": {"anyOf": [{"type": "integer", "minimum": 1, "maximum": 4294967295u64}, {"type": "null"}]}, "stale_after_days": {"anyOf": [{"type": "integer", "minimum": 1, "maximum": 4294967295u64}, {"type": "null"}]}}},
+            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "reviewed_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "revoked_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "superseded_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "replacement_group": {"type": ["string", "null"]}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
+            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "receipt_ref": {"type": ["string", "null"]}, "receipt_sha256": {"anyOf": [{"type": "string", "pattern": "^[0-9a-f]{64}$"}, {"type": "null"}]}}}
         }
     })
 }
@@ -6923,14 +6923,14 @@ mod tests {
         for field in ["changed_at", "reviewed_at", "revoked_at", "superseded_at"] {
             assert_eq!(
                 temporal["properties"][field],
-                strict_utc_timestamp_schema(),
+                json!({"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}),
                 "{field} must use the shared authored timestamp schema"
             );
         }
         let publication = pack["$defs"]["publication_temporal"].clone();
         assert_eq!(
             publication["properties"]["published_at"],
-            strict_utc_timestamp_schema()
+            json!({"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]})
         );
         let valid = [
             "2000-02-29T00:00:00Z",
@@ -6982,6 +6982,62 @@ mod tests {
                 "publication disagrees for {value}"
             );
         }
+    }
+
+    #[test]
+    fn optional_governance_schema_fields_accept_explicit_null() {
+        let pack = schema(SchemaTarget::Manifest);
+        let policy = pack["$defs"]["review_policy"].clone();
+        draft202012::validate(
+            &policy,
+            &json!({
+                "cadence": null,
+                "aging_after_days": null,
+                "stale_after_days": null
+            }),
+        )
+        .expect("Option-backed review policy fields accept null");
+
+        let temporal = pack["$defs"]["decision_temporal"].clone();
+        draft202012::validate(
+            &temporal,
+            &json!({
+                "lifecycle": "current",
+                "changed_at": null,
+                "reviewed_at": null,
+                "revoked_at": null,
+                "superseded_at": null,
+                "replacement_group": null
+            }),
+        )
+        .expect("Option-backed decision temporal fields accept null");
+
+        let publication = pack["$defs"]["publication_temporal"].clone();
+        draft202012::validate(
+            &publication,
+            &json!({
+                "published_at": null,
+                "receipt_ref": null,
+                "receipt_sha256": null
+            }),
+        )
+        .expect("Option-backed publication fields accept null");
+
+        let group = pack["properties"]["decision_groups"]["items"].clone();
+        draft202012::validate(&group["properties"]["owner"], &Value::Null)
+            .expect("optional decision owner accepts null");
+        assert_eq!(
+            group["properties"]["review_policy"],
+            json!({"anyOf": [{"$ref": "#/$defs/review_policy"}, {"type": "null"}]})
+        );
+        assert_eq!(
+            group["properties"]["temporal"],
+            json!({"anyOf": [{"$ref": "#/$defs/decision_temporal"}, {"type": "null"}]})
+        );
+        assert_eq!(
+            pack["properties"]["provenance"]["properties"]["temporal"],
+            json!({"anyOf": [{"$ref": "#/$defs/publication_temporal"}, {"type": "null"}]})
+        );
     }
 
     #[test]
