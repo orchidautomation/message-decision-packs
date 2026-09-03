@@ -202,6 +202,7 @@ fn source_state(
     as_of: i64,
     diagnostics: &mut Vec<Value>,
     index: usize,
+    source_id_counts: &BTreeMap<&str, usize>,
 ) -> (&'static str, Option<i64>, Option<bool>) {
     let t = source.temporal.as_ref();
     let life = t.and_then(|x| x.lifecycle.as_deref()).unwrap_or("current");
@@ -249,9 +250,12 @@ fn source_state(
         "superseded" => t.and_then(|x| x.superseded_at.as_ref()),
         _ => None,
     };
+    let replacement_valid = t.and_then(|x| x.superseded_by.as_deref()).is_none_or(|id| {
+        life == "superseded" && id != source.id && source_id_counts.get(id) == Some(&1)
+    });
     let shape_valid = (life == "revoked") == t.is_some_and(|x| x.revoked_at.is_some())
         && (life == "superseded") == t.is_some_and(|x| x.superseded_at.is_some())
-        && (life == "superseded" || t.is_none_or(|x| x.superseded_by.is_none()));
+        && replacement_valid;
     let origin = observed_at.max(published_at);
     let origin_invalid = t.is_some_and(|x| {
         [x.observed_at.as_ref(), x.published_at.as_ref()]
@@ -425,6 +429,21 @@ fn validate_governance_with_ledger(
     ledger_usable: bool,
 ) -> Vec<Value> {
     let mut d = Vec::new();
+    let decision_id_counts = manifest.decision_groups.iter().fold(
+        BTreeMap::<&str, usize>::new(),
+        |mut counts, group| {
+            *counts.entry(group.id.as_str()).or_default() += 1;
+            counts
+        },
+    );
+    let source_id_counts =
+        ledger
+            .sources
+            .iter()
+            .fold(BTreeMap::<&str, usize>::new(), |mut counts, source| {
+                *counts.entry(source.id.as_str()).or_default() += 1;
+                counts
+            });
     let mut ids = BTreeSet::new();
     let mut source_ids_seen = BTreeSet::new();
     let mut card_entries = BTreeMap::new();
@@ -724,7 +743,7 @@ fn validate_governance_with_ledger(
                 if let Some(id) = &t.superseded_by {
                     if t.lifecycle.as_deref() != Some("superseded")
                         || id == &source.id
-                        || !source_ids.contains(id.as_str())
+                        || source_id_counts.get(id.as_str()) != Some(&1)
                     {
                         d.push(diagnostic(
                             "source_superseded_by_invalid",
@@ -762,10 +781,7 @@ fn validate_governance_with_ledger(
         {
             if group.temporal.as_ref().map(|t| t.lifecycle.as_str()) != Some("superseded")
                 || replacement == &group.id
-                || !manifest
-                    .decision_groups
-                    .iter()
-                    .any(|g| g.id == *replacement)
+                || decision_id_counts.get(replacement.as_str()) != Some(&1)
             {
                 d.push(diagnostic(
                     "decision_replacement_group_invalid",
@@ -840,7 +856,8 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             counts
         });
     for (i, s) in ledger.sources.iter().enumerate() {
-        let (state, at, hash_match) = source_state(s, root, as_of, &mut diagnostics, i);
+        let (state, at, hash_match) =
+            source_state(s, root, as_of, &mut diagnostics, i, &source_id_counts);
         // Revision comparison is against the source's declared digest. Local
         // byte verification is a separate, optional fact.
         let declared_sha = s
@@ -916,6 +933,13 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         sources.push(json!({"id":s.id,"state":state,"observed_at":t.and_then(|x|x.observed_at.clone()),"published_at":t.and_then(|x|x.published_at.clone()),"imported_at":t.and_then(|x|x.imported_at.clone()),"age_origin_at":origin,"next_review_at":next_review_at,"hash_match":hash_match}));
     }
     let mut decisions = Vec::new();
+    let decision_id_counts = manifest.decision_groups.iter().fold(
+        BTreeMap::<&str, usize>::new(),
+        |mut counts, group| {
+            *counts.entry(group.id.as_str()).or_default() += 1;
+            counts
+        },
+    );
     for (group_index, g) in manifest.decision_groups.iter().enumerate() {
         let t = g.temporal.as_ref();
         let lifecycle = t.map(|x| x.lifecycle.as_str()).unwrap_or("unknown");
@@ -952,7 +976,14 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 };
                 let shape = (temporal.lifecycle == "revoked") == temporal.revoked_at.is_some()
                     && (temporal.lifecycle == "superseded") == temporal.superseded_at.is_some()
-                    && (temporal.lifecycle == "superseded" || temporal.replacement_group.is_none());
+                    && temporal
+                        .replacement_group
+                        .as_deref()
+                        .is_none_or(|replacement| {
+                            temporal.lifecycle == "superseded"
+                                && replacement != g.id
+                                && decision_id_counts.get(replacement) == Some(&1)
+                        });
                 shape
                     && transition.is_none_or(|value| {
                         parse_utc_seconds(value).is_some_and(|at| {
@@ -1177,12 +1208,14 @@ mod tests {
             ..LedgerSource::default()
         };
         let mut diagnostics = Vec::new();
+        let source_id_counts = BTreeMap::from([("source", 1)]);
         let (_, _, hash_match) = source_state(
             &source,
             &root,
             parse_utc_seconds("2026-09-02T00:00:00Z").unwrap(),
             &mut diagnostics,
             0,
+            &source_id_counts,
         );
         assert_eq!(hash_match, Some(false));
         assert!(
@@ -1569,6 +1602,39 @@ mod tests {
     }
 
     #[test]
+    fn superseded_source_requires_a_unique_existing_replacement() {
+        let root = governed_pack("invalid-source-replacement-target");
+        let path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let source = fs::read_to_string(&path)
+            .unwrap()
+            .replace(
+                "observed_at: 2026-01-01T00:00:00Z",
+                "observed_at: 2026-01-01T00:00:00Z\n    superseded_at: 2026-02-01T00:00:00Z",
+            )
+            .replace(
+                "lifecycle: current",
+                "lifecycle: superseded\n    superseded_by: missing",
+            );
+        fs::write(path, source).unwrap();
+
+        let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(output["sources"][0]["state"], "unknown");
+        assert_eq!(
+            output["decision_review"][0]["source_revision_mismatch"],
+            true
+        );
+        assert!(
+            output["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["code"] == "source_superseded_by_invalid")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn source_transition_before_or_after_review_controls_mismatch_only() {
         for lifecycle in ["revoked", "superseded"] {
             let root = governed_pack("source-transition");
@@ -1666,12 +1732,18 @@ mod tests {
             let root = governed_pack("replacement-without-ledger");
             fs::remove_file(root.join(DEFAULT_DIR).join("sources.yaml")).unwrap();
             let path = root.join(DEFAULT_DIR).join("manifest.yaml");
-            let manifest = fs::read_to_string(&path).unwrap().replace(
-                "    reviewed_at: 2026-09-01T00:00:00Z",
-                &format!(
-                    "    reviewed_at: 2026-09-01T00:00:00Z\n    replacement_group: {replacement}"
-                ),
-            );
+            let manifest = fs::read_to_string(&path)
+                .unwrap()
+                .replace(
+                    "lifecycle: current",
+                    "lifecycle: superseded\n    superseded_at: 2026-09-01T12:00:00Z",
+                )
+                .replace(
+                    "    reviewed_at: 2026-09-01T00:00:00Z",
+                    &format!(
+                        "    reviewed_at: 2026-09-01T00:00:00Z\n    replacement_group: {replacement}"
+                    ),
+                );
             fs::write(path, manifest).unwrap();
             let health = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
             assert_eq!(health["decision_review"][0]["state"], "review-due");
