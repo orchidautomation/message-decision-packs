@@ -193,10 +193,14 @@ fn failure_result(
     };
     let diagnostics = if matches!(kind, RunFailureKind::PolicyBlocked) {
         serde_json::to_value(diagnostics).unwrap_or_else(|_| serde_json::json!([]))
-    } else if reason_code == "output-directory-claimed" {
-        json!([{"code": "output-directory-claimed"}])
+    } else if diagnostics.is_empty() {
+        // Runner-failed and preflight refusals carry their bounded static
+        // reason code so JSON consumers can distinguish rejection causes
+        // without a published receipt. Raw error text is never echoed; the
+        // code is a closed static vocabulary.
+        serde_json::json!([{ "code": reason_code }])
     } else {
-        serde_json::json!([])
+        serde_json::to_value(diagnostics).unwrap_or_else(|_| serde_json::json!([]))
     };
     json!({
         "contract": "mdp.run-execution.v1",

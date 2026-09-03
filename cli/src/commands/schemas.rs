@@ -2186,6 +2186,7 @@ fn runner_audit_v1_schema() -> Value {
             "identity_observations": nullable_object_schema(identity_observation_v1_schema()),
             "deadline": nullable_object_schema(deadline_observation_v1_schema()),
             "diagnostic_code": {"type": ["string", "null"]},
+            "diagnostic_phase": {"type": ["string", "null"]},
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()
@@ -2233,6 +2234,8 @@ fn run_receipt_v1_schema() -> Value {
             "validation": nullable_object_schema(artifact_authority_v1_schema()),
             "runner_audit": artifact_authority_v1_schema(),
             "deadline": nullable_object_schema(deadline_observation_v1_schema()),
+            "diagnostic_code": {"type": ["string", "null"]},
+            "diagnostic_phase": {"type": ["string", "null"]},
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array(),
             "receipt_sha256": sha256_schema()
@@ -2361,6 +2364,8 @@ fn canonical_authority_block_v1_schema() -> Value {
             "limitations": string_array(),
             "reason_codes": string_array(),
             "diagnostics": {"type": "array", "maxItems": 4, "items": policy_diagnostic_schema()},
+            "diagnostic_code": {"type": "string"},
+            "diagnostic_phase": {"type": "string"},
             "deadline": {"anyOf": [{"type": "null"}, deadline_observation_v1_schema()]},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
@@ -2519,6 +2524,8 @@ fn run_execution_v1_schema() -> Value {
             "run_dir": {"type": ["string", "null"]},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
+            "diagnostic_code": {"type": "string"},
+            "diagnostic_phase": {"type": "string"},
             "authority_block": canonical_authority_block_v1_schema()
         },
         "allOf": [
