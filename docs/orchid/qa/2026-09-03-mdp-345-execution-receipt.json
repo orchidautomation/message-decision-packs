@@ -1,0 +1,38 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-345",
+  "risk": "Elevated",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-09-02-mdp-345-temporal-provenance-health-plan.md",
+    "sha256": "5f635d06b67e768b4c716de72ea32e12711b6f5ac38cdeb22897ed0a1d4c387b",
+    "sourceRef": "codex/mdp-owner-governance-plan",
+    "sourceCommit": "7b3b5da0e7e34b6f1d450253ec9c2d44223a7993"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "taskId": "01a063a9-ff45-7bf1-9250-122210db6e7b",
+    "finalDispatchHash": "2e6e2071a7f50aaf2e25e0f7cdbd0c75d9404283f68244d9b7dc7f3fd7b09ec0",
+    "implementationHead": "533a09f61f5327b6a3b2c03b5782b15028bbacb0",
+    "integratedHead": "272f56fd69d597dabb0528b70628c52b9234322a"
+  },
+  "validation": {
+    "issueHead": "Cargo formatting and check passed; all 24 temporal-health focused tests passed",
+    "integratedHead": "905 unit tests and all integration suites passed",
+    "compatibility": "Focused template, skill, packaging, asset-sync, plugin, version-sync, public-artifact, and llms validation gates passed",
+    "externalAuthority": "Exact pull-request-head GitHub Actions and Codex review remain the authoritative external gates"
+  },
+  "delivery": {
+    "issueBranch": "codex/mdp-345-temporal-health",
+    "cumulativeBranch": "codex/mdp-owner-governance-delivery",
+    "targetRef": "main",
+    "pullRequest": 301
+  },
+  "recovery": "Sol integration review rejected premature completion claims and decomposed lifecycle, source-transition, schema-time, cadence, and replacement-reference gaps into bounded Luna repairs before final exact-head acceptance.",
+  "observedAt": "2026-09-03T00:30:00Z"
+}
