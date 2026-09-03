@@ -2894,7 +2894,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "primitive_map": primitive_map_schema(),
             "decision_input_contracts": decision_input_contracts_schema(),
             "classification_taxonomies": classification_taxonomies_schema(),
-            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "entries", "jobs"], "properties": {"id": {"type": "string", "minLength": 1}, "label": {"type": "string", "minLength": 1}, "entries": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string", "minLength": 1}, "entry_id": {"type": "string", "minLength": 1}}}}, "jobs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "owner": {"type": "string", "minLength": 1}, "review_policy": {"$ref": "#/$defs/review_policy"}, "temporal": {"$ref": "#/$defs/decision_temporal"}}}},
+            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "entries", "jobs"], "properties": {"id": {"type": "string", "minLength": 1, "pattern": "\\S"}, "label": {"type": "string", "minLength": 1, "pattern": "\\S"}, "entries": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string", "minLength": 1}, "entry_id": {"type": "string", "minLength": 1}}}}, "jobs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "owner": {"type": "string", "minLength": 1, "pattern": "\\S"}, "review_policy": {"$ref": "#/$defs/review_policy"}, "temporal": {"$ref": "#/$defs/decision_temporal"}}}},
             "input_contracts": input_contracts_schema(),
             "jobs": profile_jobs_schema(),
             "profile_eval": profile_eval_schema(),
@@ -7010,6 +7010,22 @@ mod tests {
                 expected,
                 "manifest schema disagrees for {value}"
             );
+        }
+    }
+
+    #[test]
+    fn decision_group_identity_schema_rejects_whitespace_only_text() {
+        let group =
+            schema(SchemaTarget::Manifest)["properties"]["decision_groups"]["items"].clone();
+        for field in ["id", "label", "owner"] {
+            let identity = group["properties"][field].clone();
+            assert!(jsonschema::draft202012::validate(&identity, &json!("meaningful")).is_ok());
+            for value in ["", " ", "\t", "\n", " \t\n "] {
+                assert!(
+                    jsonschema::draft202012::validate(&identity, &json!(value)).is_err(),
+                    "{field} accepted whitespace-only value {value:?}"
+                );
+            }
         }
     }
 

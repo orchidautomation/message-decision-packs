@@ -252,7 +252,7 @@ fn source_state(
         [x.observed_at.as_ref(), x.published_at.as_ref()]
             .into_iter()
             .flatten()
-            .any(|value| parse_utc_seconds(value).is_none())
+            .any(|value| parse_utc_seconds(value).is_none_or(|at| at > as_of))
     });
     if !shape_valid
         || origin_invalid
@@ -867,7 +867,7 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 [t.observed_at.as_ref(), t.published_at.as_ref()]
                     .into_iter()
                     .flatten()
-                    .any(|value| parse_utc_seconds(value).is_none())
+                    .any(|value| parse_utc_seconds(value).is_none_or(|at| at > as_of))
             });
             let lifecycle_valid = matches!(lifecycle, "current" | "revoked" | "superseded");
             let lifecycle_shape_valid = lifecycle_valid
@@ -1692,6 +1692,38 @@ mod tests {
                 && d["path"] == ".mdp/sources.yaml#/sources/0/temporal/observed_at"
         }));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn transitioned_source_with_future_origin_fails_closed() {
+        for lifecycle in ["revoked", "superseded"] {
+            let root = governed_pack("future-transition-origin");
+            let path = root.join(DEFAULT_DIR).join("sources.yaml");
+            let source = fs::read_to_string(&path)
+                .unwrap()
+                .replace(
+                    "observed_at: 2026-01-01T00:00:00Z",
+                    "observed_at: 2027-01-01T00:00:00Z\n    published_at: 2020-01-01T00:00:00Z",
+                )
+                .replace(
+                    "lifecycle: current",
+                    &format!("lifecycle: {lifecycle}\n    {lifecycle}_at: 2026-02-01T00:00:00Z"),
+                );
+            fs::write(path, source).unwrap();
+
+            let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(output["sources"][0]["state"], "unknown", "{lifecycle}");
+            assert_eq!(output["sources"][0]["age_origin_at"], Value::Null);
+            assert_eq!(
+                output["decision_review"][0]["source_revision_mismatch"], true,
+                "{lifecycle} transition evidence must not remain authoritative"
+            );
+            assert!(output["diagnostics"].as_array().unwrap().iter().any(|d| {
+                d["code"] == "temporal_timestamp_invalid_or_future"
+                    && d["path"] == ".mdp/sources.yaml#/sources/0/temporal/observed_at"
+            }));
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]
