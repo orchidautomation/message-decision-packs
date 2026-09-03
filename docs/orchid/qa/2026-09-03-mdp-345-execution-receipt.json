@@ -18,12 +18,12 @@
     "observedServiceTier": "priority",
     "taskId": "01a063a9-ff45-7bf1-9250-122210db6e7b",
     "finalDispatchHash": "2e6e2071a7f50aaf2e25e0f7cdbd0c75d9404283f68244d9b7dc7f3fd7b09ec0",
-    "implementationHead": "5fbf52d6f8b8abe56cb4f91606237737a4566328",
-    "integratedHead": "16f7e1307fad6a6569359a7dafbbeb5e271066a1"
+    "implementationHead": "9376a2364c72e895985e8141130cc1a322a21c86",
+    "integratedHead": "327bb8d54185cb4c77831150f9a50c87d66470e0"
   },
   "validation": {
-    "issueHead": "Cargo formatting and check passed; all 28 temporal-health focused tests plus command, JSON stdout, human diagnostic, and authored schema contract tests passed",
-    "integratedHead": "Cargo formatting and check passed; 909 unit tests and all integration suites passed",
+    "issueHead": "Cargo formatting and check passed; strict timestamp schema/parser parity and all 28 temporal-health focused tests plus command, JSON stdout, human diagnostic, and authored schema contract tests passed",
+    "integratedHead": "Exact-head formatting, check, strict timestamp schema, and temporal-health tests passed; the immediately preceding code head passed 909 unit tests and all integration suites; exact-head GitHub CI remains the authoritative final regression gate",
     "compatibility": "Focused template, skill, packaging, asset-sync, plugin, version-sync, public-artifact, and llms validation gates passed",
     "externalAuthority": "Exact pull-request-head GitHub Actions and Codex review remain the authoritative external gates"
   },
@@ -33,6 +33,6 @@
     "targetRef": "main",
     "pullRequest": 301
   },
-  "recovery": "Sol integration review rejected premature completion claims and decomposed lifecycle, source-transition, schema-time, cadence, and replacement-reference gaps into bounded Luna repairs. Exact-head Codex review identified missing ledger discrimination, partial publication binding, absent-metadata semantics, and finally a malformed-current transition path; Luna repaired each bounded finding, while Sol acceptance audits enforced schema parity, recommendation parity, and exact-head regression proof before re-review.",
-  "observedAt": "2026-09-03T01:08:04Z"
+  "recovery": "Sol integration review rejected premature completion claims and decomposed lifecycle, source-transition, schema-time, cadence, and replacement-reference gaps into bounded Luna repairs. Exact-head Codex review identified missing ledger discrimination, partial publication binding, absent-metadata semantics, malformed current-lifecycle transitions, and a residual calendar-validity schema gap; Luna repaired each bounded finding, while Sol acceptance audits enforced schema/runtime parity, recommendation parity, and focused regression proof before re-review.",
+  "observedAt": "2026-09-03T01:25:19Z"
 }
