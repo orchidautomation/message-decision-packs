@@ -881,7 +881,9 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
             let lifecycle_shape_valid = lifecycle_valid
                 && ((lifecycle == "revoked") == temporal.is_some_and(|t| t.revoked_at.is_some()))
                 && ((lifecycle == "superseded")
-                    == temporal.is_some_and(|t| t.superseded_at.is_some()));
+                    == temporal.is_some_and(|t| t.superseded_at.is_some()))
+                && (lifecycle == "superseded"
+                    || temporal.is_none_or(|t| t.superseded_by.is_none()));
             let transition_valid = lifecycle_valid
                 && lifecycle_shape_valid
                 && !origin_invalid
@@ -1548,6 +1550,10 @@ mod tests {
 
         let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
         assert_eq!(output["sources"][0]["state"], "unknown");
+        assert_eq!(
+            output["decision_review"][0]["source_revision_mismatch"],
+            true
+        );
         assert!(output["diagnostics"].as_array().unwrap().iter().any(|d| {
             d["code"] == "source_superseded_by_invalid"
                 && d["path"] == ".mdp/sources.yaml#/sources/0/temporal/superseded_by"
