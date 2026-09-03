@@ -900,8 +900,13 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
                 && ((lifecycle == "revoked") == temporal.is_some_and(|t| t.revoked_at.is_some()))
                 && ((lifecycle == "superseded")
                     == temporal.is_some_and(|t| t.superseded_at.is_some()))
-                && (lifecycle == "superseded"
-                    || temporal.is_none_or(|t| t.superseded_by.is_none()));
+                && temporal
+                    .and_then(|t| t.superseded_by.as_deref())
+                    .is_none_or(|replacement| {
+                        lifecycle == "superseded"
+                            && replacement != s.id
+                            && source_id_counts.get(replacement) == Some(&1)
+                    });
             let transition_valid = lifecycle_valid
                 && lifecycle_shape_valid
                 && !origin_invalid
