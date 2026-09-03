@@ -2187,6 +2187,7 @@ fn runner_audit_v1_schema() -> Value {
             "deadline": nullable_object_schema(deadline_observation_v1_schema()),
             "diagnostic_code": {"type": ["string", "null"]},
             "diagnostic_phase": diagnostic_phase_schema(),
+            "diagnostic_detail": nullable_object_schema(diagnostic_detail_schema()),
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()
@@ -2236,6 +2237,7 @@ fn run_receipt_v1_schema() -> Value {
             "deadline": nullable_object_schema(deadline_observation_v1_schema()),
             "diagnostic_code": {"type": ["string", "null"]},
             "diagnostic_phase": diagnostic_phase_schema(),
+            "diagnostic_detail": nullable_object_schema(diagnostic_detail_schema()),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array(),
             "receipt_sha256": sha256_schema()
@@ -2276,6 +2278,23 @@ fn diagnostic_phase_schema() -> Value {
             {"enum": deadline_phase_enum()},
             {"type": "null"}
         ]
+    })
+}
+
+/// Optional detail attached to a bounded validation code. Values are
+/// categorical and the path is a sanitized JSON Pointer; raw instances and
+/// provider error text are intentionally not part of the public contract.
+fn diagnostic_detail_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["code", "path", "expected", "observed"],
+        "additionalProperties": false,
+        "properties": {
+            "code": {"type": "string", "minLength": 1, "maxLength": 96, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+            "path": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^\\$(?:/[A-Za-z0-9_.*-]+)*$"},
+            "expected": {"type": "string", "minLength": 1, "maxLength": 96, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+            "observed": {"type": "string", "minLength": 1, "maxLength": 96, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}
+        }
     })
 }
 
@@ -2402,6 +2421,7 @@ fn canonical_authority_block_v1_schema() -> Value {
             "diagnostics": {"type": "array", "maxItems": 4, "items": policy_diagnostic_schema()},
             "diagnostic_code": {"type": "string"},
             "diagnostic_phase": diagnostic_phase_schema(),
+            "diagnostic_detail": diagnostic_detail_schema(),
             "deadline": {"anyOf": [{"type": "null"}, deadline_observation_v1_schema()]},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
@@ -2588,6 +2608,7 @@ fn run_execution_v1_schema() -> Value {
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "diagnostic_code": {"type": "string"},
             "diagnostic_phase": diagnostic_phase_schema(),
+            "diagnostic_detail": diagnostic_detail_schema(),
             "authority_block": canonical_authority_block_v1_schema()
         },
         "allOf": [

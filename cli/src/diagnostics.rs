@@ -2,6 +2,8 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
+use crate::run_contracts::DiagnosticDetailV1;
+
 pub(crate) const ACTIONABLE_DIAGNOSTIC_CONTRACT: &str = "mdp.actionable-diagnostic.v1";
 pub(crate) const ACTIONABLE_DIAGNOSTICS_FIELD: &str = "actionable_diagnostics";
 const MAX_DIAGNOSTICS: usize = 32;
@@ -62,6 +64,8 @@ struct ActionableDiagnostic {
     summary: String,
     prerequisites: Vec<Prerequisite>,
     next_action: NextAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic_detail: Option<DiagnosticDetailV1>,
 }
 
 /// Add the versioned diagnostic projection to public command results without
@@ -92,6 +96,10 @@ pub(crate) fn diagnostics_for_result(command: &str, data: &Value) -> Option<Valu
     if RUN_FAMILY_COMMANDS.contains(&command) {
         collect_scalar_diagnostic_code(data, &mut raw);
     }
+    let diagnostic_detail = RUN_FAMILY_COMMANDS
+        .contains(&command)
+        .then(|| collect_scalar_diagnostic_detail(data))
+        .flatten();
     if raw.is_empty() && command == "fit" {
         match data["status"].as_str() {
             Some("disqualified") => raw.push("fit_policy_disqualified".to_string()),
@@ -102,7 +110,7 @@ pub(crate) fn diagnostics_for_result(command: &str, data: &Value) -> Option<Valu
     if raw.is_empty() && result_is_blocked(data) {
         raw.push(fallback_code(command).to_string());
     }
-    let diagnostics = project_codes(command, raw);
+    let diagnostics = project_codes(command, raw, diagnostic_detail.as_ref());
     Some(serde_json::to_value(diagnostics).unwrap_or_else(|_| json!([])))
 }
 
@@ -182,19 +190,30 @@ pub(crate) fn contract_metadata() -> Value {
         "compatibility": "additive-v1",
         "legacy_diagnostics_preserved": true,
         "required": ["contract", "phase", "code", "retryability", "summary", "prerequisites", "next_action"],
+        "optional": ["diagnostic_detail"],
         "retryability": ["after-user-action", "transient", "not-retryable"],
         "exact_command_policy": "omit command unless the command is complete, bounded, and safe"
     })
 }
 
-fn project_codes(command: &str, codes: Vec<String>) -> Vec<ActionableDiagnostic> {
+fn project_codes(
+    command: &str,
+    codes: Vec<String>,
+    diagnostic_detail: Option<&DiagnosticDetailV1>,
+) -> Vec<ActionableDiagnostic> {
     let mut seen = BTreeSet::new();
     codes
         .into_iter()
         .map(|code| stable_code(&code))
         .filter(|code| seen.insert(code.clone()))
         .take(MAX_DIAGNOSTICS)
-        .map(|code| project(command, &code))
+        .map(|code| {
+            let mut diagnostic = project(command, &code);
+            if diagnostic_detail.is_some_and(|detail| stable_code(&detail.code) == code) {
+                diagnostic.diagnostic_detail = diagnostic_detail.cloned();
+            }
+            diagnostic
+        })
         .collect()
 }
 
@@ -214,6 +233,7 @@ fn project(command: &str, raw_code: &str) -> ActionableDiagnostic {
             next_action: manual_action(
                 "Preview `mdp recover-run --out-dir SAME_OUTPUT_DIR`; apply only if its validated stale-state check succeeds.",
             ),
+            diagnostic_detail: None,
         };
     }
     let class = diagnostic_class(&code);
@@ -297,6 +317,7 @@ fn project(command: &str, raw_code: &str) -> ActionableDiagnostic {
         summary: summary.to_string(),
         prerequisites,
         next_action,
+        diagnostic_detail: None,
     }
 }
 
@@ -444,6 +465,22 @@ fn collect_scalar_diagnostic_code(data: &Value, codes: &mut Vec<String>) {
             codes.push(code.to_string());
         }
     }
+}
+
+fn collect_scalar_diagnostic_detail(data: &Value) -> Option<DiagnosticDetailV1> {
+    for source in [
+        data.get("diagnostic_detail"),
+        data.get("authority_block")
+            .and_then(|block| block.get("diagnostic_detail")),
+    ] {
+        if let Some(source) = source
+            && let Ok(detail) = serde_json::from_value::<DiagnosticDetailV1>(source.clone())
+            && detail.is_bounded_safe()
+        {
+            return Some(detail);
+        }
+    }
+    None
 }
 
 fn collect_legacy_diagnostics(value: &Value, codes: &mut Vec<String>, depth: usize) {
@@ -666,6 +703,44 @@ mod tests {
         let bare = json!({"valid": false, "terminal_state": "no-draft:runner-failed"});
         let diagnostics = diagnostics_for_result("run", &bare).unwrap();
         assert_eq!(diagnostics[0]["code"], "execution_unavailable");
+    }
+
+    #[test]
+    fn run_diagnostic_detail_is_projected_without_raw_output() {
+        let envelope = json!({
+            "valid": false,
+            "terminal_state": "no-draft:output-invalid",
+            "diagnostic_code": "v3-semantic-output-invalid",
+            "diagnostic_detail": {
+                "code": "v3-semantic-output-invalid",
+                "path": "$/gaps/0/attribute",
+                "expected": "json-type",
+                "observed": "number"
+            },
+            "authority_block": {
+                "diagnostic_code": "v3-semantic-output-invalid",
+                "diagnostic_detail": {
+                    "code": "v3-semantic-output-invalid",
+                    "path": "$/gaps/0/attribute",
+                    "expected": "json-type",
+                    "observed": "number"
+                }
+            },
+            "raw_model_output": "raw-schema-secret-sentinel"
+        });
+        let diagnostics = diagnostics_for_result("run", &envelope).unwrap();
+        assert_eq!(diagnostics[0]["code"], "v3-semantic-output-invalid");
+        assert_eq!(diagnostics[0]["phase"], "validation");
+        assert_eq!(
+            diagnostics[0]["diagnostic_detail"]["path"],
+            "$/gaps/0/attribute"
+        );
+        assert_eq!(diagnostics[0]["diagnostic_detail"]["expected"], "json-type");
+        assert!(
+            !serde_json::to_string(&diagnostics)
+                .unwrap()
+                .contains("raw-schema-secret-sentinel")
+        );
     }
 
     #[test]

@@ -128,6 +128,13 @@ pub(crate) fn verify_run(
     if bundle.job_identity != receipt.job_identity {
         issues.push("job-identity-mismatch".to_string());
     }
+    if receipt
+        .diagnostic_detail
+        .as_ref()
+        .is_some_and(|detail| !detail.is_bounded_safe())
+    {
+        issues.push("receipt-diagnostic-detail-invalid".to_string());
+    }
     if bundle.pack.profile_id != bundle.profile {
         issues.push("pack-profile-mismatch".to_string());
     }
@@ -418,8 +425,16 @@ fn verify_runner_audit(
     }
     if audit.diagnostic_code != receipt.diagnostic_code
         || audit.diagnostic_phase != receipt.diagnostic_phase
+        || audit.diagnostic_detail != receipt.diagnostic_detail
     {
         issues.push("runner-audit-diagnostic-mismatch".to_string());
+    }
+    if audit
+        .diagnostic_detail
+        .as_ref()
+        .is_some_and(|detail| !detail.is_bounded_safe())
+    {
+        issues.push("runner-audit-diagnostic-detail-invalid".to_string());
     }
     if audit.snapshot_sha256 != bundle_sha256 || audit.snapshot_sha256 != receipt.bundle_sha256 {
         issues.push("runner-audit-snapshot-mismatch".to_string());
@@ -1069,6 +1084,7 @@ mod tests {
             deadline: None,
             diagnostic_code: None,
             diagnostic_phase: None,
+            diagnostic_detail: None,
             terminal_state: TerminalState::Success,
             assurance: vec![],
             limitations: vec![],
@@ -1343,6 +1359,7 @@ mod tests {
             deadline: None,
             diagnostic_code: None,
             diagnostic_phase: None,
+            diagnostic_detail: None,
             assurance: recompute_assurance(
                 bundle.mode,
                 TerminalState::Success,
@@ -1433,6 +1450,7 @@ mod tests {
             deadline: None,
             diagnostic_code: None,
             diagnostic_phase: None,
+            diagnostic_detail: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),
             limitations: vec![],

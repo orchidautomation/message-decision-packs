@@ -15,6 +15,7 @@ use crate::constants::{
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
     NORMALIZED_DECISION_INPUT_CONTRACT_V3, REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2,
     REQUIREMENTS_MODEL_CONTEXT_CONTRACT_V1, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    V3_IDENTIFIER_MAX_LEN, V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
 };
 use crate::model_steps::{MODEL_STEP_RESOLUTION_V1, resolve_model_steps};
 use crate::models::{
@@ -3155,29 +3156,46 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
                 .classification_taxonomy
                 .as_ref()
                 .expect("validated classified attributes have taxonomy references");
-            properties.insert(attribute.id.clone(), json!({
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["status", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
-                "properties": {
-                    "status": {"enum": ["classified", "ambiguous", "no-match", "unsupported"]},
-                    "value": {"enum": attribute.value.enum_values},
-                    "taxonomy_id": {"const": reference.id},
-                    "taxonomy_version": {"const": reference.version},
-                    "derived_from": {
-                        "type": "array", "minItems": 1, "uniqueItems": true,
-                        "items": {"type": "string", "minLength": 1}
-                    },
-                    "basis": {
-                        "type": "string", "minLength": 1,
-                        "maxLength": crate::constants::V3_BASIS_MAX_CHARS_HARD_LIMIT
-                    }
+            let common_properties = json!({
+                "derived_from": {
+                    "type": "array", "minItems": 1,
+                    "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+                    "uniqueItems": true,
+                    "items": {"type": "string", "minLength": 1, "maxLength": V3_IDENTIFIER_MAX_LEN}
                 },
-                "allOf": [{
-                    "if": {"properties": {"status": {"const": "classified"}}},
-                    "then": {"required": ["value"]},
-                    "else": {"not": {"required": ["value"]}}
-                }]
+                "basis": {
+                    "type": "string", "minLength": 1,
+                    "maxLength": crate::constants::V3_BASIS_MAX_CHARS_HARD_LIMIT
+                }
+            });
+            properties.insert(attribute.id.clone(), json!({
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["status", "value", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
+                        "properties": {
+                            "status": {"type": "string", "const": "classified"},
+                            "value": {"type": "string", "enum": attribute.value.enum_values},
+                            "taxonomy_id": {"type": "string", "const": reference.id},
+                            "taxonomy_version": {"type": "string", "const": reference.version},
+                            "derived_from": common_properties["derived_from"].clone(),
+                            "basis": common_properties["basis"].clone()
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["status", "taxonomy_id", "taxonomy_version", "derived_from", "basis"],
+                        "properties": {
+                            "status": {"type": "string", "enum": ["ambiguous", "no-match", "unsupported"]},
+                            "taxonomy_id": {"type": "string", "const": reference.id},
+                            "taxonomy_version": {"type": "string", "const": reference.version},
+                            "derived_from": common_properties["derived_from"].clone(),
+                            "basis": common_properties["basis"].clone()
+                        }
+                    }
+                ]
             }));
         }
         schema["properties"]["classifications"] = json!({
@@ -3898,6 +3916,63 @@ mod tests {
             first_compiled["collection_specification"]["provider_neutral"],
             true
         );
+    }
+
+    #[test]
+    fn v3_normalized_schema_preserves_classification_status_branches_and_item_fields() {
+        let (contract, _) = semantic_v3_fixture();
+        let schema = normalized_envelope_schema("semantic-job", &[&contract]);
+        let classification_schema =
+            &schema["properties"]["classifications"]["properties"]["persona"];
+
+        for status in ["ambiguous", "no-match", "unsupported"] {
+            let classification = json!({
+                "status": status,
+                "taxonomy_id": "buyer-persona",
+                "taxonomy_version": "1",
+                "derived_from": ["attempt-1"],
+                "basis": "synthetic basis"
+            });
+            draft202012::validate(classification_schema, &classification)
+                .unwrap_or_else(|error| panic!("{status} branch should validate: {error}"));
+            let with_fabricated_value = {
+                let mut value = classification.clone();
+                value["value"] = json!("GTM Systems Owner");
+                value
+            };
+            assert!(
+                draft202012::validate(classification_schema, &with_fabricated_value).is_err(),
+                "{status} must not permit a fabricated value"
+            );
+        }
+
+        let classified = json!({
+            "status": "classified",
+            "value": "GTM Systems Owner",
+            "taxonomy_id": "buyer-persona",
+            "taxonomy_version": "1",
+            "derived_from": ["attempt-1"],
+            "basis": "synthetic basis"
+        });
+        draft202012::validate(classification_schema, &classified)
+            .expect("classified branch should validate with value");
+
+        let gaps = &schema["properties"]["gaps"]["items"];
+        for gap in [
+            json!({"attribute": "person_title", "reason": "not found"}),
+            json!({"attribute": "person_title", "reason": "not found", "derived_from": ["attempt-1"]}),
+            json!({"attribute": "person_title", "reason": "not found", "taxonomy_id": "buyer-persona"}),
+            json!({"attribute": "person_title", "reason": "not found", "derived_from": ["attempt-1"], "taxonomy_id": "buyer-persona"}),
+        ] {
+            draft202012::validate(gaps, &gap).expect("gap variant should validate");
+        }
+        assert!(draft202012::validate(gaps, &json!({"reason": "not found"})).is_err());
+        let rejected = &schema["properties"]["rejected_claims"]["items"];
+        draft202012::validate(
+            rejected,
+            &json!({"claim": "unsupported claim", "reason": "not evidenced"}),
+        )
+        .expect("rejected claim should retain claim and reason fields");
     }
 
     fn signal_aware_clay_example(name: &str) -> PathBuf {

@@ -303,7 +303,13 @@ try {
         return [field, step.output_contract.example[field]]
       }),
     )
-    return step.output_contract.schema_ref
+    // Host-enveloped v3 schemas are already job-specialized by the Rust
+    // requirements compiler. Re-shaping them from the classified example
+    // would erase the anyOf status branches and make value mandatory for
+    // every status again.
+    return step.output_contract.host_envelope
+      ? canonical
+      : step.output_contract.schema_ref
       ? schemaForExampleShape(canonical, requiredExample)
       : canonical
   }
@@ -364,6 +370,26 @@ try {
   for (const [index, binding] of bindings.entries()) {
     const { profile, jobId, step, normalizedOutputSchema } = binding
     const outputSchema = providerSchemaForStep(step, normalizedOutputSchema)
+    if (step.output_contract.host_envelope?.contract === 'mdp.normalization-host-envelope.v1') {
+      const classificationProperties = outputSchema.properties?.classifications?.properties || {}
+      assert.ok(Object.keys(classificationProperties).length > 0, `${profile}/${jobId} must compile classifications`)
+      for (const [attributeId, classificationSchema] of Object.entries(classificationProperties)) {
+        const branches = classificationSchema.anyOf
+        assert.equal(branches?.length, 2, `${attributeId} must preserve classified/non-classified branches`)
+        assert.ok(branches[0].required.includes('value'), `${attributeId} classified branch must require value`)
+        assert.ok(!('value' in branches[1].properties), `${attributeId} non-classified branch must omit value`)
+      }
+      const gapItems = outputSchema.properties?.gaps?.items
+      const rejectedItems = outputSchema.properties?.rejected_claims?.items
+      assert.ok(gapItems && (gapItems.anyOf || gapItems.required), `${profile}/${jobId} gaps.items lost its contract`)
+      assert.deepEqual(rejectedItems?.required?.sort(), ['claim', 'reason'])
+      assert.ok(!(
+        gapItems?.type === 'object'
+        && Object.keys(gapItems).length === 1
+        && rejectedItems?.type === 'object'
+        && Object.keys(rejectedItems).length === 1
+      ), `${profile}/${jobId} projected empty semantic item objects`)
+    }
     const modelRequired = step.output_contract.host_envelope?.semantic_required_top_level
       ?? step.output_contract.required_top_level
     const providerExample = Object.fromEntries(

@@ -11,7 +11,8 @@ use crate::commands::routing::{
 };
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::commands::v3_normalization::{
-    V3SealInputs, reject_host_field_injection, seal_v3_envelope, v3_semantic_provider_schema,
+    V3SealInputs, reject_host_field_injection, seal_v3_envelope, v3_issue_diagnostic_detail,
+    v3_schema_error_detail, v3_semantic_provider_schema, v3_static_diagnostic_detail,
     validate_v3_sealed_envelope, validate_v3_semantic_payload,
 };
 use crate::constants::{
@@ -27,7 +28,7 @@ use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
     ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DEADLINE_OBSERVATION_V1,
     DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V2, DeadlineObservationV1,
-    DeadlineOutcome, DeadlinePhase, DecisionAuthority, DriverArtifactV2,
+    DeadlineOutcome, DeadlinePhase, DecisionAuthority, DiagnosticDetailV1, DriverArtifactV2,
     DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
     DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
     IdentityObservationV1, MDP_RUNTIME_VERSION, MODEL_PARAMETERS_PROJECTION_V1,
@@ -103,6 +104,8 @@ pub(crate) struct RunExecution {
     pub(crate) diagnostic_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) diagnostic_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_detail: Option<DiagnosticDetailV1>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -144,6 +147,7 @@ pub(crate) struct RunFailure {
     code: &'static str,
     diagnostics: Vec<RunDiagnostic>,
     deadline: Option<DeadlineObservationV1>,
+    diagnostic_detail: Option<DiagnosticDetailV1>,
 }
 
 impl RunFailure {
@@ -158,6 +162,7 @@ impl RunFailure {
             code,
             diagnostics,
             deadline: None,
+            diagnostic_detail: None,
         }
     }
 
@@ -175,6 +180,7 @@ impl RunFailure {
                 Vec::new()
             },
             deadline: None,
+            diagnostic_detail: None,
         };
         failure.bound_diagnostics();
         failure
@@ -194,6 +200,10 @@ impl RunFailure {
 
     pub(crate) fn deadline(&self) -> Option<&DeadlineObservationV1> {
         self.deadline.as_ref()
+    }
+
+    pub(crate) fn diagnostic_detail(&self) -> Option<&DiagnosticDetailV1> {
+        self.diagnostic_detail.as_ref()
     }
 
     fn bound_diagnostics(&mut self) {
@@ -225,6 +235,16 @@ fn run_failure_with_diagnostic(
     diagnostic: RunDiagnostic,
 ) -> anyhow::Error {
     anyhow::Error::new(RunFailure::with_diagnostic(kind, code, diagnostic))
+}
+
+fn run_failure_with_diagnostic_detail(
+    kind: RunFailureKind,
+    code: &'static str,
+    diagnostic_detail: DiagnosticDetailV1,
+) -> anyhow::Error {
+    let mut failure = RunFailure::new(kind, code);
+    failure.diagnostic_detail = Some(diagnostic_detail);
+    anyhow::Error::new(failure)
 }
 
 fn run_failure_with_deadline(
@@ -1603,6 +1623,9 @@ where
     if let Some(phase) = receipt.diagnostic_phase.as_deref() {
         authority_block["diagnostic_phase"] = json!(phase);
     }
+    if let Some(detail) = receipt.diagnostic_detail.as_ref() {
+        authority_block["diagnostic_detail"] = serde_json::to_value(detail)?;
+    }
     if !diagnostics.is_empty() {
         authority_block["diagnostics"] = serde_json::to_value(&diagnostics)?;
     }
@@ -1632,6 +1655,7 @@ where
         authority_block,
         diagnostic_code: receipt.diagnostic_code.clone(),
         diagnostic_phase: receipt.diagnostic_phase.clone(),
+        diagnostic_detail: receipt.diagnostic_detail.clone(),
     })
 }
 
@@ -2068,6 +2092,7 @@ where
     let mut provider_observation = None;
     let mut diagnostic_code = None;
     let mut diagnostic_phase = None;
+    let mut diagnostic_detail = None;
     let (mut terminal_state, mut success_values) = if request.mode == RunMode::Generative {
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
             run_failure(RunFailureKind::PolicyBlocked, "generative-prompt-missing")
@@ -2093,6 +2118,7 @@ where
         provider_observation = outcome.provider_observation.clone();
         diagnostic_code = outcome.diagnostic_code.clone();
         diagnostic_phase = outcome.diagnostic_phase.clone();
+        diagnostic_detail = outcome.diagnostic_detail.clone();
         driver_request_sha256 = Some(outcome.driver_request_sha256);
         driver_result_sha256 = Some(outcome.driver_result_sha256);
         validation = outcome.validation;
@@ -2467,6 +2493,7 @@ where
         // model code carried by the generative outcome.
         diagnostic_code = Some(format!("{}-timeout", deadline_phase_label(phase)));
         diagnostic_phase = Some(deadline_phase_label(phase).into());
+        diagnostic_detail = None;
     }
 
     deadline.mark_phase(DeadlinePhase::Finalization);
@@ -2488,6 +2515,7 @@ where
         validation = None;
         diagnostic_code = Some("finalization-timeout".into());
         diagnostic_phase = Some(deadline_phase_label(DeadlinePhase::Finalization).into());
+        diagnostic_detail = None;
     }
     if !deadline.expired() {
         deadline.mark_phase(DeadlinePhase::Cleanup);
@@ -2530,6 +2558,7 @@ where
         // override.
         diagnostic_code = None;
         diagnostic_phase = None;
+        diagnostic_detail = None;
     }
 
     if !deadline.expired() {
@@ -2584,6 +2613,7 @@ where
         deadline: deadline_observation.clone(),
         diagnostic_code,
         diagnostic_phase,
+        diagnostic_detail,
         terminal_state,
         assurance: assurance.clone(),
         limitations: vec![
@@ -2658,6 +2688,7 @@ where
         deadline: deadline_observation.clone(),
         diagnostic_code: audit.diagnostic_code.clone(),
         diagnostic_phase: audit.diagnostic_phase.clone(),
+        diagnostic_detail: audit.diagnostic_detail.clone(),
         assurance,
         limitations: audit.limitations,
         receipt_sha256: String::new(),
@@ -2711,6 +2742,7 @@ struct GenerativeOutcome {
     provider_observation: Option<DriverProviderObservationV2>,
     diagnostic_code: Option<String>,
     diagnostic_phase: Option<String>,
+    diagnostic_detail: Option<DiagnosticDetailV1>,
     driver_request_sha256: String,
     driver_result_sha256: String,
 }
@@ -2918,6 +2950,7 @@ where
             provider_observation: None,
             diagnostic_code: Some("driver-result-invalid".into()),
             diagnostic_phase: Some("driver".into()),
+            diagnostic_detail: None,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -2943,6 +2976,7 @@ where
             provider_observation: result.provider_observation,
             diagnostic_code: result.diagnostic_code.clone(),
             diagnostic_phase: Some("driver".into()),
+            diagnostic_detail: None,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -2963,10 +2997,15 @@ where
             ) {
                 Ok(bytes) => bytes,
                 Err(error) => {
+                    let diagnostic_detail = error
+                        .downcast_ref::<RunFailure>()
+                        .and_then(RunFailure::diagnostic_detail)
+                        .cloned();
                     return Ok(host_envelope_failure_outcome(
                         &driver_request,
                         result,
                         sanitized_host_envelope_diagnostic(&error),
+                        diagnostic_detail,
                     ));
                 }
             }
@@ -2982,10 +3021,15 @@ where
             ) {
                 Ok(bytes) => bytes,
                 Err(error) => {
+                    let diagnostic_detail = error
+                        .downcast_ref::<RunFailure>()
+                        .and_then(RunFailure::diagnostic_detail)
+                        .cloned();
                     return Ok(host_envelope_failure_outcome(
                         &driver_request,
                         result,
                         sanitized_host_envelope_diagnostic(&error),
+                        diagnostic_detail,
                     ));
                 }
             }
@@ -3059,6 +3103,7 @@ where
         provider_observation: result.provider_observation,
         diagnostic_code: validation_diagnostic,
         diagnostic_phase,
+        diagnostic_detail: None,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
     })
@@ -3094,6 +3139,7 @@ fn failed_generative_outcome(
         provider_observation: None,
         diagnostic_code: Some(diagnostic_code.into()),
         diagnostic_phase: Some(diagnostic_phase.into()),
+        diagnostic_detail: None,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: failed_result.result_sha256,
     })
@@ -3103,6 +3149,7 @@ fn host_envelope_failure_outcome(
     driver_request: &DriverRequestV2,
     result: DriverResultV2,
     diagnostic_code: &'static str,
+    diagnostic_detail: Option<DiagnosticDetailV1>,
 ) -> GenerativeOutcome {
     GenerativeOutcome {
         terminal_state: TerminalState::NoDraftOutputInvalid,
@@ -3114,6 +3161,7 @@ fn host_envelope_failure_outcome(
         provider_observation: result.provider_observation,
         diagnostic_code: Some(diagnostic_code.into()),
         diagnostic_phase: Some("validation".into()),
+        diagnostic_detail,
         driver_request_sha256: driver_request.request_sha256.clone(),
         driver_result_sha256: result.result_sha256,
     }
@@ -3863,18 +3911,30 @@ fn validate_v3_classification_evidence(
         &known_attempt_ids,
     )
     .map_err(|issues| {
-        run_failure(
-            RunFailureKind::PolicyBlocked,
-            issues
-                .first()
-                .map(|issue| v3_issue_to_failure_code(issue.code))
-                .unwrap_or("v3-semantic-output-invalid"),
-        )
+        let issue = issues.first();
+        let code = issue
+            .map(|issue| v3_issue_to_failure_code(issue.code))
+            .unwrap_or("v3-semantic-output-invalid");
+        let detail = issue
+            .map(|issue| v3_issue_diagnostic_detail(issue, code))
+            .unwrap_or_else(|| {
+                v3_static_diagnostic_detail(code, "$", "semantic-object", "invalid")
+            });
+        run_failure_with_diagnostic_detail(RunFailureKind::PolicyBlocked, code, detail)
     })?;
 
-    let classifications = semantic["classifications"]
-        .as_object()
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "v3-semantic-output-invalid"))?;
+    let classifications = semantic["classifications"].as_object().ok_or_else(|| {
+        run_failure_with_diagnostic_detail(
+            RunFailureKind::PolicyBlocked,
+            "v3-semantic-output-invalid",
+            v3_static_diagnostic_detail(
+                "v3-semantic-output-invalid",
+                "$",
+                "semantic-object",
+                "missing",
+            ),
+        )
+    })?;
     let expected_outputs = selected_taxonomies
         .iter()
         .map(|taxonomy| taxonomy.output_attribute.as_str())
@@ -3884,9 +3944,15 @@ fn validate_v3_classification_evidence(
         .map(String::as_str)
         .collect::<HashSet<_>>();
     if actual_outputs != expected_outputs {
-        return Err(run_failure(
+        return Err(run_failure_with_diagnostic_detail(
             RunFailureKind::PolicyBlocked,
             "v3-classification-coverage-mismatch",
+            v3_static_diagnostic_detail(
+                "v3-classification-coverage-mismatch",
+                "$.classifications",
+                "compiled-classification-keys",
+                "coverage-mismatch",
+            ),
         ));
     }
 
@@ -3894,14 +3960,29 @@ fn validate_v3_classification_evidence(
         let classification = classifications
             .get(&taxonomy.output_attribute)
             .ok_or_else(|| {
-                run_failure(RunFailureKind::PolicyBlocked, "v3-classification-missing")
+                run_failure_with_diagnostic_detail(
+                    RunFailureKind::PolicyBlocked,
+                    "v3-classification-missing",
+                    v3_static_diagnostic_detail(
+                        "v3-classification-missing",
+                        "$.classifications/*",
+                        "classification-entry",
+                        "missing",
+                    ),
+                )
             })?;
         if classification["taxonomy_id"] != taxonomy.id
             || classification["taxonomy_version"] != taxonomy.version
         {
-            return Err(run_failure(
+            return Err(run_failure_with_diagnostic_detail(
                 RunFailureKind::PolicyBlocked,
                 "v3-classification-taxonomy-mismatch",
+                v3_static_diagnostic_detail(
+                    "v3-classification-taxonomy-mismatch",
+                    "$.classifications/*",
+                    "selected-taxonomy",
+                    "mismatch",
+                ),
             ));
         }
         let mut contributor_ids = HashSet::new();
@@ -3915,9 +3996,15 @@ fn validate_v3_classification_evidence(
                 .iter()
                 .find(|attempt| attempt["attempt_id"] == attempt_id)
                 .ok_or_else(|| {
-                    run_failure(
+                    run_failure_with_diagnostic_detail(
                         RunFailureKind::PolicyBlocked,
                         "v3-classification-evidence-invalid",
+                        v3_static_diagnostic_detail(
+                            "v3-classification-evidence-invalid",
+                            "$.classifications/*/derived_from",
+                            "collected-attempt-id",
+                            "unresolved",
+                        ),
                     )
                 })?;
             let attribute_id = attempt["attribute_id"].as_str().unwrap_or_default();
@@ -3935,17 +4022,29 @@ fn validate_v3_classification_evidence(
                 .any(|id| id == attribute_id)
                 || !source_class_allowed
             {
-                return Err(run_failure(
+                return Err(run_failure_with_diagnostic_detail(
                     RunFailureKind::PolicyBlocked,
                     "v3-classification-evidence-ineligible",
+                    v3_static_diagnostic_detail(
+                        "v3-classification-evidence-ineligible",
+                        "$.classifications/*/derived_from",
+                        "eligible-contributor-attempt",
+                        "ineligible",
+                    ),
                 ));
             }
             contributor_ids.insert(attribute_id);
         }
         if contributor_ids.len() < taxonomy.minimum_evidence.observed_contributors as usize {
-            return Err(run_failure(
+            return Err(run_failure_with_diagnostic_detail(
                 RunFailureKind::PolicyBlocked,
                 "v3-classification-minimum-evidence",
+                v3_static_diagnostic_detail(
+                    "v3-classification-minimum-evidence",
+                    "$.classifications/*/derived_from",
+                    "minimum-evidence",
+                    "insufficient",
+                ),
             ));
         }
     }
@@ -4010,22 +4109,32 @@ fn host_wrap_v3_normalization_output(
         })?;
 
     let semantic = serde_json::from_str::<Value>(model_output).map_err(|_| {
-        run_failure(
+        run_failure_with_diagnostic_detail(
             RunFailureKind::PolicyBlocked,
             "v3-semantic-output-malformed",
+            v3_static_diagnostic_detail(
+                "v3-semantic-output-malformed",
+                "$",
+                "semantic-object",
+                "malformed",
+            ),
         )
     })?;
     reject_host_field_injection(&semantic).map_err(|issue| {
-        run_failure(
+        let code = v3_issue_to_failure_code(issue.code);
+        run_failure_with_diagnostic_detail(
             RunFailureKind::PolicyBlocked,
-            v3_issue_to_failure_code(issue.code),
+            code,
+            v3_issue_diagnostic_detail(&issue, code),
         )
     })?;
     let semantic_schema = v3_semantic_provider_schema();
     if jsonschema::draft202012::validate(&semantic_schema, &semantic).is_err() {
-        return Err(run_failure(
+        let code = "v3-semantic-output-invalid";
+        return Err(run_failure_with_diagnostic_detail(
             RunFailureKind::PolicyBlocked,
-            "v3-semantic-output-invalid",
+            code,
+            v3_schema_error_detail(&semantic_schema, &semantic, code),
         ));
     }
     // Parse the exact compiled artifact instead of treating its file hash as
@@ -4301,13 +4410,16 @@ fn host_wrap_v3_normalization_output(
     });
 
     validate_v3_sealed_envelope(&sealed).map_err(|issues| {
-        run_failure(
-            RunFailureKind::PolicyBlocked,
-            issues
-                .first()
-                .map(|issue| v3_issue_to_failure_code(issue.code))
-                .unwrap_or("v3-sealed-envelope-invalid"),
-        )
+        let issue = issues.first();
+        let code = issue
+            .map(|issue| v3_issue_to_failure_code(issue.code))
+            .unwrap_or("v3-sealed-envelope-invalid");
+        let detail = issue
+            .map(|issue| v3_issue_diagnostic_detail(issue, code))
+            .unwrap_or_else(|| {
+                v3_static_diagnostic_detail(code, "$", "sealed-envelope", "invalid")
+            });
+        run_failure_with_diagnostic_detail(RunFailureKind::PolicyBlocked, code, detail)
     })?;
 
     let mut bytes = serde_json::to_vec_pretty(&sealed)?;
@@ -4325,13 +4437,22 @@ fn v3_issue_to_failure_code(code: &str) -> &'static str {
         "v3_envelope_missing_neutral_input" => "v3-envelope-missing-neutral-input",
         "v3_envelope_schema_mismatch" => "v3-sealed-envelope-schema-mismatch",
         "v3_semantic_payload_malformed" => "v3-semantic-output-malformed",
+        "v3_classification_invalid_status" => "v3-classification-invalid-status",
+        "v3_classification_missing_value" => "v3-classification-missing-value",
+        "v3_classification_forbidden_value" => "v3-classification-forbidden-value",
         "v3_classification_unknown_taxonomy" => "v3-classification-unknown-taxonomy",
         "v3_classification_unknown_value" => "v3-classification-unknown-value",
         "v3_classification_unknown_evidence_ref" => "v3-classification-unknown-evidence-ref",
         "v3_classification_missing_derived_from" => "v3-classification-missing-evidence",
+        "v3_classification_derived_from_overflow" => "v3-classification-evidence-overflow",
         "v3_classification_basis_empty" => "v3-classification-basis-empty",
         "v3_classification_basis_too_long" => "v3-classification-basis-too-long",
         "v3_classification_unknown_attribute" => "v3-classification-unknown-attribute",
+        "v3_classification_envelope_overflow" => "v3-classification-envelope-overflow",
+        "v3_classification_duplicate_attribute" => "v3-classification-duplicate-attribute",
+        "v3_gap_unknown_attribute" => "v3-gap-unknown-attribute",
+        "v3_gap_unknown_evidence_ref" => "v3-gap-unknown-evidence-ref",
+        "v3_rejected_claim_empty" => "v3-rejected-claim-empty",
         _ => "v3-sealed-envelope-invalid",
     }
 }
@@ -6264,8 +6385,12 @@ mod tests {
         };
         seal_driver_result(&mut result).unwrap();
         let result_sha256 = result.result_sha256.clone();
-        let outcome =
-            super::host_envelope_failure_outcome(&request, result, "host-owned-field-injection");
+        let outcome = super::host_envelope_failure_outcome(
+            &request,
+            result,
+            "host-owned-field-injection",
+            None,
+        );
         assert_eq!(outcome.terminal_state, TerminalState::NoDraftOutputInvalid);
         assert_eq!(
             outcome.diagnostic_code.as_deref(),
@@ -8864,8 +8989,16 @@ mod tests {
                     "basis": "title says it"
                 }
             },
-            "gaps": [],
-            "rejected_claims": []
+            "gaps": [{
+                "attribute": "person_location",
+                "reason": "not observed",
+                "derived_from": ["synthetic-attempt-001"],
+                "taxonomy_id": "buyer-persona"
+            }],
+            "rejected_claims": [{
+                "claim": "unsupported claim",
+                "reason": "not evidenced"
+            }]
         });
         let result = host_wrap_v3_normalization_output(
             &step,
@@ -8895,6 +9028,22 @@ mod tests {
             parsed["normalized_input"]["attributes"]
                 .get("location")
                 .is_none()
+        );
+        assert_eq!(
+            parsed["gaps"][0],
+            serde_json::json!({
+                "attribute": "person_location",
+                "reason": "not observed",
+                "derived_from": ["synthetic-attempt-001"],
+                "taxonomy_id": "buyer-persona"
+            })
+        );
+        assert_eq!(
+            parsed["rejected_claims"][0],
+            serde_json::json!({
+                "claim": "unsupported claim",
+                "reason": "not evidenced"
+            })
         );
         let _ = std::fs::remove_dir_all(temp);
     }
@@ -8994,6 +9143,41 @@ mod tests {
         assert_eq!(
             error.downcast_ref::<RunFailure>().unwrap().code(),
             "v3-semantic-output-malformed"
+        );
+    }
+
+    #[test]
+    fn v3_wrap_rejects_schema_invalid_payload_with_bounded_detail() {
+        let step = v3_envelope_test_step();
+        let staged = v3_staged_inputs(&"a".repeat(64));
+        let (invocation, invocation_bytes) = v3_invocation(&step);
+        let semantic = serde_json::json!({
+            "classifications": {},
+            "gaps": [{"attribute": 7, "reason": "raw-schema-secret-sentinel"}],
+            "rejected_claims": []
+        });
+        let error = host_wrap_v3_normalization_output(
+            &step,
+            &staged,
+            &invocation,
+            &invocation_bytes,
+            &semantic.to_string(),
+        )
+        .unwrap_err();
+        let failure = error.downcast_ref::<RunFailure>().unwrap();
+        assert_eq!(failure.code(), "v3-semantic-output-invalid");
+        let detail = failure
+            .diagnostic_detail()
+            .expect("schema rejection should carry bounded detail");
+        assert_eq!(detail.code, "v3-semantic-output-invalid");
+        assert!(detail.path.starts_with("$/"));
+        assert!(detail.path.chars().count() <= 256);
+        assert_eq!(detail.expected, "json-type");
+        assert_eq!(detail.observed, "number");
+        assert!(
+            !serde_json::to_string(detail)
+                .unwrap()
+                .contains("raw-schema-secret-sentinel")
         );
     }
 
