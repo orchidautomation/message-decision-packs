@@ -1063,6 +1063,8 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         .any(|value| value["state"] == "never-reviewed")
     {
         "Review decision groups that have never been reviewed."
+    } else if decisions.iter().any(|value| value["state"] == "unassessed") {
+        "Declare review governance before relying on review recency."
     } else {
         "No action required; continue periodic review."
     };
@@ -1272,8 +1274,23 @@ mod tests {
             .unwrap();
         manifest.truncate(temporal_start);
         fs::write(&manifest_path, manifest).unwrap();
+        let sources_path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let sources = fs::read_to_string(&sources_path).unwrap().replace(
+            "observed_at: 2026-01-01T00:00:00Z",
+            "observed_at: 2026-09-01T00:00:00Z",
+        );
+        fs::write(sources_path, sources).unwrap();
         let absent = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
         assert_eq!(absent["decision_review"][0]["state"], "unassessed");
+        assert_eq!(
+            absent["recommendation"],
+            "Declare review governance before relying on review recency."
+        );
+        jsonschema::draft202012::validate(
+            &crate::commands::schema(crate::cli::SchemaTarget::TemporalHealthV1),
+            &absent,
+        )
+        .unwrap();
         let _ = fs::remove_dir_all(root);
 
         let root = governed_pack("declared-invalid-decision");
@@ -1297,6 +1314,11 @@ mod tests {
 
     #[test]
     fn publication_receipt_binding_is_required_by_primary_validation() {
+        let both_present = governed_pack("valid-receipt-binding");
+        let valid = crate::commands::health::validate_pack(&both_present).unwrap();
+        assert_eq!(valid["valid"], true);
+        let _ = fs::remove_dir_all(both_present);
+
         for (label, expected_valid) in [("missing-hash", false), ("missing-ref", false)] {
             let root = governed_pack(label);
             let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
