@@ -254,6 +254,16 @@ fn temporal_health_schema() -> Value {
     })
 }
 
+const STRICT_UTC_TIMESTAMP_PATTERN: &str = r"^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$";
+
+fn strict_utc_timestamp_schema() -> Value {
+    json!({
+        "type": "string",
+        "format": "date-time",
+        "pattern": STRICT_UTC_TIMESTAMP_PATTERN,
+    })
+}
+
 fn readiness_v1_schema() -> Value {
     let gate = json!({
         "type": "object",
@@ -2924,8 +2934,8 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
         },
         "$defs": {
             "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": "^P[1-9][0-9]*D$"}, "aging_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}, "stale_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}}},
-            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "reviewed_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "revoked_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "superseded_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
-            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"}, "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": strict_utc_timestamp_schema(), "reviewed_at": strict_utc_timestamp_schema(), "revoked_at": strict_utc_timestamp_schema(), "superseded_at": strict_utc_timestamp_schema(), "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
+            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": strict_utc_timestamp_schema(), "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
         }
     })
 }
@@ -6908,44 +6918,64 @@ mod tests {
         let pack = schema(SchemaTarget::Manifest);
         let temporal = pack["$defs"]["decision_temporal"].clone();
         for field in ["changed_at", "reviewed_at", "revoked_at", "superseded_at"] {
-            assert_eq!(temporal["properties"][field]["format"], "date-time");
-            assert!(temporal["properties"][field]["pattern"].is_string());
+            assert_eq!(
+                temporal["properties"][field],
+                strict_utc_timestamp_schema(),
+                "{field} must use the shared authored timestamp schema"
+            );
         }
         let publication = pack["$defs"]["publication_temporal"].clone();
         assert_eq!(
-            publication["properties"]["published_at"]["format"],
-            "date-time"
+            publication["properties"]["published_at"],
+            strict_utc_timestamp_schema()
         );
-        let wrap_publication = |definition: &Value, value: Value| {
-            jsonschema::draft202012::validate(definition, &value).is_ok()
-        };
-        let wrap = |definition: Value, value: Value| {
-            jsonschema::draft202012::validate(&definition, &value).is_ok()
-        };
-        assert!(wrap_publication(
-            &publication,
-            json!({"published_at":"2026-01-02T03:04:05Z"})
-        ));
-        let valid = json!({"lifecycle":"current","changed_at":"2026-01-02T03:04:05Z"});
-        assert!(wrap(temporal.clone(), valid));
-        for invalid in [
+        let valid = [
+            "2000-02-29T00:00:00Z",
+            "2024-02-29T23:59:59Z",
+            "2025-01-31T12:34:56Z",
+            "2025-04-30T00:00:00Z",
+            "2025-12-31T23:59:59Z",
+        ];
+        let invalid = [
+            "1900-02-29T00:00:00Z",
+            "2025-02-29T00:00:00Z",
+            "2100-02-29T00:00:00Z",
+            "2025-02-30T00:00:00Z",
+            "2025-04-31T00:00:00Z",
+            "2025-01-01T24:00:00Z",
+            "2025-01-01T00:60:00Z",
+            "2025-01-01T00:00:60Z",
             "2026-01-02T03:04:05+00:00",
+            "2026-01-02T03:04:05.000Z",
             "2026-99-02T03:04:05Z",
             "2026-01-02T99:04:05Z",
-            "2026-02-30T03:04:05Z",
             "bananas",
-        ] {
-            assert!(
-                !wrap(
-                    temporal.clone(),
-                    json!({"lifecycle":"current","changed_at":invalid})
-                ),
-                "{invalid} should be rejected"
+        ];
+        for (value, expected) in valid
+            .into_iter()
+            .map(|value| (value, true))
+            .chain(invalid.into_iter().map(|value| (value, false)))
+        {
+            assert_eq!(
+                crate::time::parse_utc_seconds(value).is_some(),
+                expected,
+                "runtime parser disagrees for {value}"
             );
-            assert!(!wrap_publication(
-                &publication,
-                json!({"published_at":invalid})
-            ));
+            for field in ["changed_at", "reviewed_at", "revoked_at", "superseded_at"] {
+                let mut candidate = json!({"lifecycle":"current"});
+                candidate[field] = json!(value);
+                assert_eq!(
+                    jsonschema::draft202012::validate(&temporal, &candidate).is_ok(),
+                    expected,
+                    "decision {field} disagrees for {value}"
+                );
+            }
+            let candidate = json!({"published_at":value});
+            assert_eq!(
+                jsonschema::draft202012::validate(&publication, &candidate).is_ok(),
+                expected,
+                "publication disagrees for {value}"
+            );
         }
     }
 
