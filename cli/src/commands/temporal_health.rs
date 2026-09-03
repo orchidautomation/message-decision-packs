@@ -149,7 +149,11 @@ fn policy_days(
             "cadence must be a positive P<n>D",
         ));
     }
-    let aging = p.aging_after_days.or(cadence);
+    // A declared cadence is the review deadline surfaced as `next_review_at`,
+    // so it must also be the first state transition threshold. Otherwise a
+    // decision can remain `review-current` after its emitted deadline merely
+    // because a looser `aging_after_days` value was also authored.
+    let aging = cadence.or(p.aging_after_days);
     let stale = match p
         .stale_after_days
         .or_else(|| cadence.and_then(|d| d.checked_mul(2)))
@@ -1506,6 +1510,25 @@ mod tests {
             output["recommendation"],
             "Review decision groups that are due for review."
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cadence_controls_review_state_when_aging_threshold_differs() {
+        let root = governed_pack("cadence-precedence");
+        let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let manifest = fs::read_to_string(&path)
+            .unwrap()
+            .replace("aging_after_days: 10", "aging_after_days: 100");
+        fs::write(path, manifest).unwrap();
+
+        let output = temporal_health(&root, Some("2026-09-12T00:00:00Z")).unwrap();
+        assert_eq!(output["decision_review"][0]["state"], "review-due");
+        assert_eq!(
+            output["decision_review"][0]["next_review_at"],
+            "2026-09-11T00:00:00Z"
+        );
+
         let _ = fs::remove_dir_all(root);
     }
 
