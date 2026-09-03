@@ -13,10 +13,8 @@ implementation authority for
 
 Verified against current `main` (commit `7a21420`) and published tag `v0.1.110`:
 `git diff v0.1.110 main -- cli/src/run_runtime.rs scripts/mdp-native-model-openai.mjs`
-is empty, so the defect reproduces identically on both. Source evidence: the
-1Password v0.7.0 generation canary in `orchidautomation/mdp-for-mdp`
-(`docs/orchid/qa/2026-09-03-1password-v7-generation-canary.md`, branch
-`codex/mdp-v7-canary-entities`, read-only reference).
+is empty, so the defect reproduces identically on both. Source evidence: a
+private dogfood generation canary (private repository, read-only reference).
 
 This plan extends, and must not regress, the MDP-298 behavior shipped in commit
 `8945522` (safe v3 normalization rejection diagnostics).
@@ -204,9 +202,9 @@ through; new optional fields should flow without edits.
 | MDP-298 behavior intact; private content not retained | T5, sanitizers unchanged in kind |
 
 Out of scope: MDP-362 (`--model-context` suggestion), MDP-363 (evidence
-rematerialization), MDP-364–370, any `mdp-for-mdp` mutation (read-only
-reference), releases, deployments, and any change to raw-output retention
-policy.
+rematerialization), MDP-364–370, any mutation of the private dogfood canary
+repository (read-only reference), releases, deployments, and any change to
+raw-output retention policy.
 
 ## Tests and Validation
 
@@ -287,8 +285,17 @@ policy.
 ## Blockers and Readiness Verdict
 
 No blockers. Repository routing is single-repo
-(`orchidautomation/message-decision-packs`, changes expected;
-`orchidautomation/mdp-for-mdp` read-only). Base branch `main`. Every acceptance
-criterion maps to units and tests above.
+(`orchidautomation/message-decision-packs`, changes expected; the private
+dogfood canary repository stays read-only). Base branch `main`. Every
+acceptance criterion maps to units and tests above.
 
 **Verdict: READY_TO_PIN.**
+
+## Provenance note
+
+This public copy was sanitized after execution: the customer dogfood target,
+private repository, private QA-document path, and private branch references
+were removed and replaced with generic descriptions. The executed plan pin
+remains recorded at the pinned commit in the execution-shape receipt; that
+receipt's `plan.sha256` and `sourceCommit` intentionally reference the
+pre-sanitization commit.

@@ -2453,14 +2453,20 @@ where
             validation = None;
         }
     } else if deadline.expired() {
+        let phase = deadline.current_phase();
         deadline.record_terminal(deadline.observation(
             DeadlineOutcome::TimedOut,
-            deadline.current_phase(),
+            phase,
             TerminalState::NoDraftRunnerFailed,
         ));
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
         validation = None;
+        // The timeout replaces any model-classified rejection, so the
+        // published reason must name the timeout phase instead of the stale
+        // model code carried by the generative outcome.
+        diagnostic_code = Some(format!("{}-timeout", deadline_phase_label(phase)));
+        diagnostic_phase = Some(deadline_phase_label(phase).into());
     }
 
     deadline.mark_phase(DeadlinePhase::Finalization);
@@ -2480,6 +2486,8 @@ where
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
         validation = None;
+        diagnostic_code = Some("finalization-timeout".into());
+        diagnostic_phase = Some(deadline_phase_label(DeadlinePhase::Finalization).into());
     }
     if !deadline.expired() {
         deadline.mark_phase(DeadlinePhase::Cleanup);
@@ -2515,6 +2523,13 @@ where
         }
         terminal_state = TerminalState::NoDraftAuditIncomplete;
         success_values = None;
+        // The schema-valid source-integrity diagnostics in the authority
+        // block carry the rejection reason. Publishing the prior
+        // model-rejection code under an audit-incomplete terminal state
+        // would mislabel the cause, so no scalar code or phase survives the
+        // override.
+        diagnostic_code = None;
+        diagnostic_phase = None;
     }
 
     if !deadline.expired() {
@@ -7161,6 +7176,143 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(!run.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn post_step_deadline_override_replaces_stale_model_diagnostic() {
+        let root = temp_path("generative-timeout-diagnostic");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        init_pack(&pack, "Deadline Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let mut request = generative_request_fixture(&pack, &raw);
+        request.execution_policy.timeout_ms = 5_000;
+        refresh_test_native_declarations(&mut request);
+        let transaction = root.join("tx");
+        let deadline = RunDeadline::new(5_000);
+        // The driver classifies the run as received-but-invalid output, then
+        // the forced post-step deadline expiry replaces that outcome. The
+        // published diagnostic must name the timeout phase, not the stale
+        // model rejection code.
+        let outcome = super::execute_transaction(
+            &request,
+            &transaction,
+            &deadline,
+            || {
+                std::thread::sleep(std::time::Duration::from_millis(5_600));
+                Ok(())
+            },
+            |driver_request, _, _| {
+                let mut result = DriverResultV2 {
+                    contract: DRIVER_RESULT_V2.into(),
+                    execution_id: driver_request.execution_id.clone(),
+                    operation: driver_request.operation.clone(),
+                    terminal_state: TerminalState::NoDraftOutputInvalid,
+                    output: None,
+                    provider_request_body_sha256: None,
+                    provider_request_schema_id: None,
+                    provider_response_body_sha256: None,
+                    provider_output_schema_sha256: Some(
+                        driver_request.provider_output_schema_sha256.clone(),
+                    ),
+                    provider_observation: None,
+                    diagnostic_code: Some("model-output-invalid-json".into()),
+                    result_sha256: String::new(),
+                };
+                seal_driver_result(&mut result)?;
+                Ok(result)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            outcome.receipt.terminal_state,
+            TerminalState::NoDraftRunnerFailed
+        );
+        assert_eq!(
+            outcome.receipt.diagnostic_code.as_deref(),
+            Some("finalization-timeout")
+        );
+        assert_eq!(
+            outcome.receipt.diagnostic_phase.as_deref(),
+            Some("finalization")
+        );
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(transaction.join("run-receipt.json")).unwrap())
+                .unwrap();
+        assert_eq!(receipt["terminal_state"], "no-draft:runner-failed");
+        assert_eq!(receipt["diagnostic_code"], "finalization-timeout");
+        assert_eq!(receipt["diagnostic_phase"], "finalization");
+        assert_eq!(receipt["deadline"]["outcome"], "timed-out");
+        assert_eq!(receipt["deadline"]["phase"], "finalization");
+        let audit: serde_json::Value =
+            serde_json::from_slice(&fs::read(transaction.join("runner-audit.json")).unwrap())
+                .unwrap();
+        assert_eq!(audit["diagnostic_code"], "finalization-timeout");
+        assert_eq!(audit["diagnostic_phase"], "finalization");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn source_mutation_override_clears_stale_model_diagnostic() {
+        let root = temp_path("generative-mutation-diagnostic");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        init_pack(&pack, "Mutation Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        let transaction = root.join("tx");
+        let deadline = RunDeadline::new(30_000);
+        // The driver classifies the run as received-but-invalid output, then a
+        // source mutation during the post-check window replaces the outcome
+        // with audit-incomplete. No model-rejection code may survive that
+        // override; the schema-valid source-integrity diagnostics carry the
+        // reason instead.
+        let outcome = super::execute_transaction(
+            &request,
+            &transaction,
+            &deadline,
+            || {
+                fs::write(&raw, "{\"company\":\"Mutated Co\"}\n")?;
+                Ok(())
+            },
+            |driver_request, _, _| {
+                let mut result = DriverResultV2 {
+                    contract: DRIVER_RESULT_V2.into(),
+                    execution_id: driver_request.execution_id.clone(),
+                    operation: driver_request.operation.clone(),
+                    terminal_state: TerminalState::NoDraftOutputInvalid,
+                    output: None,
+                    provider_request_body_sha256: None,
+                    provider_request_schema_id: None,
+                    provider_response_body_sha256: None,
+                    provider_output_schema_sha256: Some(
+                        driver_request.provider_output_schema_sha256.clone(),
+                    ),
+                    provider_observation: None,
+                    diagnostic_code: Some("model-output-invalid-json".into()),
+                    result_sha256: String::new(),
+                };
+                seal_driver_result(&mut result)?;
+                Ok(result)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            outcome.receipt.terminal_state,
+            TerminalState::NoDraftAuditIncomplete
+        );
+        assert_eq!(outcome.receipt.diagnostic_code, None);
+        assert_eq!(outcome.receipt.diagnostic_phase, None);
+        assert_eq!(outcome.diagnostics[0].code, "stale-binding");
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(transaction.join("run-receipt.json")).unwrap())
+                .unwrap();
+        assert_eq!(receipt["terminal_state"], "no-draft:audit-incomplete");
+        assert!(receipt.get("diagnostic_code").is_none());
+        assert!(receipt.get("diagnostic_phase").is_none());
         let _ = fs::remove_dir_all(root);
     }
 

@@ -193,15 +193,39 @@ fn failure_result(
     };
     let diagnostics = if matches!(kind, RunFailureKind::PolicyBlocked) {
         serde_json::to_value(diagnostics).unwrap_or_else(|_| serde_json::json!([]))
-    } else if diagnostics.is_empty() {
-        // Runner-failed and preflight refusals carry their bounded static
-        // reason code so JSON consumers can distinguish rejection causes
-        // without a published receipt. Raw error text is never echoed; the
-        // code is a closed static vocabulary.
-        serde_json::json!([{ "code": reason_code }])
     } else {
-        serde_json::to_value(diagnostics).unwrap_or_else(|_| serde_json::json!([]))
+        // Runner-failed and preflight refusals never place bare reason-code
+        // objects in the diagnostics array; that array is reserved for
+        // schema-valid RunDiagnostic entries. The bounded static reason
+        // travels through the optional authority-block scalar instead, and
+        // raw error text is never echoed.
+        serde_json::json!([])
     };
+    let mut authority_block = json!({
+        "contract": "mdp.canonical-authority-block.v1",
+        "execution_id": execution_id,
+        "terminal_state": terminal_state,
+        "decision": null,
+        "assurance": [],
+        "limitations": [
+            limitation,
+            "The surrounding conversation and its files are not decision authority."
+        ],
+        "reason_codes": [reason_code],
+        "bundle_sha256": null,
+        "receipt_sha256": null,
+        "verification": null,
+        "diagnostics": diagnostics,
+        "deadline": deadline,
+        "authority_notice": notice
+    });
+    if !matches!(kind, RunFailureKind::PolicyBlocked) {
+        // Carry the bounded reason through the scalar field so JSON
+        // consumers can distinguish rejection causes without a published
+        // receipt. No phase is attached here; phase authority stays with the
+        // deadline observation and governed policy diagnostics.
+        authority_block["diagnostic_code"] = json!(reason_code);
+    }
     json!({
         "contract": "mdp.run-execution.v1",
         "valid": false,
@@ -211,24 +235,7 @@ fn failure_result(
         "run_dir": null,
         "bundle_sha256": null,
         "receipt_sha256": null,
-        "authority_block": {
-            "contract": "mdp.canonical-authority-block.v1",
-            "execution_id": execution_id,
-            "terminal_state": terminal_state,
-            "decision": null,
-            "assurance": [],
-            "limitations": [
-                limitation,
-                "The surrounding conversation and its files are not decision authority."
-            ],
-            "reason_codes": [reason_code],
-            "bundle_sha256": null,
-            "receipt_sha256": null,
-            "verification": null,
-            "diagnostics": diagnostics,
-            "deadline": deadline,
-            "authority_notice": notice
-        }
+        "authority_block": authority_block
     })
 }
 
@@ -252,11 +259,60 @@ mod tests {
             value["authority_block"]["reason_codes"][0],
             "request-unreadable"
         );
+        assert_eq!(
+            value["authority_block"]["diagnostics"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            value["authority_block"]["diagnostic_code"],
+            "request-unreadable"
+        );
         assert!(
             !serde_json::to_string(&value)
                 .unwrap()
                 .contains("/private/customer")
         );
+    }
+
+    #[test]
+    fn receipt_free_failure_envelopes_validate_against_authority_block_schema() {
+        let schema =
+            crate::commands::schemas::schema(crate::cli::SchemaTarget::CanonicalAuthorityBlockV1);
+        // Preflight refusals previously emitted bare-code diagnostic objects;
+        // the end-to-end unreadable-request envelope must now carry the
+        // bounded reason in the scalar field and validate against the
+        // canonical authority-block schema.
+        let preflight = run_request_file(
+            Path::new("/private/customer/missing-run-request.json"),
+            Path::new("/private/customer/output"),
+        )
+        .unwrap();
+        assert_eq!(
+            preflight["authority_block"]["diagnostics"],
+            serde_json::json!([])
+        );
+        jsonschema::draft202012::validate(&schema, &preflight["authority_block"])
+            .expect("preflight refusal authority block should match its schema");
+
+        // Runner-failed envelopes carry the same scalar contract and never
+        // place bare-code objects in the diagnostics array.
+        let runner_failed = super::failure_result(
+            "schema-conformance",
+            super::RunFailureKind::RunnerFailed,
+            "runner-failed",
+            &[],
+            None,
+        );
+        assert_eq!(
+            runner_failed["authority_block"]["diagnostics"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            runner_failed["authority_block"]["diagnostic_code"],
+            "runner-failed"
+        );
+        jsonschema::draft202012::validate(&schema, &runner_failed["authority_block"])
+            .expect("runner-failed authority block should match its schema");
     }
 
     #[test]
