@@ -300,4 +300,3 @@ not needed for implementation or proof. No blocker prevents a bounded
 single-repository implementation.
 
 **Verdict: READY_TO_PIN.**
-
