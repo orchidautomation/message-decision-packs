@@ -74,10 +74,13 @@ requirements/route boundary rather than truncated.
 The provider-facing v3 schema is job-specialized and must remain semantically
 equivalent to local validation: a classified status requires `value`, whereas
 ambiguous, no-match, and unsupported statuses omit it; gap and rejected-claim
-items keep their explicit fields. If the local boundary rejects a provider
-payload, the run carries only a bounded rejection code plus sanitized path,
-expected category, and observed category. It never carries raw model output or
-unbounded schema error text.
+items keep their explicit fields. Attempt references are set-like, so the host
+stably removes duplicate string IDs from `derived_from` before canonical local
+validation because the OpenAI strict subset does not express `uniqueItems`;
+malformed non-string entries still fail. If the local boundary rejects a
+provider payload, the run carries only a bounded rejection code plus sanitized
+path, expected category, and observed category. It never carries raw model
+output or unbounded schema error text.
 
 The shipped templates use one resolver and driver contract:
 

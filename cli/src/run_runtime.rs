@@ -11,9 +11,10 @@ use crate::commands::routing::{
 };
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::commands::v3_normalization::{
-    V3SealInputs, reject_host_field_injection, seal_v3_envelope, v3_issue_diagnostic_detail,
-    v3_schema_error_detail, v3_semantic_provider_schema, v3_static_diagnostic_detail,
-    validate_v3_sealed_envelope, validate_v3_semantic_payload,
+    V3SealInputs, normalize_v3_semantic_reference_arrays, reject_host_field_injection,
+    seal_v3_envelope, v3_issue_diagnostic_detail, v3_schema_error_detail,
+    v3_semantic_provider_schema, v3_static_diagnostic_detail, validate_v3_sealed_envelope,
+    validate_v3_semantic_payload,
 };
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
@@ -4108,7 +4109,7 @@ fn host_wrap_v3_normalization_output(
             )
         })?;
 
-    let semantic = serde_json::from_str::<Value>(model_output).map_err(|_| {
+    let mut semantic = serde_json::from_str::<Value>(model_output).map_err(|_| {
         run_failure_with_diagnostic_detail(
             RunFailureKind::PolicyBlocked,
             "v3-semantic-output-malformed",
@@ -4128,6 +4129,7 @@ fn host_wrap_v3_normalization_output(
             v3_issue_diagnostic_detail(&issue, code),
         )
     })?;
+    normalize_v3_semantic_reference_arrays(&mut semantic);
     let semantic_schema = v3_semantic_provider_schema();
     if jsonschema::draft202012::validate(&semantic_schema, &semantic).is_err() {
         let code = "v3-semantic-output-invalid";
@@ -8985,14 +8987,14 @@ mod tests {
                     "value": "GTM Engineering",
                     "taxonomy_id": "buyer-persona",
                     "taxonomy_version": "1",
-                    "derived_from": ["synthetic-attempt-001"],
+                    "derived_from": ["synthetic-attempt-001", "synthetic-attempt-001"],
                     "basis": "title says it"
                 }
             },
             "gaps": [{
                 "attribute": "person_location",
                 "reason": "not observed",
-                "derived_from": ["synthetic-attempt-001"],
+                "derived_from": ["synthetic-attempt-001", "synthetic-attempt-001"],
                 "taxonomy_id": "buyer-persona"
             }],
             "rejected_claims": [{
@@ -9037,6 +9039,10 @@ mod tests {
                 "derived_from": ["synthetic-attempt-001"],
                 "taxonomy_id": "buyer-persona"
             })
+        );
+        assert_eq!(
+            parsed["classifications"]["persona"]["derived_from"],
+            serde_json::json!(["synthetic-attempt-001"])
         );
         assert_eq!(
             parsed["rejected_claims"][0],

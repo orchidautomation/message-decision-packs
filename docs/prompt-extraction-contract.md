@@ -8,6 +8,10 @@ The provider projection preserves the same semantic branches as local v3
 validation: `classified` requires `value`, while `ambiguous`, `no-match`, and
 `unsupported` omit it. `gaps.items` and `rejected_claims.items` retain their
 declared fields rather than becoming empty objects during OpenAI projection.
+Because the OpenAI strict subset does not express `uniqueItems`, the host
+stably removes repeated `derived_from` attempt IDs before applying the
+canonical schema; the references are set-like evidence and malformed
+non-string entries still fail validation.
 Rejected structured output is reported with a bounded code, sanitized JSON
 path, expected category, and observed category; raw output and validator prose
 are never receipt authority.

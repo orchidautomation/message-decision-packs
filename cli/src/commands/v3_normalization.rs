@@ -861,6 +861,37 @@ pub(crate) fn reject_host_field_injection(provider_output: &Value) -> Result<(),
     Ok(())
 }
 
+/// OpenAI's strict schema subset does not carry `uniqueItems` through the
+/// provider projection. Attempt references are set-like semantic evidence,
+/// so remove repeated string IDs before applying the canonical schema. Keep
+/// malformed non-string entries untouched so the schema still rejects them.
+pub(crate) fn normalize_v3_semantic_reference_arrays(value: &mut Value) {
+    if let Some(classifications) = value
+        .get_mut("classifications")
+        .and_then(Value::as_object_mut)
+    {
+        for classification in classifications.values_mut() {
+            deduplicate_v3_reference_array(classification.get_mut("derived_from"));
+        }
+    }
+    if let Some(gaps) = value.get_mut("gaps").and_then(Value::as_array_mut) {
+        for gap in gaps {
+            deduplicate_v3_reference_array(gap.get_mut("derived_from"));
+        }
+    }
+}
+
+fn deduplicate_v3_reference_array(value: Option<&mut Value>) {
+    let Some(Value::Array(items)) = value else {
+        return;
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    items.retain(|item| {
+        item.as_str()
+            .is_none_or(|attempt_id| seen.insert(attempt_id.to_owned()))
+    });
+}
+
 // =============================================================================
 // Validators for v3 sealed input.
 // =============================================================================
