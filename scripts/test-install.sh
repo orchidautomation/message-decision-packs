@@ -174,7 +174,7 @@ assert_log "cli args: skip:0"
 # CLI-only installation resolves the release without requiring Node.
 minimal_path="$TMP_DIR/minimal-path"
 mkdir -p "$minimal_path"
-for tool in bash curl mktemp rm awk wc tr sha256sum mkdir cat chmod uname cp find head; do
+for tool in bash curl mktemp rm awk wc tr sha256sum mkdir cat chmod uname cp mv find head; do
   ln -s "$(command -v "$tool")" "$minimal_path/$tool"
 done
 : > "$LOG_FILE"
@@ -389,6 +389,38 @@ PATH="$fake_path:$TEST_PATH" \
   "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-forced.stdout"
 test -x "$forced_bootstrap_dir/mdp"
 grep -F "Installed mdp CLI to $forced_bootstrap_dir/mdp" "$TMP_DIR/bootstrap-forced.stdout" >/dev/null
+
+# A self-upgrade must replace an executable that is still running. Linux
+# rejects a direct write to that active inode with ETXTBSY ("Text file busy").
+if [ "$(uname -s)" = "Linux" ]; then
+  running_bootstrap_dir="$TMP_DIR/bootstrap-running"
+  mkdir -p "$running_bootstrap_dir"
+  cp "$(command -v sleep)" "$running_bootstrap_dir/mdp"
+  chmod +x "$running_bootstrap_dir/mdp"
+  "$running_bootstrap_dir/mdp" 30 >/dev/null 2>&1 &
+  running_cli_pid=$!
+  if ! kill -0 "$running_cli_pid" 2>/dev/null; then
+    echo "Could not start the running CLI fixture." >&2
+    exit 1
+  fi
+  if ! MDP_RESOLVED_VERSION=0.1.101 \
+    MDP_DOWNLOAD_URL="file://$bootstrap_asset" \
+    MDP_INSTALL_DIR="$running_bootstrap_dir" \
+    MDP_SKIP_CLI_UPDATE=0 \
+    MDP_FORCE_CLI_UPDATE=1 \
+    PATH="$fake_path:$TEST_PATH" \
+      "$ROOT/scripts/bootstrap-runtime.sh" >"$TMP_DIR/bootstrap-running.stdout" 2>"$TMP_DIR/bootstrap-running.stderr"; then
+    kill "$running_cli_pid" 2>/dev/null || true
+    wait "$running_cli_pid" 2>/dev/null || true
+    echo "Bootstrap could not replace the running CLI fixture." >&2
+    cat "$TMP_DIR/bootstrap-running.stderr" >&2
+    exit 1
+  fi
+  kill "$running_cli_pid" 2>/dev/null || true
+  wait "$running_cli_pid" 2>/dev/null || true
+  test -x "$running_bootstrap_dir/mdp"
+  test "$("$running_bootstrap_dir/mdp" --version)" = "mdp 0.1.101"
+fi
 
 # Explicit target failure stays strict and produces a truthful terminal summary.
 : > "$LOG_FILE"

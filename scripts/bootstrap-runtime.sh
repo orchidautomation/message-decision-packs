@@ -12,6 +12,7 @@ need_cmd uname
 need_cmd mktemp
 need_cmd mkdir
 need_cmd cp
+need_cmd mv
 need_cmd chmod
 need_cmd curl
 need_cmd find
@@ -124,7 +125,11 @@ if [[ "${MDP_DRY_RUN:-0}" == "1" ]]; then
 fi
 
 TMP_DIR="$(mktemp -d)"
+STAGED_CLI_PATH=""
 cleanup() {
+  if [[ -n "$STAGED_CLI_PATH" ]]; then
+    rm -f "$STAGED_CLI_PATH"
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -166,8 +171,15 @@ fi
 "$BINARY_PATH" --version >/dev/null
 
 mkdir -p "$INSTALL_DIR"
-cp "$BINARY_PATH" "$CLI_PATH"
-chmod +x "$CLI_PATH"
+# `mdp upgrade` runs this bootstrap from the currently installed executable.
+# Stage the replacement beside the destination and rename it into place so the
+# installer never truncates the executable inode that is still in use. Linux
+# rejects a direct write to that inode with ETXTBSY ("Text file busy").
+STAGED_CLI_PATH="$(mktemp "$INSTALL_DIR/.mdp.XXXXXX")"
+cp "$BINARY_PATH" "$STAGED_CLI_PATH"
+chmod +x "$STAGED_CLI_PATH"
+mv -f "$STAGED_CLI_PATH" "$CLI_PATH"
+STAGED_CLI_PATH=""
 
 echo "Installed mdp CLI to $CLI_PATH"
 
