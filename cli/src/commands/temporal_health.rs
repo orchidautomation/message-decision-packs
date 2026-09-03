@@ -915,8 +915,12 @@ pub(crate) fn temporal_health(root: &Path, as_of_text: Option<&str>) -> Result<V
         let reviewed_invalid = t
             .and_then(|temporal| temporal.reviewed_at.as_ref())
             .is_some_and(|_| reviewed.is_none());
-        let decision_transition_valid = if !matches!(lifecycle, "revoked" | "superseded") {
-            true
+        let decision_transition_valid = if lifecycle == "current" {
+            t.is_none_or(|temporal| {
+                temporal.revoked_at.is_none() && temporal.superseded_at.is_none()
+            })
+        } else if !matches!(lifecycle, "revoked" | "superseded") {
+            false
         } else if changed_invalid || reviewed_invalid {
             false
         } else {
@@ -1848,6 +1852,34 @@ mod tests {
                     .iter()
                     .any(|d| d["code"] == "temporal_transition_before_origin")
             );
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn current_decision_with_stray_transition_is_review_due() {
+        for (field, diagnostic) in [
+            ("revoked_at", "decision_revocation_transition_invalid"),
+            ("superseded_at", "decision_supersession_transition_invalid"),
+        ] {
+            let root = governed_pack("stray-decision-transition");
+            let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+            let manifest = fs::read_to_string(&path).unwrap().replace(
+                "lifecycle: current\n    changed_at:",
+                &format!("lifecycle: current\n    {field}: 2026-09-01T00:00:00Z\n    changed_at:"),
+            );
+            fs::write(path, manifest).unwrap();
+            let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+            assert_eq!(output["decision_review"][0]["state"], "review-due");
+            assert!(output["diagnostics"].as_array().unwrap().iter().any(|d| {
+                d["code"] == diagnostic
+                    && d["path"] == format!("#/decision_groups/0/temporal/{field}")
+            }));
+            jsonschema::draft202012::validate(
+                &crate::commands::schema(crate::cli::SchemaTarget::TemporalHealthV1),
+                &output,
+            )
+            .unwrap();
             let _ = fs::remove_dir_all(root);
         }
     }
