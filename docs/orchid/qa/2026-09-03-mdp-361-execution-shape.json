@@ -1,0 +1,50 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "brandon/mdp-361-bug-restore-safe-native-run-rejection-reasons-after-output",
+  "sourceCommit": "f37ae28a0ecea0ba47de0704604afc91d915b10c",
+  "plan": {
+    "path": "docs/orchid/plans/2026-09-03-mdp-361-safe-native-run-rejection-reasons.md",
+    "sha256": "59c29c815baa4dea96478200bb93f5a6ef6662bf2392fe638ca72a33aace0cdd",
+    "sourceRef": "brandon/mdp-361-bug-restore-safe-native-run-rejection-reasons-after-output",
+    "sourceCommit": "f6f6f4a8127147fed74ca55f07e51ad427668987"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "sol-implementation-exception",
+  "delivery": {
+    "shape": "cumulative-pr",
+    "sourceRef": "brandon/mdp-361-bug-restore-safe-native-run-rejection-reasons-after-output",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    "docs/orchid/qa"
+  ],
+  "lunaLanes": [],
+  "exceptionReason": "operator-directed-direct-implementation",
+  "exceptionPaths": [
+    "cli/src/run_runtime.rs",
+    "cli/src/run_contracts.rs",
+    "cli/src/commands/run.rs",
+    "cli/src/commands/schemas.rs",
+    "cli/src/commands/run_verification.rs",
+    "cli/src/commands/decision_trace/tests.rs",
+    "cli/src/diagnostics.rs",
+    "scripts/mdp-native-model-openai.mjs",
+    "scripts/test-native-model-driver.mjs",
+    "docs/orchid/plans/2026-09-03-mdp-361-safe-native-run-rejection-reasons.md"
+  ],
+  "exceptionJustification": "Brandon directed direct implementation in the active Pi session on the issue-bound worktree branch. The repository's default is one root agent and direct implementation; a Pi worker subagent executed the committed plan only to keep the editing process cwd aligned with the worktree, per the Herdr worktree contract. No Orchid Work visible-dispatch lane was started, and the pinned plan remained the sole implementation authority.",
+  "validation": [
+    "cargo test --manifest-path cli/Cargo.toml: 878 passed, 1 failed — the failing secure_install quarantine test reproduces identically on the pristine base commit and is environment-dependent, untouched by this change.",
+    "node scripts/test-native-model-driver.mjs: passed, including the explicit fault-classification contract table and new refusal/incomplete/missing-text/invalid-json mock cases.",
+    "node scripts/test-run-v1-golden.mjs: passed (8 accepted, 14 rejected; no golden changes required).",
+    "node scripts/test-run-conformance.mjs: 16/21 locally; the 5 failing checks reproduce identically on the pristine base commit and are pre-existing environment failures.",
+    "bash scripts/test-native-runner.sh: passed.",
+    "node scripts/test-cold-model-conformance.mjs: 12/12 passed.",
+    "node scripts/test-universal-native-parity.mjs: passed (receipt re-hash covers the new optional fields)."
+  ],
+  "verdict": "valid",
+  "observedAt": "2026-09-03T11:07:20Z"
+}
