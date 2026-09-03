@@ -43,7 +43,7 @@
   "validation": [
     "cargo fmt --manifest-path cli/Cargo.toml --all -- --check: passed",
     "cargo test --manifest-path cli/Cargo.toml v3_ -- --nocapture: 44 passed, 0 failed",
-    "cargo test --manifest-path cli/Cargo.toml run_runtime -- --nocapture: 70 passed, 0 failed",
+    "cargo test --manifest-path cli/Cargo.toml run_runtime -- --nocapture: 70 passed, 0 failed, including duplicate semantic reference normalization",
     "node scripts/test-native-model-driver.mjs: passed",
     "node scripts/test-universal-native-parity.mjs: passed",
     "node scripts/test-run-v1-golden.mjs: passed (8 accepted, 14 rejected)",
@@ -51,5 +51,5 @@
     "cargo test --manifest-path cli/Cargo.toml: all changed-surface tests passed; one unrelated baseline upgrade-fixture test failed against the stale v0.1.112 expectation"
   ],
   "verdict": "valid",
-  "observedAt": "2026-09-03T00:00:00Z"
+  "observedAt": "2026-09-03T16:45:00Z"
 }
