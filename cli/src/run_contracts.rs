@@ -624,6 +624,8 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) deadline: Option<DeadlineObservationV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) diagnostic_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_phase: Option<String>,
     pub(crate) terminal_state: TerminalState,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,
@@ -656,6 +658,10 @@ pub(crate) struct RunReceiptV1 {
     pub(crate) runner_audit: ArtifactAuthority,
     #[serde(default)]
     pub(crate) deadline: Option<DeadlineObservationV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_phase: Option<String>,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,
     pub(crate) receipt_sha256: String,

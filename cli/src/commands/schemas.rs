@@ -2186,6 +2186,7 @@ fn runner_audit_v1_schema() -> Value {
             "identity_observations": nullable_object_schema(identity_observation_v1_schema()),
             "deadline": nullable_object_schema(deadline_observation_v1_schema()),
             "diagnostic_code": {"type": ["string", "null"]},
+            "diagnostic_phase": diagnostic_phase_schema(),
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()
@@ -2233,10 +2234,48 @@ fn run_receipt_v1_schema() -> Value {
             "validation": nullable_object_schema(artifact_authority_v1_schema()),
             "runner_audit": artifact_authority_v1_schema(),
             "deadline": nullable_object_schema(deadline_observation_v1_schema()),
+            "diagnostic_code": {"type": ["string", "null"]},
+            "diagnostic_phase": diagnostic_phase_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array(),
             "receipt_sha256": sha256_schema()
         }
+    })
+}
+
+/// Closed `DeadlinePhase` vocabulary, defined once so the deadline
+/// observation enum and every bounded `diagnostic_phase` field share the
+/// same enum and cannot drift.
+const DEADLINE_PHASE_VOCABULARY: [&str; 9] = [
+    "preflight",
+    "staging",
+    "driver",
+    "provider",
+    "validation",
+    "finalization",
+    "cancellation",
+    "transport",
+    "cleanup",
+];
+
+fn deadline_phase_enum() -> Value {
+    Value::Array(
+        DEADLINE_PHASE_VOCABULARY
+            .iter()
+            .map(|phase| Value::String((*phase).to_string()))
+            .collect(),
+    )
+}
+
+/// Optional, null-tolerant bounded diagnostic phase. Omission and null stay
+/// legal because governed runs publish the field only when a rejection was
+/// classified.
+fn diagnostic_phase_schema() -> Value {
+    json!({
+        "anyOf": [
+            {"enum": deadline_phase_enum()},
+            {"type": "null"}
+        ]
     })
 }
 
@@ -2248,7 +2287,7 @@ fn deadline_observation_v1_schema() -> Value {
         "properties": {
             "contract": {"const": DEADLINE_OBSERVATION_V1},
             "outcome": {"enum": ["timed-out", "cancelled"]},
-            "phase": {"enum": ["preflight", "staging", "driver", "provider", "validation", "finalization", "cancellation", "transport", "cleanup"]},
+            "phase": {"enum": deadline_phase_enum()},
             "elapsed_ms": {"type": "integer", "minimum": 0, "maximum": 9007199254740991_u64},
             "configured_limit_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
             "effective_limit_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
@@ -2361,6 +2400,8 @@ fn canonical_authority_block_v1_schema() -> Value {
             "limitations": string_array(),
             "reason_codes": string_array(),
             "diagnostics": {"type": "array", "maxItems": 4, "items": policy_diagnostic_schema()},
+            "diagnostic_code": {"type": "string"},
+            "diagnostic_phase": diagnostic_phase_schema(),
             "deadline": {"anyOf": [{"type": "null"}, deadline_observation_v1_schema()]},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
@@ -2394,10 +2435,36 @@ fn canonical_authority_block_v1_schema() -> Value {
                     }
                 },
                 "else": {
-                    "properties": {
-                        "bundle_sha256": sha256_schema(),
-                        "receipt_sha256": sha256_schema(),
-                        "verification": {"type": "object"}
+                    "if": {
+                        "properties": {"terminal_state": {"const": "no-draft:runner-failed"}},
+                        "required": ["terminal_state"]
+                    },
+                    "then": {
+                        "anyOf": [
+                            {
+                                "properties": {
+                                    "bundle_sha256": sha256_schema(),
+                                    "receipt_sha256": sha256_schema(),
+                                    "verification": {"type": "object"}
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "decision": {"type": "null"},
+                                    "bundle_sha256": {"type": "null"},
+                                    "receipt_sha256": {"type": "null"},
+                                    "verification": {"type": "null"}
+                                },
+                                "required": ["reason_codes"]
+                            }
+                        ]
+                    },
+                    "else": {
+                        "properties": {
+                            "bundle_sha256": sha256_schema(),
+                            "receipt_sha256": sha256_schema(),
+                            "verification": {"type": "object"}
+                        }
                     }
                 }
             },
@@ -2519,6 +2586,8 @@ fn run_execution_v1_schema() -> Value {
             "run_dir": {"type": ["string", "null"]},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
+            "diagnostic_code": {"type": "string"},
+            "diagnostic_phase": diagnostic_phase_schema(),
             "authority_block": canonical_authority_block_v1_schema()
         },
         "allOf": [
@@ -6139,6 +6208,82 @@ mod tests {
             assert_eq!(result["additionalProperties"], false);
             assert_eq!(result["properties"]["contract"]["const"], contract);
         }
+    }
+
+    #[test]
+    fn canonical_authority_block_admits_both_runner_failed_shapes() {
+        let schema = schema(SchemaTarget::CanonicalAuthorityBlockV1);
+        let base = json!({
+            "contract": CANONICAL_AUTHORITY_BLOCK_V1,
+            "execution_id": "synthetic-exec",
+            "terminal_state": "no-draft:runner-failed",
+            "decision": null,
+            "assurance": [],
+            "limitations": ["synthetic limitation"],
+            "bundle_sha256": null,
+            "receipt_sha256": null,
+            "verification": null,
+            "authority_notice": "synthetic authority notice"
+        });
+        // Receipt-free runner-failed envelopes (no published bundle) carry
+        // their bounded reason codes and validate.
+        let mut receipt_free = base.clone();
+        receipt_free["reason_codes"] = json!(["runner-failed"]);
+        receipt_free["diagnostic_code"] = json!("runner-failed");
+        draft202012::validate(&schema, &receipt_free)
+            .expect("receipt-free runner-failed block should validate");
+        // Published runner-failed blocks stay receipt-bound.
+        let mut published = base.clone();
+        published["bundle_sha256"] = json!("a".repeat(64));
+        published["receipt_sha256"] = json!("b".repeat(64));
+        published["verification"] = json!({
+            "bundle": "run-bundle.json",
+            "receipt": "run-receipt.json",
+            "artifact_root": "."
+        });
+        draft202012::validate(&schema, &published)
+            .expect("receipt-bound runner-failed block should validate");
+        // A receipt-free runner-failed block with no reason codes is
+        // ambiguous and must stay rejected.
+        assert!(draft202012::validate(&schema, &base).is_err());
+    }
+
+    #[test]
+    fn diagnostic_phase_is_the_closed_deadline_phase_vocabulary() {
+        let known_phases = [
+            "preflight",
+            "staging",
+            "driver",
+            "provider",
+            "validation",
+            "finalization",
+            "cancellation",
+            "transport",
+            "cleanup",
+        ];
+        for target in [
+            SchemaTarget::RunnerAuditV1,
+            SchemaTarget::RunReceiptV1,
+            SchemaTarget::RunExecutionV1,
+            SchemaTarget::CanonicalAuthorityBlockV1,
+        ] {
+            let result = schema(target);
+            let phase_schema = &result["properties"]["diagnostic_phase"];
+            for known in known_phases {
+                draft202012::validate(phase_schema, &json!(known))
+                    .expect("known deadline phase should validate");
+            }
+            assert!(
+                draft202012::validate(phase_schema, &json!("not-a-phase")).is_err(),
+                "unknown diagnostic phase must be rejected"
+            );
+            draft202012::validate(phase_schema, &json!(null))
+                .expect("null diagnostic phase should stay legal");
+        }
+        // The deadline observation enum and the bounded diagnostic phases
+        // share one closed vocabulary.
+        let deadline = deadline_observation_v1_schema();
+        assert_eq!(deadline["properties"]["phase"]["enum"], json!(known_phases));
     }
 
     #[test]

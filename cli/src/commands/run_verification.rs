@@ -416,6 +416,11 @@ fn verify_runner_audit(
     {
         issues.push("runner-audit-authority-mismatch".to_string());
     }
+    if audit.diagnostic_code != receipt.diagnostic_code
+        || audit.diagnostic_phase != receipt.diagnostic_phase
+    {
+        issues.push("runner-audit-diagnostic-mismatch".to_string());
+    }
     if audit.snapshot_sha256 != bundle_sha256 || audit.snapshot_sha256 != receipt.bundle_sha256 {
         issues.push("runner-audit-snapshot-mismatch".to_string());
     }
@@ -832,6 +837,43 @@ mod tests {
     }
 
     #[test]
+    fn runner_audit_diagnostic_mismatch_is_flagged() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-verify-diagnostic-tamper-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        for name in ["output.json", "context.json", "validation.json"] {
+            fs::write(root.join(name), b"{}\n").unwrap();
+        }
+        let bundle = sample_bundle();
+        let mut receipt = sample_receipt(&bundle, &root);
+        write_audit(&root, &receipt);
+        receipt.runner_audit = artifact(&root, "audit.json");
+        seal_receipt(&mut receipt);
+        assert!(verify_run(&bundle, &receipt, Some(&root)).unwrap().valid);
+
+        // Tamper only the receipt's bounded diagnostic classification and
+        // re-seal its self-hash; the audit file still carries the original
+        // fields, so verification must flag the divergence.
+        receipt.diagnostic_code = Some("validation-timeout".into());
+        receipt.diagnostic_phase = Some("validation".into());
+        seal_receipt(&mut receipt);
+        let result = verify_run(&bundle, &receipt, Some(&root)).unwrap();
+        assert!(!result.valid);
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|issue| issue == "runner-audit-diagnostic-mismatch")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn driver_hashes_use_the_closed_canonical_sha256_form() {
         assert!(is_canonical_sha256(&"a".repeat(64)));
         assert!(!is_canonical_sha256(&"A".repeat(64)));
@@ -1026,6 +1068,7 @@ mod tests {
             identity_observations: Some(observation.clone()),
             deadline: None,
             diagnostic_code: None,
+            diagnostic_phase: None,
             terminal_state: TerminalState::Success,
             assurance: vec![],
             limitations: vec![],
@@ -1298,6 +1341,8 @@ mod tests {
             validation: Some(artifact_or_placeholder(root, "validation.json")),
             runner_audit: artifact_or_placeholder(root, "audit.json"),
             deadline: None,
+            diagnostic_code: None,
+            diagnostic_phase: None,
             assurance: recompute_assurance(
                 bundle.mode,
                 TerminalState::Success,
@@ -1387,6 +1432,7 @@ mod tests {
             identity_observations: None,
             deadline: None,
             diagnostic_code: None,
+            diagnostic_phase: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),
             limitations: vec![],

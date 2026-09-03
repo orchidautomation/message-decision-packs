@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import {
   DRIVER_REQUEST_CONTRACT,
   DRIVER_RESULT_CONTRACT,
+  FAULT_TERMINAL_STATES,
   PROVIDER_REQUEST_SCHEMA_ID,
   SCHEMA_PROJECTION_CONTRACT,
   buildProviderRequestBody,
@@ -284,6 +285,34 @@ for (const mutation of [
   assert.throws(() => validateNativeModelRequest({ ...request, ...mutation }))
 }
 
+// The driver's fault classification is one explicit contract: received-but-
+// invalid outputs are no-draft:output-invalid; transport, availability,
+// size-cap, and request faults are no-draft:runner-failed; policy and
+// preflight refusals keep their own terminal states.
+assert.deepEqual(FAULT_TERMINAL_STATES, {
+  model_incomplete: 'no-draft:output-invalid',
+  model_refusal: 'no-draft:output-invalid',
+  model_output_missing: 'no-draft:output-invalid',
+  model_output_too_large: 'no-draft:output-invalid',
+  model_output_invalid_json: 'no-draft:output-invalid',
+  model_output_too_deep: 'no-draft:output-invalid',
+  provider_timeout: 'no-draft:runner-failed',
+  provider_transport_error: 'no-draft:runner-failed',
+  provider_http_error: 'no-draft:runner-failed',
+  runtime_fetch_unavailable: 'no-draft:runner-failed',
+  provider_response_headers_too_large: 'no-draft:runner-failed',
+  provider_response_too_large: 'no-draft:runner-failed',
+  provider_response_too_deep: 'no-draft:runner-failed',
+  provider_response_invalid: 'no-draft:runner-failed',
+  request_too_large: 'no-draft:runner-failed',
+  provider_request_too_large: 'no-draft:runner-failed',
+  native_model_calls_not_allowed: 'no-draft:policy-blocked',
+  openai_api_key_missing: 'no-draft:policy-blocked',
+  dry_run_complete: 'no-draft:policy-blocked',
+  output_schema_projection_unsupported: 'no-draft:preflight-refused',
+  request_invalid: 'no-draft:preflight-refused',
+})
+
 const refusal = await executeNativeModelRequest(request, {
   mode: 'mock',
   mockResponse: {
@@ -292,10 +321,44 @@ const refusal = await executeNativeModelRequest(request, {
     output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'private reason' }] }],
   },
 })
-assert.equal(refusal.terminal_state, 'no-draft:runner-failed')
+assert.equal(refusal.terminal_state, 'no-draft:output-invalid')
 assert.equal(refusal.diagnostic_code, 'model_refusal')
 assert.equal(refusal.output, null)
 assert.ok(!JSON.stringify(refusal).includes('private reason'))
+
+const incomplete = await executeNativeModelRequest(request, {
+  mode: 'mock',
+  mockResponse: { id: 'resp_incomplete', status: 'incomplete', output: [] },
+})
+assert.equal(incomplete.terminal_state, 'no-draft:output-invalid')
+assert.equal(incomplete.diagnostic_code, 'model_incomplete')
+assert.equal(incomplete.output, null)
+
+const missingText = await executeNativeModelRequest(request, {
+  mode: 'mock',
+  mockResponse: {
+    id: 'resp_no_text',
+    status: 'completed',
+    output: [{ type: 'message', content: [{ type: 'output_text', text: '   ' }] }],
+  },
+})
+assert.equal(missingText.terminal_state, 'no-draft:output-invalid')
+assert.equal(missingText.diagnostic_code, 'model_output_missing')
+assert.equal(missingText.output, null)
+assert.equal(missingText.provider_observation, null)
+
+const invalidJson = await executeNativeModelRequest(request, {
+  mode: 'mock',
+  mockResponse: {
+    id: 'resp_bad_json',
+    status: 'completed',
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'not-json-private-detail' }] }],
+  },
+})
+assert.equal(invalidJson.terminal_state, 'no-draft:output-invalid')
+assert.equal(invalidJson.diagnostic_code, 'model_output_invalid_json')
+assert.equal(invalidJson.output, null)
+assert.ok(!JSON.stringify(invalidJson).includes('not-json-private-detail'))
 
 const timeoutResult = await executeNativeModelRequest({ ...request, timeout_ms: 1 }, {
   mode: 'real',

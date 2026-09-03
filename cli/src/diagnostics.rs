@@ -26,6 +26,11 @@ const TARGET_COMMANDS: &[&str] = &[
     "emit-brief",
 ];
 
+/// Run-family commands whose envelopes carry the governed rejection reason as
+/// the bounded scalar `diagnostic_code` (top level and inside the canonical
+/// authority block).
+const RUN_FAMILY_COMMANDS: &[&str] = &["run", "recover-run", "run-preflight", "verify-run"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Retryability {
@@ -84,6 +89,9 @@ pub(crate) fn diagnostics_for_result(command: &str, data: &Value) -> Option<Valu
     }
     let mut raw = Vec::new();
     collect_legacy_diagnostics(data, &mut raw, 0);
+    if RUN_FAMILY_COMMANDS.contains(&command) {
+        collect_scalar_diagnostic_code(data, &mut raw);
+    }
     if raw.is_empty() && command == "fit" {
         match data["status"].as_str() {
             Some("disqualified") => raw.push("fit_policy_disqualified".to_string()),
@@ -252,6 +260,17 @@ fn project(command: &str, raw_code: &str) -> ActionableDiagnostic {
             }],
             manual_action("Do not retry unchanged input; review the policy refusal."),
         ),
+        DiagnosticClass::InvalidOutput => (
+            Retryability::AfterUserAction,
+            "The received model output failed the governed validation contract.",
+            vec![Prerequisite {
+                kind: "runtime",
+                summary: "The bounded rejection code names the governed validation contract that rejected the received output.",
+            }],
+            manual_action(
+                "Review the bounded rejection code and the run receipt; no raw model output is retained.",
+            ),
+        ),
         DiagnosticClass::Transient => (
             Retryability::Transient,
             "Execution did not complete because a runtime dependency was unavailable or timed out.",
@@ -295,6 +314,7 @@ enum DiagnosticClass {
     Pack,
     MissingAuthority,
     Policy,
+    InvalidOutput,
     Transient,
     Other,
 }
@@ -302,6 +322,8 @@ enum DiagnosticClass {
 fn diagnostic_class(code: &str) -> DiagnosticClass {
     if code == "invalid_argument" || code == "output_mode_conflict" {
         DiagnosticClass::InvalidInput
+    } else if received_invalid_output_code(code) {
+        DiagnosticClass::InvalidOutput
     } else if code.contains("pack")
         || code.contains("manifest")
         || code.contains("missing_card")
@@ -348,6 +370,7 @@ fn phase(command: &str, code: &str) -> &'static str {
         DiagnosticClass::InvalidInput => return "input",
         DiagnosticClass::Policy => return "policy",
         DiagnosticClass::Transient => return "execution",
+        DiagnosticClass::InvalidOutput => return "validation",
         DiagnosticClass::Pack if command == "command" => return "setup",
         DiagnosticClass::MissingAuthority if command == "command" => return "readiness",
         _ => {}
@@ -389,6 +412,37 @@ fn stable_code(raw: &str) -> String {
         "mdp_error".to_string()
     } else {
         code
+    }
+}
+
+/// Received-but-invalid model output codes: the provider responded, but the
+/// received output failed a governed validation contract. They must project
+/// as phase `validation`, never as generic transient execution
+/// unavailability. Only bounded, host-owned code families are listed.
+fn received_invalid_output_code(code: &str) -> bool {
+    matches!(code, "model-refusal" | "model-incomplete")
+        || code.starts_with("model-output-")
+        || code.starts_with("model_output_")
+        || code.starts_with("v3-")
+        || code.starts_with("v3_")
+        || code.starts_with("prompt-output-")
+        || code.starts_with("prompt_output_")
+        || code.starts_with("host-envelope-")
+        || code.starts_with("host_envelope_")
+        || code.starts_with("normalization-host-envelope-")
+        || code.starts_with("semantic-output-")
+        || code.starts_with("semantic_output_")
+}
+
+fn collect_scalar_diagnostic_code(data: &Value, codes: &mut Vec<String>) {
+    for source in [
+        data.get("diagnostic_code"),
+        data.get("authority_block")
+            .and_then(|block| block.get("diagnostic_code")),
+    ] {
+        if let Some(code) = source.and_then(Value::as_str) {
+            codes.push(code.to_string());
+        }
     }
 }
 
@@ -558,6 +612,60 @@ mod tests {
         .unwrap();
         assert_eq!(missing[0]["code"], "fit_insufficient_context");
         assert_eq!(missing[0]["retryability"], "after-user-action");
+    }
+
+    #[test]
+    fn run_envelopes_project_received_invalid_output_as_validation_phase() {
+        // A run envelope that carries the governed rejection code must project
+        // the real code at the validation phase instead of collapsing to the
+        // generic execution-unavailable fallback.
+        let envelope = json!({
+            "contract": "mdp.run-execution.v1",
+            "valid": false,
+            "terminal_state": "no-draft:output-invalid",
+            "diagnostic_code": "model-output-invalid-json",
+            "diagnostic_phase": "driver",
+            "authority_block": {
+                "terminal_state": "no-draft:output-invalid",
+                "diagnostic_code": "model-output-invalid-json"
+            }
+        });
+        let diagnostics = diagnostics_for_result("run", &envelope).unwrap();
+        assert_eq!(diagnostics[0]["code"], "model-output-invalid-json");
+        assert_eq!(diagnostics[0]["phase"], "validation");
+        let encoded = serde_json::to_string(&diagnostics).unwrap();
+        assert!(!encoded.contains("execution_unavailable"));
+
+        // Driver-issued snake-case codes classify identically.
+        let driver_code = json!({
+            "valid": false,
+            "terminal_state": "no-draft:output-invalid",
+            "diagnostic_code": "model_output_invalid_json"
+        });
+        let diagnostics = diagnostics_for_result("run", &driver_code).unwrap();
+        assert_eq!(diagnostics[0]["code"], "model_output_invalid_json");
+        assert_eq!(diagnostics[0]["phase"], "validation");
+
+        // A transport-side runner failure keeps the execution phase and never
+        // borrows the received-invalid classification.
+        let transport = json!({
+            "valid": false,
+            "terminal_state": "no-draft:runner-failed",
+            "diagnostic_code": "provider-http-error"
+        });
+        let diagnostics = diagnostics_for_result("run", &transport).unwrap();
+        assert_eq!(diagnostics[0]["code"], "provider-http-error");
+        assert_eq!(diagnostics[0]["phase"], "execution");
+        assert!(
+            !serde_json::to_string(&diagnostics)
+                .unwrap()
+                .contains("execution_unavailable")
+        );
+
+        // The fallback survives only for runs with no observable code.
+        let bare = json!({"valid": false, "terminal_state": "no-draft:runner-failed"});
+        let diagnostics = diagnostics_for_result("run", &bare).unwrap();
+        assert_eq!(diagnostics[0]["code"], "execution_unavailable");
     }
 
     #[test]
