@@ -817,6 +817,19 @@ fn validate_governance_with_ledger(
                 "receipt_ref and a valid receipt_sha256 are both required for receipt-bound authority",
             ));
         }
+        if publication
+            .receipt_ref
+            .as_deref()
+            .is_some_and(|receipt_ref| {
+                crate::pack_io::resolve_pack_path(root, receipt_ref).is_err()
+            })
+        {
+            d.push(diagnostic(
+                "publication_receipt_ref_invalid",
+                "#/provenance/temporal/receipt_ref",
+                "publication receipt reference must resolve safely inside the pack",
+            ));
+        }
     }
     d
 }
@@ -2137,6 +2150,15 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|d| d["code"] == "publication_receipt_unverifiable")
+        );
+        let validation = crate::commands::health::validate_pack(&root).unwrap();
+        assert_eq!(validation["valid"], false);
+        assert!(
+            validation["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| issue["code"] == "publication_receipt_ref_invalid")
         );
         let _ = fs::remove_dir_all(root);
     }
