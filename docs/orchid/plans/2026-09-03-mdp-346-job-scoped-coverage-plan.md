@@ -3,7 +3,7 @@
 **Date:** 2026-09-03  
 **Issue:** MDP-346  
 **Repository:** `orchidautomation/message-decision-packs`  
-**Implementation base:** `codex/mdp-owner-governance-delivery` at `fd3d3f1278c451ca7176cc4cb5a8d139e66db5d3`
+**Implementation base:** `codex/mdp-owner-governance-delivery` at `651feb16f2d8d9d2b5d6217c85fbe97d38063720`
 **Implementation branch:** `codex/mdp-346-job-coverage`  
 **Risk:** Elevated — a new owner-facing projection composes several existing authority and readiness contracts
 
