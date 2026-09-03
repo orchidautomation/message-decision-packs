@@ -67,10 +67,16 @@ EOF
 
     fn command(tools: &Path, install: &Path) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_mdp"));
+        let package_version = env!("CARGO_PKG_VERSION");
         command
             .env("PATH", tools)
             .env("HOME", install.parent().unwrap().join("home"))
             .env("MDP_INSTALL_DIR", install)
+            .env(
+                "FAKE_LATEST_JSON",
+                format!(r#"{{"tag_name":"v{package_version}"}}"#),
+            )
+            .env("FAKE_INSTALL_VERSION", package_version)
             .env("FAKE_CURL_LOG", install.parent().unwrap().join("curl.log"))
             .env("FAKE_BASH_LOG", install.parent().unwrap().join("bash.log"));
         command
@@ -131,7 +137,10 @@ EOF
             String::from_utf8_lossy(&output.stderr)
         );
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("CLI result: installer succeeded (observed version 0.1.112)"));
+        assert!(stdout.contains(&format!(
+            "CLI result: installer succeeded (observed version {})",
+            env!("CARGO_PKG_VERSION")
+        )));
         assert!(stdout.contains("Agent bundle results: aligned installer succeeded"));
         assert_eq!(
             stdout
@@ -206,7 +215,10 @@ EOF
         assert!(output.status.success());
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["data"]["status"], "current");
-        assert_eq!(value["data"]["target_version"], "v0.1.112");
+        assert_eq!(
+            value["data"]["target_version"],
+            format!("v{}", env!("CARGO_PKG_VERSION"))
+        );
         assert_eq!(value["data"]["next_command"], "mdp upgrade --check");
         assert!(!root.join("bash.log").exists());
         fs::remove_dir_all(root).unwrap();
