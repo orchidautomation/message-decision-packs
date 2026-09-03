@@ -254,7 +254,10 @@ fn temporal_health_schema() -> Value {
     })
 }
 
-const STRICT_UTC_TIMESTAMP_PATTERN: &str = r"^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$";
+const STRICT_UTC_TIMESTAMP_PATTERN: &str = r"^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29|(?:[0-9]{3}[1-9]|[0-9]{2}[1-9][0-9]|[0-9][1-9][0-9]{2}|[1-9][0-9]{3})-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$";
+
+// Exact positive u32 range, matching `time::parse_day_cadence`.
+const DAY_CADENCE_PATTERN: &str = r"^P(?:[1-9][0-9]{0,8}|[1-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5])D$";
 
 fn strict_utc_timestamp_schema() -> Value {
     json!({
@@ -2933,7 +2936,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             }
         },
         "$defs": {
-            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": "^P[1-9][0-9]*D$"}, "aging_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}, "stale_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}}},
+            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"type": "string", "pattern": DAY_CADENCE_PATTERN}, "aging_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}, "stale_after_days": {"type": "integer", "minimum": 1, "maximum": 4294967295u64}}},
             "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": strict_utc_timestamp_schema(), "reviewed_at": strict_utc_timestamp_schema(), "revoked_at": strict_utc_timestamp_schema(), "superseded_at": strict_utc_timestamp_schema(), "replacement_group": {"type": "string"}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
             "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": strict_utc_timestamp_schema(), "receipt_ref": {"type": "string"}, "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
         }
@@ -6937,6 +6940,8 @@ mod tests {
             "2025-12-31T23:59:59Z",
         ];
         let invalid = [
+            "0000-01-01T00:00:00Z",
+            "0000-02-29T00:00:00Z",
             "1900-02-29T00:00:00Z",
             "2025-02-29T00:00:00Z",
             "2100-02-29T00:00:00Z",
@@ -6975,6 +6980,35 @@ mod tests {
                 jsonschema::draft202012::validate(&publication, &candidate).is_ok(),
                 expected,
                 "publication disagrees for {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn authored_day_cadence_schema_matches_u32_parser_boundaries() {
+        let cadence =
+            schema(SchemaTarget::Manifest)["$defs"]["review_policy"]["properties"]["cadence"]
+                .clone();
+        for (value, expected) in [
+            ("P1D", true),
+            ("P999999999D", true),
+            ("P1000000000D", true),
+            ("P4294967295D", true),
+            ("P0D", false),
+            ("P01D", false),
+            ("P4294967296D", false),
+            ("P9999999999D", false),
+            ("P42949672950D", false),
+        ] {
+            assert_eq!(
+                crate::time::parse_day_cadence(value).is_some(),
+                expected,
+                "runtime parser expectation changed for {value}"
+            );
+            assert_eq!(
+                jsonschema::draft202012::validate(&cadence, &json!(value)).is_ok(),
+                expected,
+                "manifest schema disagrees for {value}"
             );
         }
     }

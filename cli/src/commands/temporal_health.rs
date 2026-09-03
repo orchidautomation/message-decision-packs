@@ -219,7 +219,14 @@ fn source_state(
         as_of,
         &mut projection_diagnostics,
     );
-    let instant = observed_at.or(published_at);
+    // `observed_at` is the preferred age authority when it is declared. If it
+    // is malformed or in the future, fail closed instead of silently falling
+    // back to the weaker publication clock.
+    let instant = if observed.is_some() {
+        observed_at
+    } else {
+        published_at
+    };
     let hash_match = source_hash_match(source, root);
     if hash_match == Some(false) {
         diagnostics.push(diagnostic(
@@ -1664,6 +1671,27 @@ mod tests {
             );
             let _ = fs::remove_dir_all(root);
         }
+    }
+
+    #[test]
+    fn declared_invalid_observation_does_not_fall_back_to_publication_age() {
+        let root = governed_pack("invalid-observation-no-fallback");
+        let path = root.join(DEFAULT_DIR).join("sources.yaml");
+        let source = fs::read_to_string(&path).unwrap().replace(
+            "observed_at: 2026-01-01T00:00:00Z",
+            "observed_at: 2027-01-01T00:00:00Z\n    published_at: 2020-01-01T00:00:00Z",
+        );
+        fs::write(path, source).unwrap();
+
+        let output = temporal_health(&root, Some("2026-09-02T00:00:00Z")).unwrap();
+        assert_eq!(output["sources"][0]["state"], "unknown");
+        assert_eq!(output["sources"][0]["age_origin_at"], Value::Null);
+        assert_eq!(output["sources"][0]["next_review_at"], Value::Null);
+        assert!(output["diagnostics"].as_array().unwrap().iter().any(|d| {
+            d["code"] == "temporal_timestamp_invalid_or_future"
+                && d["path"] == ".mdp/sources.yaml#/sources/0/temporal/observed_at"
+        }));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
