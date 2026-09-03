@@ -18,8 +18,39 @@ const MAX_REQUEST_TIMEOUT_MS = 60_000
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const SHA256 = /^[0-9a-f]{64}$/
 
+// Received-but-invalid faults mean the provider responded but the received
+// output is unusable; they terminate as no-draft:output-invalid so operators
+// can distinguish a rejected output from transport or availability failure.
+// This single explicit mapping is the classification contract; tests assert it.
+export const FAULT_TERMINAL_STATES = {
+  model_incomplete: 'no-draft:output-invalid',
+  model_refusal: 'no-draft:output-invalid',
+  model_output_missing: 'no-draft:output-invalid',
+  model_output_too_large: 'no-draft:output-invalid',
+  model_output_invalid_json: 'no-draft:output-invalid',
+  model_output_too_deep: 'no-draft:output-invalid',
+  provider_timeout: 'no-draft:runner-failed',
+  provider_transport_error: 'no-draft:runner-failed',
+  provider_http_error: 'no-draft:runner-failed',
+  runtime_fetch_unavailable: 'no-draft:runner-failed',
+  provider_response_headers_too_large: 'no-draft:runner-failed',
+  provider_response_too_large: 'no-draft:runner-failed',
+  provider_response_too_deep: 'no-draft:runner-failed',
+  provider_response_invalid: 'no-draft:runner-failed',
+  request_too_large: 'no-draft:runner-failed',
+  provider_request_too_large: 'no-draft:runner-failed',
+  native_model_calls_not_allowed: 'no-draft:policy-blocked',
+  openai_api_key_missing: 'no-draft:policy-blocked',
+  dry_run_complete: 'no-draft:policy-blocked',
+  output_schema_projection_unsupported: 'no-draft:preflight-refused',
+  request_invalid: 'no-draft:preflight-refused',
+}
+
+const terminalStateForFault = (code) =>
+  FAULT_TERMINAL_STATES[code] || 'no-draft:runner-failed'
+
 class DriverFault extends Error {
-  constructor(code, terminalState = 'no-draft:runner-failed') {
+  constructor(code, terminalState = terminalStateForFault(code)) {
     super(code)
     this.code = code
     this.terminalState = terminalState
@@ -366,7 +397,10 @@ const extractOutputText = (response) => {
     }
   }
   const text = parts.join('').trim()
-  if (!text) fault('provider_response_invalid')
+  // A completed response with no usable text was still received from the
+  // provider: that is a received-but-invalid output, not a transport fault.
+  // Body-read and JSON-parse failures keep provider_response_invalid below.
+  if (!text) fault('model_output_missing')
   return text
 }
 
