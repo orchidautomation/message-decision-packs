@@ -13,7 +13,8 @@ When that aggregate exceeds the execution policy, return the existing safe
 
 - Include the selected prompt bytes in `mdp prepare-run`'s aggregate budget.
 - Add one host-generated runtime policy diagnostic for aggregate prompt plus
-  declared-input overflow, with no input contents or filesystem paths.
+  declared-input overflow, with no input contents or filesystem paths, and
+  admit the new bounded code in the canonical schema.
 - Preserve the existing staging, source-integrity, request-hash, and provider
   boundaries; a budget refusal must happen before native provider execution.
 - Keep the existing scalar `input-too-large` code stable across compiler and
@@ -41,8 +42,8 @@ When that aggregate exceeds the execution policy, return the existing safe
 
 - `cli/src/run_request_compiler.rs`: aggregate preparation accounting and tests.
 - `cli/src/run_runtime.rs`: receipt-free runtime diagnostic and tests.
-- `cli/src/commands/run.rs`: only if the closed failure-envelope assertion
-  requires an additive test or schema-compatible projection adjustment.
+- `cli/src/commands/schemas.rs`: closed policy-diagnostic vocabulary.
+- `cli/src/commands/run.rs`: receipt-free failure-envelope assertion.
 
 The worker must not edit release metadata, generated bundles, private fixtures,
 or unrelated lifecycle records.
