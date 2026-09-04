@@ -207,7 +207,14 @@ fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<Compi
     };
     let mut authorities = BTreeMap::new();
     let mut input_values = Vec::new();
-    let mut total_bytes = 0u64;
+    // The provider-visible request contains both the selected prompt and the
+    // declared inputs. Account for the prompt before adding input files so a
+    // request cannot pass preparation while exceeding the execution budget
+    // only after the prompt is staged at runtime.
+    let mut total_bytes = prompt_bytes.len() as u64;
+    if total_bytes > policy.max_input_bytes {
+        return Err(input_budget_diagnostic(total_bytes, policy.max_input_bytes));
+    }
     for input in declarations {
         let Some(path) = input_paths.get(&input.name) else {
             continue;
@@ -965,7 +972,7 @@ fn parse_input_mappings(values: &[String]) -> Result<BTreeMap<String, PathBuf>> 
     Ok(result)
 }
 
-fn read_regular(path: &Path, max: u64, _label: &str) -> Result<Vec<u8>> {
+fn read_regular(path: &Path, max: u64, label: &str) -> Result<Vec<u8>> {
     let metadata = fs::symlink_metadata(path).map_err(|_| {
         diagnostic(
             "declared-input-unreadable",
@@ -992,6 +999,9 @@ fn read_regular(path: &Path, max: u64, _label: &str) -> Result<Vec<u8>> {
         )
     })?;
     if bytes.len() as u64 > max {
+        if label == "prompt" {
+            return Err(input_budget_diagnostic(bytes.len() as u64, max));
+        }
         return Err(diagnostic(
             "declared-input-too-large",
             "mdp prepare-run --input <name>=<path>",
@@ -1171,8 +1181,8 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::{
-        civil_from_days, diagnostic, input_authority, output_alias, parse_input_mappings,
-        validate_governed_lineage,
+        civil_from_days, diagnostic, input_authority, input_budget_diagnostic, output_alias,
+        parse_input_mappings, validate_governed_lineage,
     };
     use crate::models::{Manifest, ProfileJob, PromptInput};
     use crate::run_contracts::{ArtifactAuthority, EvidenceProvenance};
@@ -1194,6 +1204,19 @@ mod tests {
         let failure = error.downcast_ref::<super::CompilerError>().unwrap();
         assert_eq!(failure.0.contract, super::RUN_REQUEST_COMPILE_V1);
         assert!(!failure.0.next_command.is_empty());
+    }
+
+    #[test]
+    fn input_budget_diagnostic_preserves_safe_aggregate_counts() {
+        let error = input_budget_diagnostic(135_952, 131_072);
+        let failure = error.downcast_ref::<super::CompilerError>().unwrap();
+        assert_eq!(failure.0.code, "input-too-large");
+        assert_eq!(
+            failure.0.message,
+            "input-too-large: aggregate declared input bytes 135952 exceed budget 131072"
+        );
+        assert!(!failure.0.message.contains("prompt contents"));
+        assert!(!failure.0.message.contains("/private/"));
     }
     #[test]
     fn emitted_concise_shape_is_accepted_by_closed_schema() {
