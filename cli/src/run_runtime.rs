@@ -773,7 +773,7 @@ fn prepare_native_request(
             ))
         })
         .collect::<Result<Vec<_>>>()?;
-    let visible_input = native_visible_input(
+    let mut visible_input = native_visible_input(
         &step.prompt_id,
         &step.prompt_version,
         &step.prompt_sha256,
@@ -782,12 +782,29 @@ fn prepare_native_request(
         invocation_content,
         &visible_inputs,
     );
+    let v3_observed_evidence = if step.output_contract.output_kind.as_deref()
+        == Some(crate::constants::OUTPUT_KIND_DECISION_INPUT_NORMALIZATION)
+        && step.output_contract.host_envelope.is_some()
+    {
+        let index = v3_observed_evidence_index(staged_inputs)?;
+        append_v3_observed_evidence_context(&mut visible_input, &index)?;
+        Some(index)
+    } else {
+        None
+    };
     let canonical_output_schema =
         canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
     let canonical_output_schema_sha256 = canonical_json_sha256(&canonical_output_schema)?;
     let provider_schema_source =
         provider_schema_source_for_contract(&canonical_output_schema, &step.output_contract)?;
-    let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
+    let mut provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
+    if let Some(index) = &v3_observed_evidence {
+        let attempt_ids = index
+            .iter()
+            .filter_map(|entry| entry["attempt_id"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        constrain_v3_derived_from_to_observed_ids(&mut provider_output_schema, &attempt_ids);
+    }
     let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
     let schema_name = format!("mdp_{}", request.operation.replace([':', '/', '-'], "_"));
     let model = request
@@ -1284,6 +1301,95 @@ fn native_visible_input(
         visible_input.push_str("\n</mdp-declared-input>\n");
     }
     visible_input
+}
+
+fn v3_observed_evidence_index(staged_inputs: &[StagedInput]) -> Result<Vec<Value>> {
+    let collected = staged_json_value(
+        staged_inputs,
+        &["collected-attempt-results", "collected_attempt_results"],
+        "v3-collected-attempt-results-missing",
+    )?;
+    let attempts = data_object(&collected)["attempt_results"]
+        .as_array()
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-collected-attempt-results-invalid",
+            )
+        })?;
+    let mut seen = HashSet::new();
+    let mut index = Vec::new();
+    for attempt in attempts
+        .iter()
+        .filter(|attempt| attempt["status"] == "observed")
+    {
+        let attempt_id = attempt["attempt_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "v3-collected-attempt-results-invalid",
+                )
+            })?;
+        let attribute_id = attempt["attribute_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "v3-collected-attempt-results-invalid",
+                )
+            })?;
+        if seen.insert(attempt_id.to_owned()) {
+            index.push(json!({
+                "attempt_id": attempt_id,
+                "attribute_id": attribute_id,
+                "source_class": attempt["source_class"]
+            }));
+        }
+    }
+    if index.is_empty() {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "v3-observed-evidence-empty",
+        ));
+    }
+    Ok(index)
+}
+
+fn append_v3_observed_evidence_context(visible_input: &mut String, index: &[Value]) -> Result<()> {
+    visible_input.push_str(
+        "<mdp-derived-context name=\"observed-evidence-index\" rule=\"derived_from-must-copy-attempt_id-verbatim\">\n",
+    );
+    visible_input.push_str(&serde_json::to_string(index)?);
+    visible_input.push_str("\n</mdp-derived-context>\n");
+    Ok(())
+}
+
+fn constrain_v3_derived_from_to_observed_ids(schema: &mut Value, attempt_ids: &[String]) {
+    match schema {
+        Value::Object(object) => {
+            if let Some(derived_from) = object
+                .get_mut("properties")
+                .and_then(Value::as_object_mut)
+                .and_then(|properties| properties.get_mut("derived_from"))
+                .and_then(Value::as_object_mut)
+                && let Some(items) = derived_from.get_mut("items").and_then(Value::as_object_mut)
+            {
+                items.insert("enum".into(), json!(attempt_ids));
+            }
+            for value in object.values_mut() {
+                constrain_v3_derived_from_to_observed_ids(value, attempt_ids);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                constrain_v3_derived_from_to_observed_ids(value, attempt_ids);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn provider_max_output_tokens(max_output_bytes: u64) -> u64 {
@@ -9089,6 +9195,79 @@ mod tests {
         assert!(source["properties"].get("classifications").is_some());
         assert!(source["properties"].get("contract").is_none());
         assert!(source["properties"].get("normalized_input").is_none());
+    }
+
+    fn collect_derived_from_enums(value: &serde_json::Value, found: &mut Vec<serde_json::Value>) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if let Some(items) = object
+                    .get("properties")
+                    .and_then(serde_json::Value::as_object)
+                    .and_then(|properties| properties.get("derived_from"))
+                    .and_then(|derived_from| derived_from.get("items"))
+                    .and_then(serde_json::Value::as_object)
+                    .and_then(|items| items.get("enum"))
+                {
+                    found.push(items.clone());
+                }
+                for child in object.values() {
+                    collect_derived_from_enums(child, found);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for child in values {
+                    collect_derived_from_enums(child, found);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn v3_provider_schema_limits_all_lineage_to_observed_attempt_ids() {
+        let mut schema = crate::commands::v3_normalization::v3_semantic_provider_schema();
+        let observed = vec![
+            "1password-v7-001".to_string(),
+            "1password-v7-019".to_string(),
+        ];
+        super::constrain_v3_derived_from_to_observed_ids(&mut schema, &observed);
+
+        let mut enums = Vec::new();
+        collect_derived_from_enums(&schema, &mut enums);
+        assert!(!enums.is_empty());
+        assert!(
+            enums
+                .iter()
+                .all(|value| value == &serde_json::json!(observed))
+        );
+        assert!(enums.iter().all(|value| {
+            !value
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("1password-v7-009"))
+        }));
+    }
+
+    #[test]
+    fn v3_observed_evidence_index_excludes_not_found_attempts_from_model_context() {
+        let mut staged = v3_staged_inputs(&"a".repeat(64));
+        let temp = materialize_v3_staged_inputs(&mut staged);
+        let index = super::v3_observed_evidence_index(&staged).unwrap();
+        assert_eq!(
+            index,
+            vec![serde_json::json!({
+                "attempt_id": "synthetic-attempt-001",
+                "attribute_id": "person_title",
+                "source_class": "synthetic_fixture"
+            })]
+        );
+
+        let mut visible = String::new();
+        super::append_v3_observed_evidence_context(&mut visible, &index).unwrap();
+        assert!(visible.contains("synthetic-attempt-001"));
+        assert!(!visible.contains("synthetic-attempt-002"));
+        assert!(visible.contains("derived_from-must-copy-attempt_id-verbatim"));
+        let _ = std::fs::remove_dir_all(temp);
     }
 
     #[test]
