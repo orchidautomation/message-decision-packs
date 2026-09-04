@@ -1,0 +1,43 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "codex/mdp-374-runtime-budget-diagnostic-worktree",
+  "sourceCommit": "ad17375dc5fa212292a19ffa11e4ad7dab75a6ab",
+  "plan": {
+    "path": "docs/orchid/plans/2026-09-04-mdp-374-runtime-budget-diagnostic.md",
+    "sha256": "e8a97f467f78928b27b366774b92bc2507ba0bcfc45b084182a8fd11376249e8",
+    "sourceRef": "codex/mdp-374-runtime-budget-diagnostic-worktree",
+    "sourceCommit": "ad17375dc5fa212292a19ffa11e4ad7dab75a6ab"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "sol-implementation-exception",
+  "delivery": {
+    "shape": "cumulative-pr",
+    "sourceRef": "codex/mdp-374-runtime-budget-diagnostic-worktree",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    "docs/orchid/qa"
+  ],
+  "lunaLanes": [],
+  "exceptionReason": "visible-dispatch-unavailable",
+  "exceptionPaths": [
+    "cli/src/run_request_compiler.rs",
+    "cli/src/run_runtime.rs",
+    "cli/src/commands/schemas.rs",
+    "cli/src/commands/run.rs"
+  ],
+  "exceptionJustification": "The canonical visible Luna dispatch was attempted with the pinned MDP-374 graph and failed before thread creation because the Orchid app-server could not initialize its SQLite state under the read-only /home/brandon/.codex host path. Direct Sol implementation is therefore recorded as a narrow exception over the four listed implementation paths only; no hidden worker, Fast claim, provider call, release, install, private canary, or external mutation is claimed.",
+  "validation": [
+    "cargo fmt --manifest-path cli/Cargo.toml -- --check: passed",
+    "cargo test --manifest-path cli/Cargo.toml input_budget: 3 passed, 0 failed",
+    "cargo test --manifest-path cli/Cargo.toml v3_normalization: 23 passed, 0 failed",
+    "cargo test --manifest-path cli/Cargo.toml -- --test-threads=1: 894 unit tests and all integration tests passed",
+    "Default parallel full test run had one existing timing-sensitive deadline assertion; the same test passed in isolation and the serial full run passed.",
+    "Provider, release, install, deployment, and private 1Password canary gates were not run because they require separate action-time authority."
+  ],
+  "verdict": "valid",
+  "observedAt": "2026-09-04T17:14:44Z"
+}
