@@ -332,6 +332,53 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_input_budget_failure_is_schema_valid_and_bounded() {
+        let diagnostic = crate::run_runtime::RunDiagnostic {
+            stage: "run-preflight",
+            gate: "declared-inputs",
+            code: "input-too-large",
+            input: None,
+            field: None,
+            expected: crate::run_runtime::DiagnosticValue {
+                kind: "count",
+                value: crate::run_runtime::DiagnosticScalar::Count(131_072),
+            },
+            observed: crate::run_runtime::DiagnosticValue {
+                kind: "count",
+                value: crate::run_runtime::DiagnosticScalar::Count(135_952),
+            },
+        };
+        let result = super::failure_result(
+            "aggregate-budget",
+            super::RunFailureKind::PolicyBlocked,
+            "input-too-large",
+            &[diagnostic],
+            None,
+            None,
+        );
+        let authority_block = &result["authority_block"];
+        assert_eq!(
+            authority_block["reason_codes"],
+            serde_json::json!(["input-too-large"])
+        );
+        assert_eq!(authority_block["diagnostics"][0]["code"], "input-too-large");
+        assert_eq!(
+            authority_block["diagnostics"][0]["observed"],
+            serde_json::json!({"kind": "count", "value": 135_952})
+        );
+        jsonschema::draft202012::validate(
+            &crate::commands::schemas::schema(crate::cli::SchemaTarget::CanonicalAuthorityBlockV1),
+            authority_block,
+        )
+        .expect("aggregate input budget authority block should match its schema");
+        assert!(
+            !serde_json::to_string(&result)
+                .unwrap()
+                .contains("/private/customer")
+        );
+    }
+
+    #[test]
     fn pack_profile_mismatch_returns_sanitized_policy_blocked() {
         let root = std::env::temp_dir().join(format!(
             "mdp-run-command-profile-{}",

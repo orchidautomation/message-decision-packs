@@ -2389,7 +2389,7 @@ fn policy_diagnostic_schema() -> Value {
         "properties": {
             "stage": {"enum": ["run-preflight", "generative-preflight", "source-integrity"]},
             "gate": {"enum": ["policy", "routed-context-schema", "routed-context-readiness", "declared-inputs", "declared-input-immutability"]},
-            "code": {"enum": ["malformed-json", "wrong-contract", "missing-required-field", "disallowed-field", "readiness-failure", "stale-binding", "internal-contract-mismatch"]},
+            "code": {"enum": ["malformed-json", "wrong-contract", "missing-required-field", "disallowed-field", "readiness-failure", "stale-binding", "input-too-large", "internal-contract-mismatch"]},
             "input": {"anyOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$"}]},
             "field": {"enum": [null, "/contract", "/job", "/persona", "/scope", "/product_foundation", "/product_foundation_load_order", "/entries", "/gaps", "/policy", "/unknown-field"]},
             "expected": diagnostic_value_schema(),

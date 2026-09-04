@@ -266,9 +266,13 @@ fn diagnostic_value(kind: &'static str, value: &'static str) -> DiagnosticValue 
 }
 
 fn count_value(value: usize) -> DiagnosticValue {
+    count_value_u64(value as u64)
+}
+
+fn count_value_u64(value: u64) -> DiagnosticValue {
     DiagnosticValue {
         kind: "count",
-        value: DiagnosticScalar::Count(value as u64),
+        value: DiagnosticScalar::Count(value),
     }
 }
 
@@ -387,6 +391,26 @@ fn source_integrity_diagnostic(subject: &str) -> RunDiagnostic {
 
 fn source_integrity_input_diagnostic(input: &StagedInput) -> RunDiagnostic {
     source_integrity_diagnostic(&input.logical_name)
+}
+
+fn input_budget_diagnostic(total: u64, limit: u64) -> RunDiagnostic {
+    policy_diagnostic(
+        "run-preflight",
+        "declared-inputs",
+        "input-too-large",
+        None,
+        None,
+        count_value_u64(limit),
+        count_value_u64(total),
+    )
+}
+
+fn input_budget_failure(total: u64, limit: u64) -> anyhow::Error {
+    run_failure_with_diagnostic(
+        RunFailureKind::PolicyBlocked,
+        "input-too-large",
+        input_budget_diagnostic(total, limit),
+    )
 }
 
 #[derive(Debug)]
@@ -1989,6 +2013,19 @@ where
         ));
     }
 
+    // Generative requests expose the selected prompt and every declared input
+    // to the native driver. Reject an aggregate overflow from metadata before
+    // staging or provider execution, while leaving unsafe/unreadable files to
+    // the existing staging diagnostics.
+    if let Some(total_bytes) = aggregate_generative_input_bytes(request)
+        && total_bytes > request.execution_policy.max_input_bytes
+    {
+        return Err(input_budget_failure(
+            total_bytes,
+            request.execution_policy.max_input_bytes,
+        ));
+    }
+
     let staged = stage_inputs(request, &staged_inputs)
         .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "declared-input-refused"))?;
     deadline.check_phase(DeadlinePhase::Staging)?;
@@ -2012,6 +2049,12 @@ where
         )
         .ok_or_else(|| anyhow!("declared input byte count overflow"))?;
     if total_staged_bytes > request.execution_policy.max_input_bytes {
+        if request.mode == RunMode::Generative {
+            return Err(input_budget_failure(
+                total_staged_bytes,
+                request.execution_policy.max_input_bytes,
+            ));
+        }
         return Err(run_failure(
             RunFailureKind::PolicyBlocked,
             "declared-input-refused",
@@ -5312,6 +5355,33 @@ fn read_bounded(path: &Path, max_bytes: u64, label: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+fn aggregate_generative_input_bytes(request: &RunRequestV1) -> Option<u64> {
+    if request.mode != RunMode::Generative {
+        return None;
+    }
+
+    let prompt = request.prompt.as_ref()?;
+    let mut total = regular_file_len(&prompt.source_path)?;
+    for input in &request.inputs {
+        total = total.checked_add(regular_file_len(&input.source_path)?)?;
+    }
+    Some(total)
+}
+
+fn regular_file_len(path: &str) -> Option<u64> {
+    let metadata = fs::symlink_metadata(path).ok()?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return None;
+    }
+    #[cfg(unix)]
+    use std::os::unix::fs::MetadataExt;
+    #[cfg(unix)]
+    if metadata.nlink() > 1 {
+        return None;
+    }
+    Some(metadata.len())
+}
+
 fn stage_inputs(request: &RunRequestV1, target: &Path) -> Result<Vec<StagedInput>> {
     let mut total_bytes = 0u64;
     request
@@ -5996,6 +6066,50 @@ mod tests {
             );
             assert!(!run.exists());
         }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn aggregate_generative_input_budget_refuses_before_driver_without_paths() {
+        let root = temp_path("aggregate-input-budget");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        init_pack(&pack, "Aggregate Input Budget Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, b"small\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        let prompt_path = request.prompt.as_ref().unwrap().source_path.clone();
+        let prompt_bytes = fs::metadata(&prompt_path).unwrap().len();
+        assert!(prompt_bytes < super::MAX_NATIVE_DECLARED_INPUT_BYTES);
+        let raw_bytes = super::MAX_NATIVE_DECLARED_INPUT_BYTES - prompt_bytes + 1;
+        fs::write(&raw, vec![b'x'; usize::try_from(raw_bytes).unwrap()]).unwrap();
+
+        let run = root.join("published-run");
+        let error = execute_run_inner_with_driver(
+            &request,
+            &run,
+            || Ok(()),
+            |_, _| panic!("aggregate input overflow must not invoke the driver"),
+        )
+        .unwrap_err();
+        let failure = error.downcast_ref::<RunFailure>().unwrap();
+        assert!(matches!(failure.kind(), RunFailureKind::PolicyBlocked));
+        assert_eq!(failure.code(), "input-too-large");
+        let diagnostics = serde_json::to_value(failure.diagnostics()).unwrap();
+        assert_eq!(diagnostics[0]["stage"], "run-preflight");
+        assert_eq!(diagnostics[0]["gate"], "declared-inputs");
+        assert_eq!(diagnostics[0]["code"], "input-too-large");
+        assert_eq!(
+            diagnostics[0]["expected"],
+            serde_json::json!({"kind": "count", "value": super::MAX_NATIVE_DECLARED_INPUT_BYTES})
+        );
+        assert_eq!(
+            diagnostics[0]["observed"],
+            serde_json::json!({"kind": "count", "value": super::MAX_NATIVE_DECLARED_INPUT_BYTES + 1})
+        );
+        let serialized = serde_json::to_string(&diagnostics).unwrap();
+        assert!(!serialized.contains(root.to_str().unwrap()));
+        assert!(!run.exists());
         let _ = fs::remove_dir_all(root);
     }
 
