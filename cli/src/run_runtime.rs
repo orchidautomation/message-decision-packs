@@ -7429,10 +7429,13 @@ mod tests {
         init_pack(&pack, "Deadline Pack", "gtm", true, false).unwrap();
         fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
         let mut request = generative_request_fixture(&pack, &raw);
-        request.execution_policy.timeout_ms = 5_000;
+        // Keep enough headroom for pack staging on loaded CI workers. The
+        // previous five-second budget could expire during staging, making
+        // this assertion about finalization phase timing flaky.
+        request.execution_policy.timeout_ms = 10_000;
         refresh_test_native_declarations(&mut request);
         let transaction = root.join("tx");
-        let deadline = RunDeadline::new(5_000);
+        let deadline = RunDeadline::new(10_000);
         // The driver classifies the run as received-but-invalid output, then
         // the forced post-step deadline expiry replaces that outcome. The
         // published diagnostic must name the timeout phase, not the stale
@@ -7442,7 +7445,7 @@ mod tests {
             &transaction,
             &deadline,
             || {
-                std::thread::sleep(std::time::Duration::from_millis(5_600));
+                std::thread::sleep(std::time::Duration::from_millis(10_600));
                 Ok(())
             },
             |driver_request, _, _| {
