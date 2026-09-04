@@ -14,9 +14,33 @@ Repository layout:
 - `plugin/assets/templates/`: starter packs.
 - `docs/`: design and distribution documentation.
 
+## Public CLI And Private Cloud Boundary
+
+- This repository owns the public MDP standard, Rust CLI, deterministic
+  runtime, schemas, receipts, plugin, templates, and local workflows.
+- Proprietary hosted product work belongs in
+  `orchidautomation/mdp-cloud`. Do not add customer OAuth, SaaS adapters,
+  hosted storage, tenancy, enterprise approvals or permissions, billing, or
+  Cloud UI implementation here.
+- A Cloud requirement changes this repository only when the public CLI must
+  support a provider-neutral contract. Keep Cloud storage, orchestration, and
+  product behavior out of that public contract.
+- MDP Cloud consumes released public CLI contracts. Do not copy private Cloud
+  behavior into this repository or make the public CLI depend on the Cloud.
+- Cross-repository delivery requires one Linear implementation issue and one PR
+  per writable repository. A supporting repository is read-only unless its own
+  linked issue explicitly authorizes changes.
+
 ## Orchid Routing
 
 - Linear team: MDP
+- Every new or updated MDP issue must carry exactly one product label:
+  - `product:cli` for this public standard, CLI, plugin, or local runtime.
+  - `product:cloud` for proprietary hosted-product work.
+  - `product:shared-contract` only for an explicit boundary required by both.
+- A `product:shared-contract` label does not authorize one issue or agent to
+  write both repositories. Split implementation into repo-specific linked
+  issues with exactly one primary writable repository each.
 
 ## Working Rules
 
