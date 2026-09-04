@@ -92,6 +92,8 @@ pub(crate) struct SemanticGapV3 {
 pub(crate) struct SemanticRejectedClaimV3 {
     pub(crate) claim: String,
     pub(crate) reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) derived_from: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -294,9 +296,9 @@ fn issue_expected_category(code: &str) -> &'static str {
             "bounded-value"
         }
         "v3_classification_unknown_taxonomy" => "selected-taxonomy",
-        "v3_classification_unknown_evidence_ref" | "v3_gap_unknown_evidence_ref" => {
-            "collected-attempt-id"
-        }
+        "v3_classification_unknown_evidence_ref"
+        | "v3_gap_unknown_evidence_ref"
+        | "v3_rejected_claim_unknown_evidence_ref" => "collected-attempt-id",
         "v3_classification_unknown_attribute" | "v3_gap_unknown_attribute" => {
             "compiled-attribute-id"
         }
@@ -324,6 +326,7 @@ fn issue_observed_category(code: &str) -> &'static str {
         | "v3_classification_unknown_attribute"
         | "v3_gap_unknown_evidence_ref"
         | "v3_gap_unknown_attribute"
+        | "v3_rejected_claim_unknown_evidence_ref"
         | "v3_classification_invalid_status" => "unrecognized",
         _ => "invalid",
     }
@@ -618,8 +621,14 @@ fn v3_rejected_claim_object_schema() -> Value {
         "additionalProperties": false,
         "required": ["claim", "reason"],
         "properties": {
-            "claim": { "type": "string", "minLength": 1 },
-            "reason": { "type": "string", "minLength": 1 }
+            "claim": { "type": "string", "minLength": 1, "maxLength": V3_BASIS_MAX_CHARS_HARD_LIMIT },
+            "reason": { "type": "string", "minLength": 1, "maxLength": V3_BASIS_MAX_CHARS_HARD_LIMIT },
+            "derived_from": {
+                "type": "array",
+                "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1, "maxLength": V3_IDENTIFIER_MAX_LEN }
+            }
         }
     })
 }
@@ -877,6 +886,14 @@ pub(crate) fn normalize_v3_semantic_reference_arrays(value: &mut Value) {
     if let Some(gaps) = value.get_mut("gaps").and_then(Value::as_array_mut) {
         for gap in gaps {
             deduplicate_v3_reference_array(gap.get_mut("derived_from"));
+        }
+    }
+    if let Some(claims) = value
+        .get_mut("rejected_claims")
+        .and_then(Value::as_array_mut)
+    {
+        for claim in claims {
+            deduplicate_v3_reference_array(claim.get_mut("derived_from"));
         }
     }
 }
@@ -1144,6 +1161,16 @@ pub(crate) fn validate_v3_semantic_payload(
                 "non-empty",
                 "<empty>",
             ));
+        }
+        for attempt_id in &claim.derived_from {
+            if !known_attempt_ids.iter().any(|id| id == attempt_id) {
+                issues.push(V3Issue::new(
+                    "v3_rejected_claim_unknown_evidence_ref",
+                    "$.rejected_claims[*].derived_from",
+                    "collected attempt_id",
+                    attempt_id.as_str(),
+                ));
+            }
         }
     }
     if issues.is_empty() {
@@ -1621,6 +1648,26 @@ mod tests {
             error
                 .iter()
                 .any(|issue| issue.code == "v3_classification_missing_value")
+        );
+    }
+
+    #[test]
+    fn semantic_payload_rejects_unknown_rejected_claim_evidence() {
+        let payload = json!({
+            "classifications": {},
+            "gaps": [],
+            "rejected_claims": [{
+                "claim": "unsupported claim",
+                "reason": "not evidenced",
+                "derived_from": ["attempt-not-collected"]
+            }]
+        });
+        let error = validate_v3_semantic_payload(&payload, &[], &[], &["attempt-collected".into()])
+            .unwrap_err();
+        assert!(
+            error
+                .iter()
+                .any(|issue| { issue.code == "v3_rejected_claim_unknown_evidence_ref" })
         );
     }
 
