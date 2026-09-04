@@ -219,14 +219,11 @@ fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<Compi
                 "mdp prepare-run --input <name>=<path>",
             )
         })?;
-        total_bytes = total_bytes.checked_add(bytes.len() as u64).ok_or_else(|| {
-            diagnostic("input-too-large", "mdp prepare-run --input <name>=<path>")
-        })?;
+        total_bytes = total_bytes
+            .checked_add(bytes.len() as u64)
+            .ok_or_else(|| input_budget_diagnostic(u64::MAX, policy.max_input_bytes))?;
         if total_bytes > policy.max_input_bytes {
-            return Err(diagnostic(
-                "input-too-large",
-                "mdp prepare-run --input <name>=<path>",
-            ));
+            return Err(input_budget_diagnostic(total_bytes, policy.max_input_bytes));
         }
         let schema = input_authority(input, &manifest, selected_job)?;
         let sha = sha256_hex(&bytes);
@@ -1127,6 +1124,17 @@ fn diagnostic(code: &str, next: &str) -> anyhow::Error {
         contract: RUN_REQUEST_COMPILE_V1.into(),
         message: format!("{code}: preparation refused"),
         next_command: next.into(),
+    }))
+}
+
+fn input_budget_diagnostic(total: u64, max: u64) -> anyhow::Error {
+    anyhow::Error::new(CompilerError(CompilerDiagnostic {
+        code: "input-too-large".into(),
+        contract: RUN_REQUEST_COMPILE_V1.into(),
+        message: format!(
+            "input-too-large: aggregate declared input bytes {total} exceed budget {max}"
+        ),
+        next_command: "mdp prepare-run --input <name>=<path>".into(),
     }))
 }
 
