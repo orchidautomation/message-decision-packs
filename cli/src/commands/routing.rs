@@ -2104,6 +2104,27 @@ fn contains_tracking_reference(raw: &str) -> bool {
     )
 }
 
+fn contains_standalone_number(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_digit() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        let joined_left = start > 0 && bytes[start - 1].is_ascii_alphabetic();
+        let joined_right = index < bytes.len() && bytes[index].is_ascii_alphabetic();
+        if !joined_left && !joined_right {
+            return true;
+        }
+    }
+    false
+}
+
 fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
     let mut hits = Vec::new();
     let mut push_hit = |category: &str, trigger: &str, reason: &str| {
@@ -2116,7 +2137,10 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
         }
     };
 
-    let has_number = text.chars().any(|c| c.is_ascii_digit());
+    // A digit embedded in a brand or identifier (for example, "1Password")
+    // is not a quantified outcome. Only treat a numeric run as quantitative
+    // when it is not joined to an ASCII letter on either side.
+    let has_number = contains_standalone_number(text);
     if ((text.contains('%') || text.contains(" percent") || has_number)
         && contains_actionable_any(
             text,
@@ -4746,6 +4770,47 @@ optional:
                 "missing unsupported category {expected}"
             );
         }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_does_not_treat_brand_digits_as_quantified_outcomes() {
+        let root = temp_pack("claim-brand-digit-not-quantity");
+
+        let safe = check_claims(
+            &root,
+            Some("1Password is building agent-assisted revenue workflows."),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("brand-digit claim check should succeed");
+        assert!(
+            safe["unsupported_claims"]
+                .as_array()
+                .expect("unsupported claims array")
+                .iter()
+                .all(|claim| claim["category"] != "quantified-outcome")
+        );
+
+        let quantified = check_claims(
+            &root,
+            Some("This improves revenue by 10 percent."),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("quantified claim check should succeed");
+        assert!(
+            quantified["unsupported_claims"]
+                .as_array()
+                .expect("unsupported claims array")
+                .iter()
+                .any(|claim| claim["category"] == "quantified-outcome")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

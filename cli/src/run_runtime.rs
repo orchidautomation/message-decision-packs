@@ -822,15 +822,23 @@ fn prepare_native_request(
     let canonical_output_schema =
         canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
     let canonical_output_schema_sha256 = canonical_json_sha256(&canonical_output_schema)?;
-    let provider_schema_source =
-        provider_schema_source_for_contract(&canonical_output_schema, &step.output_contract)?;
-    let mut provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
+    let mut provider_schema_source = if v3_observed_evidence.is_some() {
+        v3_semantic_provider_schema()
+    } else {
+        provider_schema_source_for_contract(&canonical_output_schema, &step.output_contract)?
+    };
     if let Some(index) = &v3_observed_evidence {
-        let attempt_ids = index
-            .iter()
-            .filter_map(|entry| entry["attempt_id"].as_str().map(str::to_owned))
-            .collect::<Vec<_>>();
-        constrain_v3_derived_from_to_observed_ids(&mut provider_output_schema, &attempt_ids);
+        constrain_v3_classifications_to_eligible_evidence(
+            &mut provider_schema_source,
+            staged_inputs,
+            index,
+        )?;
+    }
+    let mut provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
+    if step.output_contract.output_kind.as_deref() == Some("governed-artifact")
+        && step.output_contract.host_envelope.is_some()
+    {
+        constrain_governed_selected_authority(&mut provider_output_schema, staged_inputs)?;
     }
     let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
     let schema_name = format!("mdp_{}", request.operation.replace([':', '/', '-'], "_"));
@@ -1394,29 +1402,133 @@ fn append_v3_observed_evidence_context(visible_input: &mut String, index: &[Valu
     Ok(())
 }
 
-fn constrain_v3_derived_from_to_observed_ids(schema: &mut Value, attempt_ids: &[String]) {
-    match schema {
-        Value::Object(object) => {
-            if let Some(derived_from) = object
-                .get_mut("properties")
-                .and_then(Value::as_object_mut)
-                .and_then(|properties| properties.get_mut("derived_from"))
-                .and_then(Value::as_object_mut)
-                && let Some(items) = derived_from.get_mut("items").and_then(Value::as_object_mut)
-            {
-                items.insert("enum".into(), json!(attempt_ids));
-            }
-            for value in object.values_mut() {
-                constrain_v3_derived_from_to_observed_ids(value, attempt_ids);
+fn constrain_v3_classifications_to_eligible_evidence(
+    schema: &mut Value,
+    staged_inputs: &[StagedInput],
+    observed: &[Value],
+) -> Result<()> {
+    let requirements = staged_json_value(
+        staged_inputs,
+        &["decision-input-requirements", "decision_input_requirements"],
+        "v3-requirements-source-missing",
+    )?;
+    let taxonomies: Vec<ClassificationTaxonomy> = serde_json::from_value(
+        data_object(&requirements)["classification_specification"]["taxonomies"].clone(),
+    )
+    .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "v3-taxonomy-set-invalid"))?;
+    let classifications = schema
+        .get_mut("properties")
+        .and_then(Value::as_object_mut)
+        .and_then(|properties| properties.get_mut("classifications"))
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-provider-schema-classifications-missing",
+            )
+        })?;
+    let template = classifications
+        .get("additionalProperties")
+        .cloned()
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-provider-schema-classification-template-missing",
+            )
+        })?;
+    let mut properties = serde_json::Map::new();
+    let mut required = Vec::new();
+    for taxonomy in taxonomies {
+        let allowed_sources = taxonomy
+            .source_classes
+            .iter()
+            .filter_map(|source| serde_json::to_value(source).ok())
+            .filter_map(|source| source.as_str().map(str::to_owned))
+            .collect::<HashSet<_>>();
+        let eligible = observed
+            .iter()
+            .filter(|entry| {
+                entry["attribute_id"].as_str().is_some_and(|attribute| {
+                    taxonomy
+                        .contributor_attribute_ids
+                        .iter()
+                        .any(|candidate| candidate == attribute)
+                }) && entry["source_class"]
+                    .as_str()
+                    .is_some_and(|source| allowed_sources.contains(source))
+            })
+            .collect::<Vec<_>>();
+        let eligible_ids = eligible
+            .iter()
+            .filter_map(|entry| entry["attempt_id"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        let contributor_count = eligible
+            .iter()
+            .filter_map(|entry| entry["attribute_id"].as_str())
+            .collect::<HashSet<_>>()
+            .len();
+        let mut entry = template.clone();
+        let branches = entry["anyOf"].as_array_mut().ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-provider-schema-classification-template-invalid",
+            )
+        })?;
+        for branch in branches.iter_mut() {
+            branch["properties"]["taxonomy_id"] = json!({"type":"string","const":taxonomy.id});
+            branch["properties"]["taxonomy_version"] =
+                json!({"type":"string","const":taxonomy.version});
+            branch["properties"]["derived_from"]["items"]["enum"] = json!(eligible_ids);
+            if branch["properties"]["status"]["const"] == "classified" {
+                branch["properties"]["value"]["enum"] = json!(taxonomy.canonical_values());
+                branch["properties"]["derived_from"]["minItems"] =
+                    json!(taxonomy.minimum_evidence.observed_contributors);
+            } else {
+                branch["properties"]["derived_from"]["minItems"] = json!(0);
             }
         }
-        Value::Array(values) => {
-            for value in values {
-                constrain_v3_derived_from_to_observed_ids(value, attempt_ids);
-            }
+        if contributor_count < taxonomy.minimum_evidence.observed_contributors as usize {
+            branches.retain(|branch| branch["properties"]["status"]["const"] != "classified");
         }
-        _ => {}
+        required.push(taxonomy.output_attribute.clone());
+        properties.insert(taxonomy.output_attribute, entry);
     }
+    classifications.insert("additionalProperties".into(), Value::Bool(false));
+    classifications.insert("properties".into(), Value::Object(properties));
+    classifications.insert("required".into(), json!(required));
+
+    // Gaps and rejected claims are semantic output too. Their evidence refs
+    // are checked against collected attempt IDs by the local validator, so
+    // project that same closed vocabulary into the provider schema instead
+    // of allowing the provider to invent a well-shaped reference.
+    let observed_ids = observed
+        .iter()
+        .filter_map(|entry| entry["attempt_id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    let compiled_attribute_ids = data_object(&requirements)["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|contract| contract["attributes"].as_array().into_iter().flatten())
+        .filter_map(|attribute| attribute["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    let gap_branches = schema["properties"]["gaps"]["items"]["anyOf"]
+        .as_array_mut()
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-provider-schema-gaps-invalid",
+            )
+        })?;
+    for branch in gap_branches {
+        branch["properties"]["attribute"]["enum"] = json!(compiled_attribute_ids);
+        if branch["properties"].get("derived_from").is_some() {
+            branch["properties"]["derived_from"]["items"]["enum"] = json!(observed_ids);
+        }
+    }
+    schema["properties"]["rejected_claims"]["items"]["properties"]["derived_from"]["items"]["enum"] =
+        json!(observed_ids);
+    Ok(())
 }
 
 fn provider_max_output_tokens(max_output_bytes: u64) -> u64 {
@@ -3253,6 +3365,7 @@ where
     let valid = validation["valid"].as_bool() == Some(true);
     let validation_diagnostic =
         (!valid).then(|| sanitized_prompt_validation_diagnostic(&validation));
+    let validation_detail = (!valid).then(|| prompt_validation_diagnostic_detail(&validation));
     let diagnostic_phase = validation_diagnostic
         .is_some()
         .then(|| "validation".to_string());
@@ -3280,7 +3393,7 @@ where
         provider_observation: result.provider_observation,
         diagnostic_code: validation_diagnostic,
         diagnostic_phase,
-        diagnostic_detail: None,
+        diagnostic_detail: validation_detail,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
     })
@@ -3383,6 +3496,7 @@ fn sanitized_prompt_validation_diagnostic(validation: &Value) -> String {
                 })
                 && [
                     "decision_input_",
+                    "governed_artifact_",
                     "v3_",
                     "prompt_output_",
                     "source_",
@@ -3393,6 +3507,95 @@ fn sanitized_prompt_validation_diagnostic(validation: &Value) -> String {
         });
     code.map(|code| code.replace('_', "-"))
         .unwrap_or_else(|| "prompt-output-validation-failed".into())
+}
+
+fn prompt_validation_diagnostic_detail(validation: &Value) -> DiagnosticDetailV1 {
+    let issue = validation["issues"]
+        .as_array()
+        .and_then(|issues| issues.first());
+    let code = sanitized_prompt_validation_diagnostic(validation);
+    let raw_path = issue
+        .and_then(|issue| issue["path"].as_str())
+        .and_then(|path| {
+            path.split_once('#')
+                .map(|(_, fragment)| fragment)
+                .or(Some(path))
+        })
+        .unwrap_or("$");
+    let path = safe_prompt_validation_path(raw_path);
+    let (expected, observed) = match code.as_str() {
+        "governed-artifact-context-sha256-mismatch"
+        | "governed-artifact-prompt-sha256-mismatch"
+        | "governed-artifact-invocation-receipt-sha256-mismatch" => {
+            ("exact-sha256", "hash-mismatch")
+        }
+        code if code.ends_with("-missing") => ("required-value", "missing"),
+        code if code.ends_with("-type") => ("json-type", "wrong-type"),
+        code if code.ends_with("-schema-mismatch") => ("schema-constraint", "invalid"),
+        code if code.ends_with("-undeclared") => ("declared-authority", "undeclared"),
+        code if code.ends_with("-mismatch") => ("matching-authority", "mismatch"),
+        _ => ("validation-contract", "rejected"),
+    };
+    DiagnosticDetailV1 {
+        code,
+        path,
+        expected: expected.into(),
+        observed: observed.into(),
+    }
+}
+
+fn safe_prompt_validation_path(raw_path: &str) -> String {
+    const SAFE_FIELDS: &[&str] = &[
+        "contract",
+        "prompt_id",
+        "job_id",
+        "prompt_version",
+        "prompt_sha256",
+        "context_sha256",
+        "invocation_receipt_sha256",
+        "source_summary",
+        "inputs_used",
+        "selected_authority",
+        "artifact",
+        "status",
+        "channel",
+        "linkedin_surface",
+        "message_stage",
+        "message_basis",
+        "angle_id",
+        "cta_id",
+        "claim_ids",
+        "evidence_ids",
+        "subject_options",
+        "message_body",
+        "gaps",
+        "rejected_claims",
+    ];
+    let pointer = raw_path.strip_prefix('$').unwrap_or(raw_path);
+    let mut safe = String::from("$");
+    for segment in pointer
+        .strip_prefix('/')
+        .unwrap_or(pointer)
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+    {
+        let decoded = segment.replace("~1", "/").replace("~0", "~");
+        let projected =
+            if decoded.len() <= 6 && decoded.chars().all(|character| character.is_ascii_digit()) {
+                decoded.as_str()
+            } else if SAFE_FIELDS.contains(&decoded.as_str()) {
+                decoded.as_str()
+            } else {
+                "*"
+            };
+        safe.push('/');
+        safe.push_str(projected);
+        if safe.len() >= 256 {
+            safe.truncate(256);
+            break;
+        }
+    }
+    safe
 }
 
 fn generative_success_artifacts(
@@ -3980,6 +4183,105 @@ fn infer_enum_type(value: &Value) -> Result<&'static str> {
     ))
 }
 
+fn constrain_governed_selected_authority(
+    provider_schema: &mut Value,
+    staged_inputs: &[StagedInput],
+) -> Result<()> {
+    let routed_context = staged_json_value(
+        staged_inputs,
+        &["routed_context", "routed-context"],
+        "host-context-source-missing",
+    )?;
+    let mut allowed = std::collections::BTreeSet::new();
+    let mut angle_ids = std::collections::BTreeSet::new();
+    let mut cta_ids = std::collections::BTreeSet::new();
+    let mut claim_ids = std::collections::BTreeSet::new();
+    let mut evidence_ids = std::collections::BTreeSet::new();
+    for entry in routed_context["entries"].as_array().into_iter().flatten() {
+        if let (Some(card_id), Some(entry_id)) =
+            (entry["card_id"].as_str(), entry["entry_id"].as_str())
+        {
+            allowed.insert(format!("{card_id}/{entry_id}"));
+            match entry["card_kind"].as_str() {
+                Some("positioning" | "hooks" | "motions") => {
+                    angle_ids.insert(entry_id.to_string());
+                }
+                Some("ctas") => {
+                    cta_ids.insert(entry_id.to_string());
+                }
+                Some("claims") => {
+                    claim_ids.insert(entry_id.to_string());
+                }
+                _ => {}
+            }
+            evidence_ids.extend(
+                entry["evidence"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string),
+            );
+        }
+    }
+    for reference in routed_context["product_foundation_load_order"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|reference| reference["reference_kind"] == "entry")
+    {
+        if let (Some(card_id), Some(entry_id)) = (
+            reference["card_id"].as_str(),
+            reference["entry_id"].as_str(),
+        ) {
+            allowed.insert(format!("{card_id}/{entry_id}"));
+        }
+    }
+    if allowed.is_empty() {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "provider-authority-enum-empty",
+        ));
+    }
+    let items = provider_schema
+        .pointer_mut("/properties/selected_authority/items")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "provider-authority-schema-missing",
+            )
+        })?;
+    items.insert(
+        "enum".into(),
+        Value::Array(allowed.into_iter().map(Value::String).collect()),
+    );
+    for (pointer, values) in [
+        ("/properties/artifact/properties/angle_id", angle_ids),
+        ("/properties/artifact/properties/cta_id", cta_ids),
+        ("/properties/artifact/properties/claim_ids/items", claim_ids),
+        (
+            "/properties/artifact/properties/evidence_ids/items",
+            evidence_ids,
+        ),
+    ] {
+        let Some(field) = provider_schema
+            .pointer_mut(pointer)
+            .and_then(Value::as_object_mut)
+        else {
+            continue;
+        };
+        let mut allowed_values = values.into_iter().map(Value::String).collect::<Vec<_>>();
+        if pointer.ends_with("angle_id") || pointer.ends_with("cta_id") {
+            allowed_values.push(Value::String("N/A".into()));
+        }
+        if !allowed_values.is_empty() {
+            field.insert("enum".into(), Value::Array(allowed_values));
+        }
+    }
+    Ok(())
+}
+
 fn provider_schema_source(schema: &Value, required_top_level: &[String]) -> Result<Value> {
     let mut source = schema.clone();
     let object = source.as_object_mut().ok_or_else(|| {
@@ -4212,7 +4514,9 @@ fn validate_v3_classification_evidence(
             }
             contributor_ids.insert(attribute_id);
         }
-        if contributor_ids.len() < taxonomy.minimum_evidence.observed_contributors as usize {
+        if classification["status"] == "classified"
+            && contributor_ids.len() < taxonomy.minimum_evidence.observed_contributors as usize
+        {
             return Err(run_failure_with_diagnostic_detail(
                 RunFailureKind::PolicyBlocked,
                 "v3-classification-minimum-evidence",
@@ -5890,15 +6194,16 @@ mod tests {
     use super::read_recovery_claim;
     use super::{
         MAX_EXECUTION_ID_BYTES, MAX_OUTPUT_LEAF_BYTES, MAX_RECOVERY_CLAIM_BYTES, RunDeadline,
-        RunFailure, RunFailureKind, RunRecoveryClaim, deterministic_proposal_pursuit,
-        execute_generative_step, execute_run_inner, execute_run_inner_with_driver,
-        governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
-        host_wrap_governed_output, host_wrap_v3_normalization_output,
-        project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
-        provider_schema_source_for_contract, routed_context_shape_diagnostic,
-        routed_context_validation_diagnostic, sanitized_host_envelope_diagnostic,
-        sanitized_prompt_validation_diagnostic, seal_driver_request, seal_driver_result,
-        serialize_recovery_claim, validate_driver_result, validate_request,
+        RunFailure, RunFailureKind, RunRecoveryClaim, constrain_governed_selected_authority,
+        deterministic_proposal_pursuit, execute_generative_step, execute_run_inner,
+        execute_run_inner_with_driver, governed_normalization_outcome, gtm_lineage_schema_ids,
+        gtm_success_artifacts, host_wrap_governed_output, host_wrap_v3_normalization_output,
+        project_output_schema_for_openai, prompt_validation_diagnostic_detail,
+        provider_max_output_tokens, provider_schema_source, provider_schema_source_for_contract,
+        routed_context_shape_diagnostic, routed_context_validation_diagnostic,
+        sanitized_host_envelope_diagnostic, sanitized_prompt_validation_diagnostic,
+        seal_driver_request, seal_driver_result, serialize_recovery_claim, validate_driver_result,
+        validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
@@ -6514,6 +6819,95 @@ mod tests {
         }]
     }
 
+    #[test]
+    fn provider_schema_constrains_selected_authority_to_routed_refs() {
+        let root = temp_path("provider-authority-enum");
+        fs::create_dir_all(&root).unwrap();
+        let context_path = root.join("routed-context.json");
+        fs::write(
+            &context_path,
+            serde_json::to_vec(&serde_json::json!({
+                "entries": [
+                    {"card_kind": "claims", "card_id": "claims", "entry_id": "supported-claim", "evidence": ["observed-proof"]},
+                    {"card_kind": "ctas", "card_id": "ctas", "entry_id": "reply-cta"},
+                    {"card_kind": "hooks", "card_id": "hooks", "entry_id": "specific-angle"}
+                ],
+                "product_foundation_load_order": [
+                    {"reference_kind": "entry", "card_id": "positioning", "entry_id": "product-truth"}
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let staged = vec![super::StagedInput {
+            logical_name: "routed_context".into(),
+            authority: ArtifactAuthority {
+                logical_name: "routed_context".into(),
+                schema_id: "mdp.routed-context.v1".into(),
+                media_type: "application/json".into(),
+                byte_count: 1,
+                sha256: "c".repeat(64),
+                provenance: EvidenceProvenance::MdpObserved,
+                provenance_refs: vec![],
+            },
+            source_path: context_path.clone(),
+            staged_path: context_path,
+            initial_sha256: "c".repeat(64),
+        }];
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "selected_authority": {"type": "array", "items": {"type": "string"}},
+                "artifact": {"type": "object", "properties": {
+                    "angle_id": {"type": "string"},
+                    "cta_id": {"type": "string"},
+                    "claim_ids": {"type": "array", "items": {"type": "string"}},
+                    "evidence_ids": {"type": "array", "items": {"type": "string"}}
+                }}
+            }
+        });
+        let previously_accepted = serde_json::json!({
+            "selected_authority": ["invented-card/invented-entry"],
+            "artifact": {
+                "angle_id": "invented-angle",
+                "cta_id": "invented-cta",
+                "claim_ids": ["invented-claim"],
+                "evidence_ids": ["invented-evidence"]
+            }
+        });
+        assert!(jsonschema::draft202012::validate(&schema, &previously_accepted).is_ok());
+
+        constrain_governed_selected_authority(&mut schema, &staged).unwrap();
+
+        assert_eq!(
+            schema["properties"]["selected_authority"]["items"]["enum"],
+            serde_json::json!([
+                "claims/supported-claim",
+                "ctas/reply-cta",
+                "hooks/specific-angle",
+                "positioning/product-truth"
+            ])
+        );
+        assert_eq!(
+            schema.pointer("/properties/artifact/properties/angle_id/enum"),
+            Some(&serde_json::json!(["specific-angle", "N/A"]))
+        );
+        assert_eq!(
+            schema.pointer("/properties/artifact/properties/cta_id/enum"),
+            Some(&serde_json::json!(["reply-cta", "N/A"]))
+        );
+        assert_eq!(
+            schema.pointer("/properties/artifact/properties/claim_ids/items/enum"),
+            Some(&serde_json::json!(["supported-claim"]))
+        );
+        assert_eq!(
+            schema.pointer("/properties/artifact/properties/evidence_ids/items/enum"),
+            Some(&serde_json::json!(["observed-proof"]))
+        );
+        assert!(jsonschema::draft202012::validate(&schema, &previously_accepted).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
     fn host_semantic_output() -> serde_json::Value {
         serde_json::json!({
             "selected_authority": {},
@@ -6706,11 +7100,42 @@ mod tests {
     fn prompt_validation_diagnostics_preserve_only_safe_local_issue_codes() {
         let validation = serde_json::json!({
             "valid": false,
-            "issues": [{"code": "decision_input_schema_mismatch", "message": "private detail"}]
+            "issues": [{
+                "code": "decision_input_schema_mismatch",
+                "path": "/private/customer/output.json#/artifact/message_body",
+                "message": "private detail"
+            }]
         });
         assert_eq!(
             sanitized_prompt_validation_diagnostic(&validation),
             "decision-input-schema-mismatch"
+        );
+        let detail = prompt_validation_diagnostic_detail(&validation);
+        assert_eq!(detail.path, "$/artifact/message_body");
+        assert_eq!(detail.expected, "schema-constraint");
+        assert_eq!(detail.observed, "invalid");
+        assert!(!serde_json::to_string(&detail).unwrap().contains("private"));
+
+        let governed = serde_json::json!({
+            "valid": false,
+            "issues": [{
+                "code": "governed_artifact_authority_undeclared",
+                "path": "/private/customer/output.json#/selected_authority/0",
+                "message": "authority PRIVATE-CONTENT is not selected"
+            }]
+        });
+        assert_eq!(
+            sanitized_prompt_validation_diagnostic(&governed),
+            "governed-artifact-authority-undeclared"
+        );
+        let detail = prompt_validation_diagnostic_detail(&governed);
+        assert_eq!(detail.path, "$/selected_authority/0");
+        assert_eq!(detail.expected, "declared-authority");
+        assert_eq!(detail.observed, "undeclared");
+        assert!(
+            !serde_json::to_string(&detail)
+                .unwrap()
+                .contains("PRIVATE-CONTENT")
         );
 
         for unsafe_code in [
@@ -9225,55 +9650,51 @@ mod tests {
         assert!(source["properties"].get("normalized_input").is_none());
     }
 
-    fn collect_derived_from_enums(value: &serde_json::Value, found: &mut Vec<serde_json::Value>) {
-        match value {
-            serde_json::Value::Object(object) => {
-                if let Some(items) = object
-                    .get("properties")
-                    .and_then(serde_json::Value::as_object)
-                    .and_then(|properties| properties.get("derived_from"))
-                    .and_then(|derived_from| derived_from.get("items"))
-                    .and_then(serde_json::Value::as_object)
-                    .and_then(|items| items.get("enum"))
-                {
-                    found.push(items.clone());
-                }
-                for child in object.values() {
-                    collect_derived_from_enums(child, found);
-                }
-            }
-            serde_json::Value::Array(values) => {
-                for child in values {
-                    collect_derived_from_enums(child, found);
-                }
-            }
-            _ => {}
-        }
-    }
-
     #[test]
-    fn v3_provider_schema_limits_all_lineage_to_observed_attempt_ids() {
+    fn v3_provider_schema_routes_each_taxonomy_to_eligible_evidence() {
+        let mut staged = v3_staged_inputs(&"a".repeat(64));
+        let temp = materialize_v3_staged_inputs(&mut staged);
+        let observed = super::v3_observed_evidence_index(&staged).unwrap();
         let mut schema = crate::commands::v3_normalization::v3_semantic_provider_schema();
-        let observed = vec![
-            "1password-v7-001".to_string(),
-            "1password-v7-019".to_string(),
-        ];
-        super::constrain_v3_derived_from_to_observed_ids(&mut schema, &observed);
 
-        let mut enums = Vec::new();
-        collect_derived_from_enums(&schema, &mut enums);
-        assert!(!enums.is_empty());
-        assert!(
-            enums
-                .iter()
-                .all(|value| value == &serde_json::json!(observed))
-        );
-        assert!(enums.iter().all(|value| {
-            !value
-                .as_array()
-                .unwrap()
-                .contains(&serde_json::json!("1password-v7-009"))
+        super::constrain_v3_classifications_to_eligible_evidence(&mut schema, &staged, &observed)
+            .unwrap();
+
+        let classifications = &schema["properties"]["classifications"];
+        assert_eq!(classifications["additionalProperties"], false);
+        assert_eq!(classifications["required"], serde_json::json!(["persona"]));
+        let branches = classifications["properties"]["persona"]["anyOf"]
+            .as_array()
+            .unwrap();
+        assert!(branches.iter().all(|branch| {
+            branch["properties"]["taxonomy_id"]["const"] == "buyer-persona"
+                && branch["properties"]["taxonomy_version"]["const"] == "1"
+                && branch["properties"]["derived_from"]["items"]["enum"]
+                    == serde_json::json!(["synthetic-attempt-001"])
         }));
+        let gap_branches = schema["properties"]["gaps"]["items"]["anyOf"]
+            .as_array()
+            .unwrap();
+        assert!(gap_branches.iter().all(|branch| {
+            branch["properties"]["attribute"]["enum"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|id| id == "person_title"))
+        }));
+        assert!(
+            gap_branches
+                .iter()
+                .filter(|branch| branch["properties"].get("derived_from").is_some())
+                .all(|branch| {
+                    branch["properties"]["derived_from"]["items"]["enum"]
+                        == serde_json::json!(["synthetic-attempt-001"])
+                })
+        );
+        assert_eq!(
+            schema["properties"]["rejected_claims"]["items"]["properties"]["derived_from"]["items"]
+                ["enum"],
+            serde_json::json!(["synthetic-attempt-001"])
+        );
+        let _ = std::fs::remove_dir_all(temp);
     }
 
     #[test]
