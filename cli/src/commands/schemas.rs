@@ -4086,6 +4086,27 @@ fn route_budget_action_schema() -> Value {
                 }
             },
             {
+                "type": "object", "required": ["kind", "job_id", "persona", "minimum_reduction_bytes", "reduce", "preserve_guardrails", "do_not"], "additionalProperties": false,
+                "properties": {
+                    "kind": {"const": "reduce_native_input"},
+                    "job_id": {"type": "string", "minLength": 1},
+                    "persona": {"type": ["string", "null"], "minLength": 1},
+                    "minimum_reduction_bytes": {"type": "integer", "minimum": 1},
+                    "reduce": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "prefixItems": [
+                            {"const": "routed_context_max_bytes"},
+                            {"const": "prompt_bytes"}
+                        ],
+                        "items": false
+                    },
+                    "preserve_guardrails": common["preserve_guardrails"],
+                    "do_not": common["do_not"]
+                }
+            },
+            {
                 "type": "object", "required": ["kind", "job_id", "persona", "dimension", "minimum_reduction", "target_card", "preserve_guardrails", "do_not"], "additionalProperties": false,
                 "properties": {
                     "kind": {"const": "narrow_applicability"},
@@ -5451,6 +5472,18 @@ mod tests {
             }
         });
         validate_route_budget_summary_output(&base).expect("review action should validate");
+        let mut native_overflow = base.clone();
+        native_overflow["next_safe_action"] = json!({
+            "kind": "reduce_native_input",
+            "job_id": "synthetic-job",
+            "persona": "Buyer",
+            "minimum_reduction_bytes": 42,
+            "reduce": ["routed_context_max_bytes", "prompt_bytes"],
+            "preserve_guardrails": true,
+            "do_not": ["increase_context_budget", "truncate"]
+        });
+        validate_route_budget_summary_output(&native_overflow)
+            .expect("native input reduction action should validate");
         let mut missing_headroom = base.clone();
         missing_headroom
             .as_object_mut()

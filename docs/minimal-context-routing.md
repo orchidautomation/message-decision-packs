@@ -70,7 +70,10 @@ The full output remains the authority. New route records use canonical
 `job_id`; the deprecated v0 `job` alias is retained and must be equal. When
 overflow is not safely narrowable, the summary says `review_required_authority`;
 operators must never truncate, drop guardrails, inflate budgets, or open a full
-card to hide an overflow.
+card to hide an overflow. When prompt bytes plus the routed-context reservation
+exceed the native input ceiling, the summary instead says `reduce_native_input`
+and reports the minimum byte reduction; reduce the routed-context maximum or
+prompt size rather than increasing the context budget.
 
 For a ready governed generation or review job, let MDP write the exact canonical `context.model_context` bytes and supply that file as the required `routed_context` prompt input:
 

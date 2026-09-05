@@ -329,13 +329,24 @@ fn budget_gate(job: Option<&str>, value: Option<&Value>) -> Gate {
     };
     let statuses = value["routes"].as_array().cloned().unwrap_or_default();
     if statuses.iter().any(|route| route["status"] == "blocked") || value["valid"] == false {
+        let native_input_overflow = statuses.iter().any(|route| {
+            route["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|diagnostic| diagnostic == "native_input_budget_exceeded")
+        });
         Gate {
             id: "route_budget",
             state: State::False,
             authority: "mdp.route-budget.v0",
             reason_code: "route_budget_blocked",
             message: "At least one selected route exceeds or loses required context authority.",
-            next_action: "Narrow applicability or increase the declared budget, then rerun route-budget.",
+            next_action: if native_input_overflow {
+                "Reduce the routed-context maximum or prompt size; do not increase the context budget. Then rerun route-budget."
+            } else {
+                "Narrow applicability or increase the declared budget, then rerun route-budget."
+            },
         }
     } else if statuses.is_empty() {
         Gate {
@@ -640,6 +651,26 @@ mod tests {
         assert_eq!(result["status"], "blocked", "{result}");
         assert_eq!(result["first_blocker"]["gate"], "route_budget");
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_budget_block_does_not_recommend_increasing_context_budget() {
+        let projection = json!({
+            "valid": false,
+            "routes": [{
+                "status": "blocked",
+                "diagnostics": ["native_input_budget_exceeded"]
+            }]
+        });
+        let gate = budget_gate(Some("outbound-copy-brief"), Some(&projection));
+        assert!(
+            gate.next_action
+                .contains("Reduce the routed-context maximum or prompt size")
+        );
+        assert!(
+            gate.next_action
+                .contains("do not increase the context budget")
+        );
     }
 
     #[test]

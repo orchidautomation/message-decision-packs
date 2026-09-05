@@ -969,6 +969,22 @@ fn next_safe_route_budget_action(routes: &[Value]) -> Value {
             .flatten()
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
+        if diagnostics.contains(&"native_input_budget_exceeded") {
+            let native_input = &route["native_input"];
+            let actual_bytes = native_input["statically_reserved_bytes"]
+                .as_u64()
+                .unwrap_or(0);
+            let limit_bytes = native_input["native_limit_bytes"].as_u64().unwrap_or(0);
+            return json!({
+                "kind": "reduce_native_input",
+                "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()),
+                "persona": route["persona"],
+                "minimum_reduction_bytes": actual_bytes.saturating_sub(limit_bytes),
+                "reduce": ["routed_context_max_bytes", "prompt_bytes"],
+                "preserve_guardrails": true,
+                "do_not": ["increase_context_budget", "truncate", "drop_guardrails", "open_full_card"]
+            });
+        }
         if diagnostics
             .iter()
             .any(|code| *code == ROUTE_CARD_CAP_DIAGNOSTIC)
@@ -4366,6 +4382,46 @@ mod tests {
         assert_eq!(
             required_summary["next_safe_action"]["kind"],
             "review_required_authority"
+        );
+
+        let native_overflow = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": false,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "pack_id": "native-overflow",
+            "overflow_count": 1,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "routes": [{
+                "job_id": "outbound-copy-brief",
+                "job": "outbound-copy-brief",
+                "persona": "Buyer",
+                "status": "blocked",
+                "diagnostics": ["native_input_budget_exceeded"],
+                "native_input": {
+                    "statically_reserved_bytes": 262200,
+                    "native_limit_bytes": 262144
+                },
+                "budget": {"actual_entries": 1, "max_entries": 2, "actual_bytes": 200000, "max_bytes": 220000},
+                "excluded_count": 0,
+                "allocation": {"optional_excluded_count": 0},
+                "largest_contributing_cards": []
+            }]
+        });
+        let native_summary = route_budget_summary_projection(&native_overflow);
+        assert_eq!(
+            native_summary["next_safe_action"]["kind"],
+            "reduce_native_input"
+        );
+        assert_eq!(
+            native_summary["next_safe_action"]["minimum_reduction_bytes"],
+            56
+        );
+        assert_eq!(
+            native_summary["next_safe_action"]["reduce"],
+            json!(["routed_context_max_bytes", "prompt_bytes"])
         );
 
         let _ = std::fs::remove_dir_all(root);
