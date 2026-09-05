@@ -22,7 +22,8 @@ use crate::run_contracts::{
     LocalArtifactInput, ModelIdentity, RUN_REQUEST_V1, RunMode, RunRequestV1,
 };
 use crate::run_runtime::{
-    compiler_observe_native_identity, compiler_prepare_native_request, compiler_validate_request,
+    MAX_NATIVE_DECLARED_INPUT_BYTES, compiler_observe_native_identity,
+    compiler_prepare_native_request, compiler_validate_request,
 };
 use crate::value_contracts::valid_date_time;
 use anyhow::Result;
@@ -38,7 +39,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) const RUN_REQUEST_COMPILE_V1: &str = "mdp.run-request-compile.v1";
-const MAX_INPUT_BYTES: u64 = 128 * 1024;
+const MAX_INPUT_BYTES: u64 = MAX_NATIVE_DECLARED_INPUT_BYTES;
 const MAX_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const ENDPOINT: &str = "https://api.openai.com/v1/responses";
 
@@ -1142,7 +1143,8 @@ fn input_budget_diagnostic(total: u64, max: u64) -> anyhow::Error {
         code: "input-too-large".into(),
         contract: RUN_REQUEST_COMPILE_V1.into(),
         message: format!(
-            "input-too-large: aggregate declared input bytes {total} exceed budget {max}"
+            "input-too-large: aggregate declared input bytes {total} exceed budget {max} by {} bytes",
+            total.saturating_sub(max)
         ),
         next_command: "mdp prepare-run --input <name>=<path>".into(),
     }))
@@ -1213,7 +1215,7 @@ mod tests {
         assert_eq!(failure.0.code, "input-too-large");
         assert_eq!(
             failure.0.message,
-            "input-too-large: aggregate declared input bytes 135952 exceed budget 131072"
+            "input-too-large: aggregate declared input bytes 135952 exceed budget 131072 by 4880 bytes"
         );
         assert!(!failure.0.message.contains("prompt contents"));
         assert!(!failure.0.message.contains("/private/"));
@@ -1223,7 +1225,7 @@ mod tests {
         let value = json!({
             "contract": super::RUN_REQUEST_COMPILE_V1, "status":"ready", "execution_id":"mdp-run-test", "job":"job", "operation":"step",
             "pack_sha256":"a".repeat(64), "prompt_sha256":"b".repeat(64), "input_sha256s":[], "driver_configuration_sha256":"c".repeat(64), "model_parameters_sha256":"d".repeat(64),
-            "endpoint":"https://api.openai.com/v1/responses", "max_input_bytes":131072, "max_output_bytes":1048576, "timeout_ms":30000,
+            "endpoint":"https://api.openai.com/v1/responses", "max_input_bytes":262144, "max_output_bytes":1048576, "timeout_ms":30000,
             "data_boundary":"private-staging", "provider_authorization":"required-at-execution", "anticipated_assurance":["derived","observed","anticipated"], "request_sha256":"e".repeat(64), "next_command":"mdp run --request request.json"
         });
         assert!(

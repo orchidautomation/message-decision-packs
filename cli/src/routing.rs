@@ -2,6 +2,7 @@ use crate::artifact_hash::{canonical_json_bytes, canonical_json_sha256, sha256_h
 use crate::commands::health::{profile_activation_decision, validate_pack};
 use crate::commands::schemas::routed_context_schema;
 use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
+use crate::model_steps::resolve_model_steps;
 use crate::models::{CardKind, Entry, JobContextBudget, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
 use crate::primitives::PrimitiveId;
@@ -9,6 +10,7 @@ use crate::product_foundation::{
     ProductFoundationResolution, apply_validation_errors_for_job, resolution_json,
     resolve_product_foundation_for_pack, validation_errors_block_job,
 };
+use crate::run_runtime::MAX_NATIVE_DECLARED_INPUT_BYTES;
 use crate::runtime_context::current_runtime_context;
 use crate::scope::{ContextScope, ScopeResolution, match_entry_scope, resolve_runtime_scope};
 use crate::utils::declared_persona_labels;
@@ -16,6 +18,7 @@ use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::fs;
 use std::path::Path;
 
 struct EntryRouteDetails {
@@ -455,6 +458,57 @@ pub(crate) struct RouteBudgetQuery {
     pub(crate) persona: Option<String>,
 }
 
+fn native_generation_budget_shape(
+    prompt_bytes: usize,
+    routed_context_max_bytes: usize,
+) -> (bool, usize) {
+    let reserved = prompt_bytes.saturating_add(routed_context_max_bytes);
+    (
+        reserved <= MAX_NATIVE_DECLARED_INPUT_BYTES as usize,
+        (MAX_NATIVE_DECLARED_INPUT_BYTES as usize).saturating_sub(reserved),
+    )
+}
+
+fn native_generation_budget(
+    root: &Path,
+    manifest: &Manifest,
+    job: &crate::models::ProfileJob,
+    routed_context_max_bytes: usize,
+) -> Value {
+    let Some(model_task) = job.model_task.as_ref() else {
+        return Value::Null;
+    };
+    let prompt_bytes = resolve_model_steps(root, manifest, job)
+        .ok()
+        .and_then(|resolution| {
+            resolution
+                .steps
+                .into_iter()
+                .find(|step| step.prompt_id == model_task.prompt)
+        })
+        .and_then(|step| fs::metadata(root.join(DEFAULT_DIR).join(step.prompt_path)).ok())
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len() as usize);
+    let Some(prompt_bytes) = prompt_bytes else {
+        return json!({
+            "status": "blocked",
+            "reason": "native_prompt_unavailable",
+            "runtime_auxiliary_inputs_fit": false
+        });
+    };
+    let (fits, remaining) = native_generation_budget_shape(prompt_bytes, routed_context_max_bytes);
+    let reserved = prompt_bytes.saturating_add(routed_context_max_bytes);
+    json!({
+        "status": if fits { "reserved-headroom" } else { "blocked" },
+        "native_limit_bytes": MAX_NATIVE_DECLARED_INPUT_BYTES,
+        "prompt_bytes": prompt_bytes,
+        "max_routed_context_bytes": routed_context_max_bytes,
+        "statically_reserved_bytes": reserved,
+        "unknown_runtime_headroom_bytes": remaining,
+        "runtime_auxiliary_inputs_fit": false
+    })
+}
+
 impl RouteBudgetQuery {
     pub(crate) fn unfiltered() -> Self {
         Self {
@@ -553,6 +607,8 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             // here so generation handoff can narrow applicability.
             let entry_overflow = actual_entries > max_entries;
             let byte_overflow = actual_bytes > max_bytes;
+            let native_budget = native_generation_budget(root, manifest, job, max_bytes);
+            let native_overflow = native_budget["status"] == "blocked";
             let near_entries = max_entries > 0
                 && actual_entries > 0
                 && !entry_overflow
@@ -561,7 +617,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 && actual_bytes > 0
                 && !byte_overflow
                 && actual_bytes * 100 >= max_bytes * 90;
-            if entry_overflow || byte_overflow {
+            if entry_overflow || byte_overflow || native_overflow {
                 overflow_count += 1;
             }
             let mut diagnostics: Vec<Value> = Vec::new();
@@ -571,6 +627,9 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             if byte_overflow {
                 diagnostics.push(json!("context_byte_budget_exceeded"));
             }
+            if native_overflow {
+                diagnostics.push(json!("native_input_budget_exceeded"));
+            }
             if near_entries || near_bytes {
                 near_budget_count += 1;
                 diagnostics.push(json!("near_context_budget"));
@@ -578,11 +637,12 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             if route_card_cap_blocked {
                 diagnostics.push(json!(ROUTE_CARD_CAP_DIAGNOSTIC));
             }
-            let status = if entry_overflow || byte_overflow || route_card_cap_blocked {
-                "blocked"
-            } else {
-                "ready"
-            };
+            let status =
+                if entry_overflow || byte_overflow || route_card_cap_blocked || native_overflow {
+                    "blocked"
+                } else {
+                    "ready"
+                };
             let reason_distribution = route_reason_distribution(&route);
             let excluded_reason_distribution = route_excluded_reason_distribution(minimality);
             let largest_contributing_cards = minimality["largest_contributing_cards"].clone();
@@ -607,6 +667,9 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 "context_sha256": minimality["context_sha256"].clone(),
                 "route_card_cap": route_card_cap
             });
+            if !native_budget.is_null() {
+                route_receipt["native_input_budget"] = native_budget;
+            }
             if !minimality["allocation"].is_null() {
                 route_receipt["allocation"] = minimality["allocation"].clone();
             }
@@ -614,7 +677,9 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
         }
     }
 
-    let valid = overflow_count == 0 && route_card_cap_exclusion_count == 0;
+    let valid = overflow_count == 0
+        && route_card_cap_exclusion_count == 0
+        && routes.iter().all(|route| route["status"] != "blocked");
     Ok(json!({
         "contract": "mdp.route-budget.v0",
         "valid": valid,
@@ -665,7 +730,11 @@ pub(crate) fn project_route_budget(mut data: Value, query: &RouteBudgetQuery) ->
                     .any(|diagnostic| {
                         matches!(
                             diagnostic.as_str(),
-                            Some("context_entry_budget_exceeded" | "context_byte_budget_exceeded")
+                            Some(
+                                "context_entry_budget_exceeded"
+                                    | "context_byte_budget_exceeded"
+                                    | "native_input_budget_exceeded"
+                            )
                         )
                     })
             })
@@ -900,6 +969,22 @@ fn next_safe_route_budget_action(routes: &[Value]) -> Value {
             .flatten()
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
+        if diagnostics.contains(&"native_input_budget_exceeded") {
+            let native_input = &route["native_input"];
+            let actual_bytes = native_input["statically_reserved_bytes"]
+                .as_u64()
+                .unwrap_or(0);
+            let limit_bytes = native_input["native_limit_bytes"].as_u64().unwrap_or(0);
+            return json!({
+                "kind": "reduce_native_input",
+                "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()),
+                "persona": route["persona"],
+                "minimum_reduction_bytes": actual_bytes.saturating_sub(limit_bytes),
+                "reduce": ["routed_context_max_bytes", "prompt_bytes"],
+                "preserve_guardrails": true,
+                "do_not": ["increase_context_budget", "truncate", "drop_guardrails", "open_full_card"]
+            });
+        }
         if diagnostics
             .iter()
             .any(|code| *code == ROUTE_CARD_CAP_DIAGNOSTIC)
@@ -4096,6 +4181,50 @@ mod tests {
     }
 
     #[test]
+    fn preflight_counts_combined_context_and_native_overflow_once_per_route() {
+        let root = temp_pack("route-budget-combined-overflow");
+        set_context_budget(&root, "outbound-copy-brief", 1, 1);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let mut authored: serde_yaml::Value = serde_yaml::from_str(
+            &std::fs::read_to_string(&manifest_path).expect("manifest should be readable"),
+        )
+        .expect("manifest should parse");
+        let job = authored["jobs"]
+            .as_sequence_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|job| job["id"].as_str() == Some("outbound-copy-brief"))
+            .expect("outbound job should exist");
+        job["model_task"] =
+            serde_yaml::from_str("kind: model_task\nprompt: generate-outbound-copy-v1\n")
+                .expect("model task should parse");
+        std::fs::write(&manifest_path, serde_yaml::to_string(&authored).unwrap()).unwrap();
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        let routes = preflight["routes"].as_array().expect("routes");
+        assert!(preflight["overflow_count"].as_u64().unwrap() <= routes.len() as u64);
+        let route = routes
+            .iter()
+            .find(|route| route["job"] == "outbound-copy-brief")
+            .expect("outbound route should be present");
+        assert!(
+            route["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == "context_byte_budget_exceeded")
+        );
+        assert!(
+            route["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == "native_input_budget_exceeded")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn preflight_reports_excluded_reason_distribution_without_bodies() {
         let root = temp_pack("route-budget-distribution");
         add_buyer_persona_and_case_studies(&root, 5);
@@ -4255,6 +4384,46 @@ mod tests {
             "review_required_authority"
         );
 
+        let native_overflow = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": false,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "pack_id": "native-overflow",
+            "overflow_count": 1,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "routes": [{
+                "job_id": "outbound-copy-brief",
+                "job": "outbound-copy-brief",
+                "persona": "Buyer",
+                "status": "blocked",
+                "diagnostics": ["native_input_budget_exceeded"],
+                "native_input": {
+                    "statically_reserved_bytes": 262200,
+                    "native_limit_bytes": 262144
+                },
+                "budget": {"actual_entries": 1, "max_entries": 2, "actual_bytes": 200000, "max_bytes": 220000},
+                "excluded_count": 0,
+                "allocation": {"optional_excluded_count": 0},
+                "largest_contributing_cards": []
+            }]
+        });
+        let native_summary = route_budget_summary_projection(&native_overflow);
+        assert_eq!(
+            native_summary["next_safe_action"]["kind"],
+            "reduce_native_input"
+        );
+        assert_eq!(
+            native_summary["next_safe_action"]["minimum_reduction_bytes"],
+            56
+        );
+        assert_eq!(
+            native_summary["next_safe_action"]["reduce"],
+            json!(["routed_context_max_bytes", "prompt_bytes"])
+        );
+
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -4372,5 +4541,36 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_generation_budget_shape_covers_below_equal_and_above_limit() {
+        let limit = MAX_NATIVE_DECLARED_INPUT_BYTES as usize;
+        assert_eq!(
+            native_generation_budget_shape(18_343, 157_155),
+            (true, 86_646)
+        );
+        assert_eq!(native_generation_budget_shape(1, limit - 1), (true, 0));
+        assert_eq!(native_generation_budget_shape(1, limit), (false, 0));
+    }
+
+    #[test]
+    fn projected_native_overflow_remains_invalid() {
+        let data = json!({
+            "contract": "mdp.route-budget.v0", "valid": true, "pack_id": "synthetic",
+            "scope": "default", "route_count": 1, "overflow_count": 0,
+            "route_card_cap_exclusion_count": 0, "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "strict_warnings": [], "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "routes": [{"persona": "Buyer", "job_id": "job", "job": "job", "status": "blocked",
+                "generation_unassessed": false, "budget": null, "selected_count": null,
+                "excluded_count": null, "diagnostics": ["context_byte_budget_exceeded", "native_input_budget_exceeded"],
+                "reason_distribution": {}, "excluded_reason_distribution": {},
+                "largest_contributing_cards": [], "context_sha256": null, "route_card_cap": null}]
+        });
+        let projected = project_route_budget(data, &RouteBudgetQuery::unfiltered());
+        assert_eq!(projected["valid"], false);
+        assert_eq!(projected["overflow_count"], 1);
     }
 }

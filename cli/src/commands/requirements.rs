@@ -29,6 +29,7 @@ use crate::product_foundation::{
     apply_validation_errors_for_job, resolution_json, resolve_product_foundation_for_pack,
     validation_errors_block_job, validation_issues_for_job,
 };
+use crate::run_runtime::MAX_NATIVE_DECLARED_INPUT_BYTES;
 use crate::value_contracts::{canonical_values_equal, valid_date, valid_date_time};
 use anyhow::{Result, anyhow};
 use serde_json::{Map, Value, json};
@@ -446,12 +447,18 @@ pub(crate) fn requirements_model_context(root: &Path, job_id: &str) -> Result<Va
         "boundaries": compiled["boundaries"].clone()
     });
     let context_bytes = serde_json::to_vec(&context)?;
-    if context_bytes.len() > 128 * 1024 {
+    validate_requirements_model_context_size(context_bytes.len())?;
+    Ok(context)
+}
+
+fn validate_requirements_model_context_size(context_bytes: usize) -> Result<()> {
+    if context_bytes > MAX_NATIVE_DECLARED_INPUT_BYTES as usize {
         return Err(anyhow!(
-            "requirements model context exceeds the 131072 byte native input limit"
+            "requirements model context exceeds the {} byte native input limit",
+            MAX_NATIVE_DECLARED_INPUT_BYTES
         ));
     }
-    Ok(context)
+    Ok(())
 }
 
 fn classification_specification(taxonomies: &[ClassificationTaxonomy]) -> Value {
@@ -4804,7 +4811,7 @@ optional:
 
         let bytes = serde_json::to_vec(&context).expect("context should serialize");
         assert!(
-            bytes.len() <= 128 * 1024,
+            bytes.len() <= MAX_NATIVE_DECLARED_INPUT_BYTES as usize,
             "model context must fit the native input budget: {} bytes",
             bytes.len()
         );
@@ -4938,6 +4945,19 @@ optional:
         assert_eq!(
             behavior[&DecisionInputAttemptStatus::Error],
             DecisionInputDisposition::HumanReview
+        );
+    }
+
+    #[test]
+    fn requirements_model_context_uses_the_shared_native_input_ceiling() {
+        assert!(validate_requirements_model_context_size(128 * 1024 + 1).is_ok());
+        assert!(
+            validate_requirements_model_context_size(MAX_NATIVE_DECLARED_INPUT_BYTES as usize)
+                .is_ok()
+        );
+        assert!(
+            validate_requirements_model_context_size(MAX_NATIVE_DECLARED_INPUT_BYTES as usize + 1)
+                .is_err()
         );
     }
 

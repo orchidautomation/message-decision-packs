@@ -1615,7 +1615,7 @@ fn generative_execution_policy_v1_schema() -> Value {
             "tool_mode": {"const": "none"},
             "network_mode": {"const": "authorized-endpoints-only"},
             "authorized_endpoints": {"const": ["https://api.openai.com/v1/responses"]},
-            "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 131072},
+            "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 262144},
             "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
             "timeout_ms": {"type": "integer", "minimum": 251, "maximum": 60000},
             "retention_policy": {"enum": ["receipt-only", "customer-controlled-workdir"]}
@@ -2393,7 +2393,8 @@ fn policy_diagnostic_schema() -> Value {
             "input": {"anyOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$"}]},
             "field": {"enum": [null, "/contract", "/job", "/persona", "/scope", "/product_foundation", "/product_foundation_load_order", "/entries", "/gaps", "/policy", "/unknown-field"]},
             "expected": diagnostic_value_schema(),
-            "observed": diagnostic_value_schema()
+            "observed": diagnostic_value_schema(),
+            "bytes_over": {"type": "integer", "minimum": 0}
         }
     })
 }
@@ -4085,6 +4086,27 @@ fn route_budget_action_schema() -> Value {
                 }
             },
             {
+                "type": "object", "required": ["kind", "job_id", "persona", "minimum_reduction_bytes", "reduce", "preserve_guardrails", "do_not"], "additionalProperties": false,
+                "properties": {
+                    "kind": {"const": "reduce_native_input"},
+                    "job_id": {"type": "string", "minLength": 1},
+                    "persona": {"type": ["string", "null"], "minLength": 1},
+                    "minimum_reduction_bytes": {"type": "integer", "minimum": 1},
+                    "reduce": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "prefixItems": [
+                            {"const": "routed_context_max_bytes"},
+                            {"const": "prompt_bytes"}
+                        ],
+                        "items": false
+                    },
+                    "preserve_guardrails": common["preserve_guardrails"],
+                    "do_not": common["do_not"]
+                }
+            },
+            {
                 "type": "object", "required": ["kind", "job_id", "persona", "dimension", "minimum_reduction", "target_card", "preserve_guardrails", "do_not"], "additionalProperties": false,
                 "properties": {
                     "kind": {"const": "narrow_applicability"},
@@ -4150,7 +4172,21 @@ fn route_budget_schema() -> Value {
                         "largest_contributing_cards": {"type": "array", "items": route_budget_contributor_schema()},
                         "context_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
                         "route_card_cap": {"oneOf": [{"type": "null"}, route_card_cap_schema()]},
-                        "allocation": {"oneOf": [{"type": "null"}, route_budget_allocation_schema()]}
+                        "allocation": {"oneOf": [{"type": "null"}, route_budget_allocation_schema()]},
+                        "native_input_budget": {"oneOf": [{"type": "null"}, {
+                            "type": "object", "additionalProperties": false,
+                            "required": ["status", "runtime_auxiliary_inputs_fit"],
+                            "properties": {
+                                "status": {"enum": ["reserved-headroom", "blocked"]},
+                                "reason": {"type": "string", "minLength": 1},
+                                "native_limit_bytes": {"type": "integer", "minimum": 0},
+                                "prompt_bytes": {"type": "integer", "minimum": 0},
+                                "max_routed_context_bytes": {"type": "integer", "minimum": 0},
+                                "statically_reserved_bytes": {"type": "integer", "minimum": 0},
+                                "unknown_runtime_headroom_bytes": {"type": "integer", "minimum": 0},
+                                "runtime_auxiliary_inputs_fit": {"const": false}
+                            }
+                        }]}
                     }
                 }
             }
@@ -5436,6 +5472,18 @@ mod tests {
             }
         });
         validate_route_budget_summary_output(&base).expect("review action should validate");
+        let mut native_overflow = base.clone();
+        native_overflow["next_safe_action"] = json!({
+            "kind": "reduce_native_input",
+            "job_id": "synthetic-job",
+            "persona": "Buyer",
+            "minimum_reduction_bytes": 42,
+            "reduce": ["routed_context_max_bytes", "prompt_bytes"],
+            "preserve_guardrails": true,
+            "do_not": ["increase_context_budget", "truncate"]
+        });
+        validate_route_budget_summary_output(&native_overflow)
+            .expect("native input reduction action should validate");
         let mut missing_headroom = base.clone();
         missing_headroom
             .as_object_mut()
@@ -6812,7 +6860,7 @@ mod tests {
                 "tool_mode": "none",
                 "network_mode": "authorized-endpoints-only",
                 "authorized_endpoints": ["https://api.openai.com/v1/responses"],
-                "max_input_bytes": 131072,
+                "max_input_bytes": 262144,
                 "max_output_bytes": 1048576,
                 "timeout_ms": 60000,
                 "retention_policy": "receipt-only"

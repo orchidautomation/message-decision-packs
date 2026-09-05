@@ -39,6 +39,8 @@ use crate::run_contracts::{
     RunBundleV1, RunMode, RunReceiptV1, RunRequestV1, RunnerAuditV1, TerminalState,
 };
 use anyhow::{Context, Result, anyhow};
+use serde::Serializer;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::borrow::Cow;
@@ -72,7 +74,7 @@ const MAX_POLICY_INPUT_BYTES: u64 = 100 * 1024 * 1024;
 // schema. Keep the public generative input budget well below the driver's
 // 2 MiB serialized-request ceiling so requests cannot pass preflight and then
 // fail only after the immutable bundle has been published.
-const MAX_NATIVE_DECLARED_INPUT_BYTES: u64 = 128 * 1024;
+pub(crate) const MAX_NATIVE_DECLARED_INPUT_BYTES: u64 = 256 * 1024;
 const MAX_NATIVE_SERIALIZED_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_POLICY_OUTPUT_BYTES: u64 = 1024 * 1024;
 const MAX_POLICY_DIAGNOSTICS: usize = 4;
@@ -116,8 +118,7 @@ pub(crate) enum RunFailureKind {
     RunnerFailed,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug)]
 pub(crate) struct RunDiagnostic {
     pub(crate) stage: &'static str,
     pub(crate) gate: &'static str,
@@ -126,6 +127,32 @@ pub(crate) struct RunDiagnostic {
     pub(crate) field: Option<&'static str>,
     pub(crate) expected: DiagnosticValue,
     pub(crate) observed: DiagnosticValue,
+}
+
+impl Serialize for RunDiagnostic {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut fields = serializer.serialize_struct("RunDiagnostic", 8)?;
+        fields.serialize_field("stage", self.stage)?;
+        fields.serialize_field("gate", self.gate)?;
+        fields.serialize_field("code", self.code)?;
+        fields.serialize_field("input", &self.input)?;
+        fields.serialize_field("field", &self.field)?;
+        fields.serialize_field("expected", &self.expected)?;
+        fields.serialize_field("observed", &self.observed)?;
+        if self.code == "input-too-large" {
+            let over = match (&self.expected.value, &self.observed.value) {
+                (DiagnosticScalar::Count(limit), DiagnosticScalar::Count(actual)) => {
+                    actual.saturating_sub(*limit)
+                }
+                _ => 0,
+            };
+            fields.serialize_field("bytes_over", &over)?;
+        }
+        fields.end()
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -6213,6 +6240,7 @@ mod tests {
             diagnostics[0]["observed"],
             serde_json::json!({"kind": "count", "value": super::MAX_NATIVE_DECLARED_INPUT_BYTES + 1})
         );
+        assert_eq!(diagnostics[0]["bytes_over"], 1);
         let serialized = serde_json::to_string(&diagnostics).unwrap();
         assert!(!serialized.contains(root.to_str().unwrap()));
         assert!(!run.exists());
@@ -6950,7 +6978,7 @@ mod tests {
                 tool_mode: "none".into(),
                 network_mode: "authorized-endpoints-only".into(),
                 authorized_endpoints: vec![super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into()],
-                max_input_bytes: 131_072,
+                max_input_bytes: 262_144,
                 max_output_bytes: 1_048_576,
                 timeout_ms: 30_000,
                 retention_policy: "receipt-only".into(),
@@ -8679,7 +8707,7 @@ mod tests {
                 tool_mode: "none".into(),
                 network_mode: "none".into(),
                 authorized_endpoints: vec![],
-                max_input_bytes: 131_072,
+                max_input_bytes: 262_144,
                 max_output_bytes: 1_048_576,
                 timeout_ms: 30_000,
                 retention_policy: "receipt-only".into(),
@@ -8792,7 +8820,7 @@ mod tests {
                 tool_mode: "none".into(),
                 network_mode: "authorized-endpoints-only".into(),
                 authorized_endpoints: vec![super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into()],
-                max_input_bytes: 131_072,
+                max_input_bytes: 262_144,
                 max_output_bytes: 1_048_576,
                 timeout_ms: 30_000,
                 retention_policy: "receipt-only".into(),
