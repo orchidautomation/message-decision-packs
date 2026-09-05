@@ -3175,6 +3175,8 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
                     "maxLength": crate::constants::V3_BASIS_MAX_CHARS_HARD_LIMIT
                 }
             });
+            let mut non_classified_derived_from = common_properties["derived_from"].clone();
+            non_classified_derived_from["minItems"] = json!(0);
             properties.insert(attribute.id.clone(), json!({
                 "anyOf": [
                     {
@@ -3198,7 +3200,7 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
                             "status": {"type": "string", "enum": ["ambiguous", "no-match", "unsupported"]},
                             "taxonomy_id": {"type": "string", "const": reference.id},
                             "taxonomy_version": {"type": "string", "const": reference.version},
-                            "derived_from": common_properties["derived_from"].clone(),
+                            "derived_from": non_classified_derived_from,
                             "basis": common_properties["basis"].clone()
                         }
                     }

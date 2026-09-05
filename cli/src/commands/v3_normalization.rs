@@ -553,7 +553,13 @@ fn v3_classification_object_schema() -> Value {
                     },
                     "taxonomy_id": common["taxonomy_id"].clone(),
                     "taxonomy_version": common["taxonomy_version"].clone(),
-                    "derived_from": common["derived_from"].clone(),
+                    "derived_from": {
+                        "type": "array",
+                        "minItems": 0,
+                        "maxItems": V3_MAX_DERIVED_FROM_PER_CLASSIFICATION,
+                        "uniqueItems": true,
+                        "items": common["derived_from"]["items"].clone()
+                    },
                     "basis": common["basis"].clone()
                 }
             }
@@ -1082,7 +1088,9 @@ pub(crate) fn validate_v3_semantic_payload(
                 classification.value.as_deref().unwrap_or("<null>"),
             ));
         }
-        if classification.derived_from.is_empty() {
+        if classification.status == V3_CLASSIFICATION_STATUS_CLASSIFIED
+            && classification.derived_from.is_empty()
+        {
             issues.push(V3Issue::new(
                 "v3_classification_missing_derived_from",
                 format!("$.classifications.{attribute_id}.derived_from"),
@@ -1909,6 +1917,27 @@ mod tests {
                 .unwrap()
                 .contains("raw-secret-sentinel")
         );
+    }
+
+    #[test]
+    fn non_classified_semantics_can_report_no_evidence_without_inventing_lineage() {
+        let payload = json!({
+            "classifications": {"persona": {
+                "status": "no-match",
+                "taxonomy_id": "buyer-persona",
+                "taxonomy_version": "1",
+                "derived_from": [],
+                "basis": "No eligible contributor evidence was observed."
+            }},
+            "gaps": [],
+            "rejected_claims": []
+        });
+        assert!(
+            jsonschema::draft202012::validate(&v3_semantic_provider_schema(), &payload).is_ok()
+        );
+        let result =
+            validate_v3_semantic_payload(&payload, &[sample_taxonomy()], &["persona".into()], &[]);
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]
