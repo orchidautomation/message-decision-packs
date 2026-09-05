@@ -1496,6 +1496,38 @@ fn constrain_v3_classifications_to_eligible_evidence(
     classifications.insert("additionalProperties".into(), Value::Bool(false));
     classifications.insert("properties".into(), Value::Object(properties));
     classifications.insert("required".into(), json!(required));
+
+    // Gaps and rejected claims are semantic output too. Their evidence refs
+    // are checked against collected attempt IDs by the local validator, so
+    // project that same closed vocabulary into the provider schema instead
+    // of allowing the provider to invent a well-shaped reference.
+    let observed_ids = observed
+        .iter()
+        .filter_map(|entry| entry["attempt_id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    let compiled_attribute_ids = data_object(&requirements)["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|contract| contract["attributes"].as_array().into_iter().flatten())
+        .filter_map(|attribute| attribute["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    let gap_branches = schema["properties"]["gaps"]["items"]["anyOf"]
+        .as_array_mut()
+        .ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "v3-provider-schema-gaps-invalid",
+            )
+        })?;
+    for branch in gap_branches {
+        branch["properties"]["attribute"]["enum"] = json!(compiled_attribute_ids);
+        if branch["properties"].get("derived_from").is_some() {
+            branch["properties"]["derived_from"]["items"]["enum"] = json!(observed_ids);
+        }
+    }
+    schema["properties"]["rejected_claims"]["items"]["properties"]["derived_from"]["items"]["enum"] =
+        json!(observed_ids);
     Ok(())
 }
 
@@ -9640,6 +9672,28 @@ mod tests {
                 && branch["properties"]["derived_from"]["items"]["enum"]
                     == serde_json::json!(["synthetic-attempt-001"])
         }));
+        let gap_branches = schema["properties"]["gaps"]["items"]["anyOf"]
+            .as_array()
+            .unwrap();
+        assert!(gap_branches.iter().all(|branch| {
+            branch["properties"]["attribute"]["enum"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|id| id == "person_title"))
+        }));
+        assert!(
+            gap_branches
+                .iter()
+                .filter(|branch| branch["properties"].get("derived_from").is_some())
+                .all(|branch| {
+                    branch["properties"]["derived_from"]["items"]["enum"]
+                        == serde_json::json!(["synthetic-attempt-001"])
+                })
+        );
+        assert_eq!(
+            schema["properties"]["rejected_claims"]["items"]["properties"]["derived_from"]["items"]
+                ["enum"],
+            serde_json::json!(["synthetic-attempt-001"])
+        );
         let _ = std::fs::remove_dir_all(temp);
     }
 
