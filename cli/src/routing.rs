@@ -617,7 +617,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 && actual_bytes > 0
                 && !byte_overflow
                 && actual_bytes * 100 >= max_bytes * 90;
-            if entry_overflow || byte_overflow {
+            if entry_overflow || byte_overflow || native_overflow {
                 overflow_count += 1;
             }
             let mut diagnostics: Vec<Value> = Vec::new();
@@ -4466,7 +4466,7 @@ mod tests {
             "strict_warnings": [], "query": {"job_id": null, "persona": null, "matched_route_count": 1},
             "routes": [{"persona": "Buyer", "job_id": "job", "job": "job", "status": "blocked",
                 "generation_unassessed": false, "budget": null, "selected_count": null,
-                "excluded_count": null, "diagnostics": ["native_input_budget_exceeded"],
+                "excluded_count": null, "diagnostics": ["context_byte_budget_exceeded", "native_input_budget_exceeded"],
                 "reason_distribution": {}, "excluded_reason_distribution": {},
                 "largest_contributing_cards": [], "context_sha256": null, "route_card_cap": null}]
         });
