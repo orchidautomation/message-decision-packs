@@ -629,7 +629,6 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             }
             if native_overflow {
                 diagnostics.push(json!("native_input_budget_exceeded"));
-                overflow_count += 1;
             }
             if near_entries || near_bytes {
                 near_budget_count += 1;
@@ -4161,6 +4160,50 @@ mod tests {
                 .as_u64()
                 .expect("actual bytes")
                 <= 65536
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preflight_counts_combined_context_and_native_overflow_once_per_route() {
+        let root = temp_pack("route-budget-combined-overflow");
+        set_context_budget(&root, "outbound-copy-brief", 1, 1);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let mut authored: serde_yaml::Value = serde_yaml::from_str(
+            &std::fs::read_to_string(&manifest_path).expect("manifest should be readable"),
+        )
+        .expect("manifest should parse");
+        let job = authored["jobs"]
+            .as_sequence_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|job| job["id"].as_str() == Some("outbound-copy-brief"))
+            .expect("outbound job should exist");
+        job["model_task"] =
+            serde_yaml::from_str("kind: model_task\nprompt: generate-outbound-copy-v1\n")
+                .expect("model task should parse");
+        std::fs::write(&manifest_path, serde_yaml::to_string(&authored).unwrap()).unwrap();
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        let routes = preflight["routes"].as_array().expect("routes");
+        assert!(preflight["overflow_count"].as_u64().unwrap() <= routes.len() as u64);
+        let route = routes
+            .iter()
+            .find(|route| route["job"] == "outbound-copy-brief")
+            .expect("outbound route should be present");
+        assert!(
+            route["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == "context_byte_budget_exceeded")
+        );
+        assert!(
+            route["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value == "native_input_budget_exceeded")
         );
         let _ = std::fs::remove_dir_all(root);
     }
