@@ -195,8 +195,11 @@ validate-installers:
 	node --check scripts/mdp-proposal-runner.mjs
 	node --check scripts/mdp-proposal-evidence-harness.mjs
 	node --check scripts/test-route-budget-installed-parity.mjs
+	node --check scripts/classify-version-only-release.mjs
+	node --check scripts/test-version-only-release-classifier.mjs
 	node --check scripts/test-authority-mutations-contract.mjs
 	node scripts/test-release-workflow.mjs
+	node scripts/test-version-only-release-classifier.mjs
 	node scripts/test-authority-mutations-contract.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check scripts/lib/process-supervisor.mjs

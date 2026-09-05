@@ -3,7 +3,6 @@ name: Authority mutations
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
     branches: [main]
   schedule:
@@ -11,6 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -24,18 +24,102 @@ jobs:
     outputs:
       classification: ${{ steps.classify.outputs.classification }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect an exact version-only release change
+        id: release-diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          AFTER_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          release_only=false
+          if [[ "$EVENT_NAME" == "pull_request" || "$EVENT_NAME" == "push" ]] &&
+             [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] &&
+             [[ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]] &&
+             [[ "$AFTER_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            classification="$(node scripts/classify-version-only-release.mjs "$BEFORE_SHA" "$AFTER_SHA")"
+            if [[ "$classification" == "release-only" ]]; then
+              release_only=true
+            fi
+          fi
+          echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
       - name: Classify authority mutation policy
         id: classify
         uses: actions/github-script@v7
+        env:
+          RELEASE_ONLY: ${{ steps.release-diff.outputs.release_only }}
         with:
           script: |
-            const fullEvents = new Set(['push', 'schedule', 'workflow_dispatch'])
-            if (fullEvents.has(context.eventName) || (context.eventName === 'push' && context.ref.startsWith('refs/tags/'))) {
-              core.setOutput('classification', 'full')
+            const setClassification = (classification) => {
+              core.setOutput('classification', classification)
+              core.info(`authority mutation policy=${classification}`)
+            }
+            // Reuse must terminate at a real full campaign. Requiring the four
+            // shard jobs prevents a later version-only bump from chaining from
+            // another reuse result indefinitely.
+            const successfulFullRunFor = async (sha) => {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'authority-mutations.yml',
+                branch: 'main',
+                event: 'push',
+                status: 'completed',
+                head_sha: sha,
+                per_page: 100,
+              })
+              for (const run of runs.filter(({ conclusion }) => conclusion === 'success')) {
+                const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                  filter: 'latest',
+                  per_page: 100,
+                })
+                const successful = new Set(
+                  jobs.filter(({ conclusion }) => conclusion === 'success').map(({ name }) => name),
+                )
+                const required = [
+                  'authority-mutation-shard-0/4',
+                  'authority-mutation-shard-1/4',
+                  'authority-mutation-shard-2/4',
+                  'authority-mutation-shard-3/4',
+                  'authority-mutations',
+                ]
+                if (required.every((name) => successful.has(name))) return true
+              }
+              return false
+            }
+            if (context.eventName === 'schedule' || context.eventName === 'workflow_dispatch') {
+              setClassification('full')
+              return
+            }
+            if (context.eventName === 'push') {
+              if (process.env.RELEASE_ONLY !== 'true') {
+                setClassification('full')
+                return
+              }
+              try {
+                if (await successfulFullRunFor(context.payload.before)) {
+                  setClassification('reuse')
+                } else {
+                  core.warning('No successful complete predecessor evidence; running the full campaign.')
+                  setClassification('full')
+                }
+              } catch (error) {
+                core.warning(`Authority evidence lookup failed; running the full campaign: ${error.message}`)
+                setClassification('full')
+              }
               return
             }
             if (context.eventName !== 'pull_request') {
               core.setFailed(`unsupported event for authority mutation policy: ${context.eventName}`)
+              return
+            }
+            if (process.env.RELEASE_ONLY === 'true') {
+              setClassification('release-only')
               return
             }
             const files = await github.paginate(github.rest.pulls.listFiles, {
@@ -46,14 +130,16 @@ jobs:
               path === '.github/workflows/authority-mutations.yml' ||
               path === 'scripts/test-authority-mutations.sh' ||
               path === 'scripts/test-authority-mutations-contract.mjs' ||
+              path === 'scripts/classify-version-only-release.mjs' ||
+              path === 'scripts/test-version-only-release-classifier.mjs' ||
               path === 'cli/Cargo.toml' ||
               path === 'cli/Cargo.lock' ||
               path.startsWith('cli/src/authority/') ||
               path.startsWith('plugin/assets/authority-conformance/') ||
               path.startsWith('assets/authority-conformance/')
             const classification = files.some(({ filename }) => smokePath(filename)) ? 'smoke' : 'skip'
-            core.setOutput('classification', classification)
-            core.info(`authority mutation policy=${classification} changed_files=${files.length}`)
+            setClassification(classification)
+            core.info(`changed_files=${files.length}`)
 
   authority-mutation-tool:
     needs: authority-mutation-classifier
@@ -163,6 +249,6 @@ jobs:
           test "$CLASSIFIER_RESULT" = success
           test "$CONTRACT_RESULT" = success
           case "$CLASSIFICATION:$SMOKE_RESULT:$FULL_RESULT" in
-            smoke:success:skipped|skip:skipped:skipped|full:skipped:success) ;;
+            smoke:success:skipped|skip:skipped:skipped|release-only:skipped:skipped|reuse:skipped:skipped|full:skipped:success) ;;
             *) echo "invalid authority mutation result tuple: $CLASSIFICATION:$SMOKE_RESULT:$FULL_RESULT" >&2; exit 1 ;;
           esac

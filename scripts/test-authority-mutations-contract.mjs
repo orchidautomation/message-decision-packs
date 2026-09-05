@@ -32,8 +32,10 @@ function jobBlock(text, name) {
   return lines.slice(start, end).join('\n')
 }
 
-function classify(event, paths) {
+function classify(event, paths, { releaseOnly = false, predecessorEvidence = false } = {}) {
+  if (event === 'push') return releaseOnly && predecessorEvidence ? 'reuse' : 'full'
   if (event !== 'pull_request') return 'full'
+  if (releaseOnly) return 'release-only'
   return paths.some((path) =>
     path === '.github/workflows/authority-mutations.yml' ||
     path === 'scripts/test-authority-mutations.sh' ||
@@ -52,12 +54,16 @@ function aggregate(classification, contract, smokeResult, fullResult, classifier
   return (
     (classification === 'smoke' && smokeResult === 'success' && fullResult === 'skipped') ||
     (classification === 'skip' && smokeResult === 'skipped' && fullResult === 'skipped') ||
+    (classification === 'release-only' && smokeResult === 'skipped' && fullResult === 'skipped') ||
+    (classification === 'reuse' && smokeResult === 'skipped' && fullResult === 'skipped') ||
     (classification === 'full' && smokeResult === 'skipped' && fullResult === 'success')
   )
 }
 
 // Pure policy fixtures exercise the fail-closed routing contract.
 assert.equal(classify('push', ['README.md']), 'full')
+assert.equal(classify('push', ['cli/Cargo.toml'], { releaseOnly: true }), 'full')
+assert.equal(classify('push', ['cli/Cargo.toml'], { releaseOnly: true, predecessorEvidence: true }), 'reuse')
 assert.equal(classify('schedule', []), 'full')
 assert.equal(classify('workflow_dispatch', []), 'full')
 assert.equal(classify('pull_request', ['cli/src/main.rs']), 'skip')
@@ -66,16 +72,21 @@ assert.equal(classify('pull_request', ['cli/src/authority/mod.rs']), 'smoke')
 assert.equal(classify('pull_request', ['scripts/test-authority-mutations.sh']), 'smoke')
 assert.equal(classify('pull_request', ['cli/Cargo.toml']), 'smoke')
 assert.equal(classify('pull_request', ['cli/Cargo.lock']), 'smoke')
+assert.equal(classify('pull_request', ['cli/Cargo.lock'], { releaseOnly: true }), 'release-only')
 assert.equal(classify('pull_request', ['plugin/assets/authority-conformance/corpus.json']), 'smoke')
 
 for (const tuple of [
   ['smoke', 'success', 'success', 'skipped'],
   ['skip', 'success', 'skipped', 'skipped'],
+  ['release-only', 'success', 'skipped', 'skipped'],
+  ['reuse', 'success', 'skipped', 'skipped'],
   ['full', 'success', 'skipped', 'success'],
 ]) assert.equal(aggregate(...tuple), true)
 for (const tuple of [
   ['smoke', 'success', 'failure', 'skipped'],
   ['skip', 'success', 'success', 'skipped'],
+  ['release-only', 'success', 'success', 'skipped'],
+  ['reuse', 'success', 'skipped', 'success'],
   ['full', 'success', 'skipped', 'failure'],
   ['smoke', 'failure', 'success', 'skipped'],
   ['skip', 'failure', 'skipped', 'skipped'],
@@ -87,12 +98,21 @@ assert.match(workflow, /branches:\s*\[main\]/u)
 const pullRequestTrigger = workflow.match(/pull_request:\n([\s\S]*?)(?=\n\s{2}\w|$)/u)?.[1] ?? ''
 assert.match(pullRequestTrigger, /branches:\s*\[main\]/u)
 assert.doesNotMatch(pullRequestTrigger, /paths:/u, 'pull_request must reach the classifier for every path')
-assert.match(workflow, /tags:\s*\["v\*"\]/u)
+assert.doesNotMatch(workflow, /tags:\s*\["v\*"\]/u, 'release tags must not repeat the complete mutation campaign')
 assert.match(workflow, /schedule:/u)
 assert.match(workflow, /workflow_dispatch:/u)
+assert.match(workflow, /actions:\s*read/u)
+assert.match(workflow, /fetch-depth:\s*0/u)
+assert.match(workflow, /node scripts\/classify-version-only-release\.mjs/u)
 assert.match(workflow, /actions\/github-script@v7/u)
 assert.match(workflow, /github\.paginate\(github\.rest\.pulls\.listFiles/u)
-assert.match(workflow, /classification.*\? 'smoke' : 'skip'/u)
+assert.match(workflow, /github\.rest\.actions\.listWorkflowRuns/u)
+assert.match(workflow, /github\.rest\.actions\.listJobsForWorkflowRun/u)
+assert.match(workflow, /head_sha:\s*sha/u)
+for (const shard of complete) assert.ok(workflow.includes(`'authority-mutation-shard-${shard}'`))
+assert.match(workflow, /setClassification\('reuse'\)/u)
+assert.match(workflow, /setClassification\('release-only'\)/u)
+assert.match(workflow, /setClassification\('full'\)/u)
 assert.match(workflow, /core\.setFailed\(`unsupported event/u)
 assert.match(workflow, /authority-mutation-classifier:/u)
 assert.match(workflow, /authority-mutations-\$\{\{ github\.event\.pull_request\.number/u)
@@ -102,7 +122,7 @@ assert.match(workflow, /authority-mutation-shard:/u)
 assert.deepEqual([...workflow.matchAll(/shard: \["([^"]+)", "([^"]+)", "([^"]+)", "([^"]+)"\]/gu)][0].slice(1), complete)
 assert.match(workflow, /authority-mutations:\n    if: always\(\)/u)
 assert.match(workflow, /needs: \[authority-mutation-classifier, authority-mutation-contract, authority-mutation-smoke, authority-mutation-shard\]/u)
-assert.match(workflow, /smoke:success:skipped\|skip:skipped:skipped\|full:skipped:success/u)
+assert.match(workflow, /smoke:success:skipped\|skip:skipped:skipped\|release-only:skipped:skipped\|reuse:skipped:skipped\|full:skipped:success/u)
 assert.match(workflow, /test "\$CLASSIFIER_RESULT" = success/u)
 assert.match(workflow, /test "\$CONTRACT_RESULT" = success/u)
 assert.match(workflow, /cargo install cargo-mutants --version 27\.1\.0 --locked/u)
@@ -138,11 +158,23 @@ assert.match(workflow, /bash scripts\/test-authority-mutations\.sh "\$\{\{ matri
 assert.doesNotMatch(script, /0\/2|1\/2/u)
 assert.doesNotMatch(script, /^\s*#\s*cargo\s+mutants/mu)
 assert.match(ci, /node scripts\/test-authority-mutations-contract\.mjs/u)
+assert.match(ci, /node scripts\/test-version-only-release-classifier\.mjs/u)
 assert.match(ci, /scripts\/test-authority-mutations\.sh/u)
 
 if (existsSync(join(root, '.github/workflows/release.yml'))) {
   const release = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8')
+  const releaseAuthority = jobBlock(release, 'release-authority')
   const buildCli = jobBlock(release, 'build-cli')
+  assert.match(release, /actions:\s*read/u)
+  assert.match(releaseAuthority, /github\.rest\.actions\.listWorkflowRuns/u)
+  assert.match(releaseAuthority, /github\.rest\.actions\.listJobsForWorkflowRun/u)
+  assert.match(releaseAuthority, /head_sha:\s*context\.sha/u)
+  assert.match(releaseAuthority, /name === 'authority-mutations' && conclusion === 'success'/u)
+  assert.match(releaseAuthority, /attempt < 12/u)
+  assert.match(releaseAuthority, /setTimeout\(resolve, 10_000\)/u)
+  assert.match(release, /needs:\s*\[release-authority, build-cli\]/u)
+  assert.match(release, /permissions:\s*\n\s*actions: read\s*\n\s*contents: read/u)
+  assert.match(release, /github-release:[\s\S]*?permissions:\s*\n\s*actions: read\s*\n\s*contents: write/u)
   assert.match(buildCli, /uses:\s*Swatinem\/rust-cache@v2/u)
   assert.match(buildCli, /shared-key:\s*release-\$\{\{\s*matrix\.os\s*\}\}-\$\{\{\s*matrix\.target\s*\}\}/u)
   assert.match(buildCli, /workspaces:\s*\|\s*\n\s*cli -> cli\/target/u)

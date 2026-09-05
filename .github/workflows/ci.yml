@@ -74,6 +74,8 @@ jobs:
               - "scripts/test-opencode-wrapper.mjs"
               - "scripts/test-authority-mutations-contract.mjs"
               - "scripts/test-authority-mutations.sh"
+              - "scripts/classify-version-only-release.mjs"
+              - "scripts/test-version-only-release-classifier.mjs"
               - "scripts/test-native-model-driver.mjs"
               - "scripts/mdp-native-model-openai.mjs"
               - "scripts/mdp-native-normalize-openai.mjs"
@@ -99,7 +101,9 @@ jobs:
       - name: Validate release workflow contract
         run: node scripts/test-release-workflow.mjs
       - name: Validate authority mutation workflow contract
-        run: node scripts/test-authority-mutations-contract.mjs
+        run: |
+          node scripts/test-version-only-release-classifier.mjs
+          node scripts/test-authority-mutations-contract.mjs
       - name: Validate authored asset parity
         run: |
           /usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"
