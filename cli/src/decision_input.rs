@@ -51,6 +51,18 @@ impl DecisionInput {
         for (key, field) in &self.fields {
             value.insert(key.clone(), field.clone());
         }
+        // The legacy `Prospect` compatibility type represents these fields as
+        // required strings, while v3 intentionally permits normalization to
+        // report them as not found. Preserve that absence as an empty value so
+        // the deterministic fit gates can return `insufficient-context`
+        // instead of turning a valid sparse v3 result into an adapter error.
+        // This grants no evidence: routing already treats blank values as
+        // absent.
+        for required_compatibility_field in ["name", "title", "company"] {
+            value
+                .entry(required_compatibility_field)
+                .or_insert_with(|| Value::String(String::new()));
+        }
         value.insert("attributes".into(), json_object(&self.attributes));
         let signals = self
             .signals
@@ -611,6 +623,26 @@ mod tests {
         assert_eq!(prospect.segment.as_deref(), Some("agent-assisted GTM"));
         assert_eq!(prospect.attributes["contact_policy"], "clear");
         assert_eq!(prospect.signals[0].title, "Hiring now");
+    }
+
+    #[test]
+    fn sparse_v3_gtm_input_reaches_deterministic_missing_context_gates() {
+        let envelope = Map::from_iter([(
+            "normalized_input".into(),
+            json!({
+                "fields": {"name": "Alex Example", "company": "ExampleCo"},
+                "signals": [],
+                "attributes": {"contact_policy": "needs-review"}
+            }),
+        )]);
+        let prospect = from_v3_normalized(&envelope)
+            .unwrap()
+            .to_gtm_prospect()
+            .expect("sparse v3 evidence is a policy input, not an adapter failure");
+
+        assert_eq!(prospect.name, "Alex Example");
+        assert_eq!(prospect.company, "ExampleCo");
+        assert!(prospect.title.is_empty());
     }
 
     #[test]
