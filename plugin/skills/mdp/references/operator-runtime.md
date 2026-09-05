@@ -328,3 +328,13 @@ This applies consistently to `route --entries`, `brief --context`, and
 `route-budget`: universal means no persona filter only. Job/channel policy,
 lifecycle, portfolio scope, guardrails, route-card caps, and context budgets
 still decide whether the result is usable.
+
+## Temporal health
+
+When available, run `mdp --json temporal-health --dir <pack-root> --as-of
+<UTC-instant>`. Report source state and decision review state separately: an old
+or changed source does not itself supersede an approved decision, and a recent
+review does not make a source fresh. Treat unknown dates as unknown, never infer
+mtime or invent dates, and treat hashes as identity evidence rather than truth
+or approval. This read-only offline projection is not a scheduler or approval
+system.

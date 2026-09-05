@@ -171,6 +171,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RoutedContextV1 => routed_context_schema(),
         SchemaTarget::RouteBudget => route_budget_schema(),
         SchemaTarget::RouteBudgetSummaryV1 => route_budget_summary_schema(),
+        SchemaTarget::TemporalHealthV1 => temporal_health_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::RequirementsModelContextV1 => requirements_model_context_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
@@ -231,6 +232,39 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Skills => skills_schema(),
         SchemaTarget::ReadinessV1 => readiness_v1_schema(),
     }
+}
+
+fn temporal_health_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Temporal Health v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "evaluation", "sources", "decision_review", "pack_publication", "diagnostics", "recommendation", "status"],
+        "properties": {
+            "contract": {"const": "mdp.temporal-health.v1"},
+            "evaluation": {"type": "object", "additionalProperties": false, "required": ["as_of", "timezone"], "properties": {"as_of": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"}, "timezone": {"const": "UTC"}}},
+            "sources": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "state", "observed_at", "published_at", "imported_at", "age_origin_at", "next_review_at", "hash_match"], "properties": {"id": {"type": "string"}, "state": {"enum": ["current", "aging", "stale", "unknown", "revoked", "superseded"]}, "observed_at": {"type": ["string", "null"]}, "published_at": {"type": ["string", "null"]}, "imported_at": {"type": ["string", "null"]}, "age_origin_at": {"type": ["string", "null"]}, "next_review_at": {"type": ["string", "null"]}, "hash_match": {"type": ["boolean", "null"]}}}},
+            "decision_review": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "state", "reviewed_at", "changed_at", "source_revision_mismatch", "next_review_at"], "properties": {"id": {"type": "string"}, "label": {"type": "string"}, "state": {"enum": ["review-current", "review-due", "review-overdue", "never-reviewed", "unassessed", "revoked", "superseded"]}, "reviewed_at": {"type": ["string", "null"]}, "changed_at": {"type": ["string", "null"]}, "source_revision_mismatch": {"type": "boolean"}, "next_review_at": {"type": ["string", "null"]}}}},
+            "pack_publication": {"type": "object", "additionalProperties": false, "required": ["state", "published_at", "receipt_ref", "receipt_sha256", "authority"], "properties": {"state": {"enum": ["known", "unknown"]}, "published_at": {"type": ["string", "null"]}, "receipt_ref": {"type": ["string", "null"]}, "receipt_sha256": {"type": ["string", "null"]}, "authority": {"enum": ["receipt-bound", "declared-unverified", "unknown"]}}},
+            "diagnostics": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["code", "path", "message"], "properties": {"code": {"type": "string"}, "path": {"type": "string"}, "message": {"type": "string"}}}},
+            "recommendation": {"type": "string"},
+            "status": {"enum": ["available", "available-with-diagnostics"]}
+        }
+    })
+}
+
+const STRICT_UTC_TIMESTAMP_PATTERN: &str = r"^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:0[48]|[2468][048]|[13579][26])00)-02-29|(?:[0-9]{3}[1-9]|[0-9]{2}[1-9][0-9]|[0-9][1-9][0-9]{2}|[1-9][0-9]{3})-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$";
+
+// Exact positive u32 range, matching `time::parse_day_cadence`.
+const DAY_CADENCE_PATTERN: &str = r"^P(?:[1-9][0-9]{0,8}|[1-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}|429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}|429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]|429496729[0-5])D$";
+
+fn strict_utc_timestamp_schema() -> Value {
+    json!({
+        "type": "string",
+        "format": "date-time",
+        "pattern": STRICT_UTC_TIMESTAMP_PATTERN,
+    })
 }
 
 fn readiness_v1_schema() -> Value {
@@ -2951,6 +2985,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "primitive_map": primitive_map_schema(),
             "decision_input_contracts": decision_input_contracts_schema(),
             "classification_taxonomies": classification_taxonomies_schema(),
+            "decision_groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "entries", "jobs"], "properties": {"id": {"type": "string", "minLength": 1, "pattern": "\\S"}, "label": {"type": "string", "minLength": 1, "pattern": "\\S"}, "entries": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["card_id", "entry_id"], "properties": {"card_id": {"type": "string", "minLength": 1}, "entry_id": {"type": "string", "minLength": 1}}}}, "jobs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "owner": {"anyOf": [{"type": "string", "minLength": 1, "pattern": "\\S"}, {"type": "null"}]}, "review_policy": {"anyOf": [{"$ref": "#/$defs/review_policy"}, {"type": "null"}]}, "temporal": {"anyOf": [{"$ref": "#/$defs/decision_temporal"}, {"type": "null"}]}}}},
             "input_contracts": input_contracts_schema(),
             "jobs": profile_jobs_schema(),
             "profile_eval": profile_eval_schema(),
@@ -2986,9 +3021,15 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
                 "properties": {
                     "owner": {"type": "string"},
                     "created_by": {"type": "string"},
-                    "notes": {"type": "array", "items": {"type": "string"}}
+                    "notes": {"type": "array", "items": {"type": "string"}},
+                    "temporal": {"anyOf": [{"$ref": "#/$defs/publication_temporal"}, {"type": "null"}]}
                 }
             }
+        },
+        "$defs": {
+            "review_policy": {"type": "object", "additionalProperties": false, "properties": {"cadence": {"anyOf": [{"type": "string", "pattern": DAY_CADENCE_PATTERN}, {"type": "null"}]}, "aging_after_days": {"anyOf": [{"type": "integer", "minimum": 1, "maximum": 4294967295u64}, {"type": "null"}]}, "stale_after_days": {"anyOf": [{"type": "integer", "minimum": 1, "maximum": 4294967295u64}, {"type": "null"}]}}},
+            "decision_temporal": {"type": "object", "additionalProperties": false, "required": ["lifecycle"], "properties": {"lifecycle": {"enum": ["current", "revoked", "superseded"]}, "changed_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "reviewed_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "revoked_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "superseded_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "replacement_group": {"type": ["string", "null"]}, "source_revisions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "sha256"], "properties": {"source_id": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}},
+            "publication_temporal": {"type": "object", "additionalProperties": false, "properties": {"published_at": {"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}, "receipt_ref": {"type": ["string", "null"]}, "receipt_sha256": {"anyOf": [{"type": "string", "pattern": "^[0-9a-f]{64}$"}, {"type": "null"}]}}}
         }
     })
 }
@@ -6004,6 +6045,16 @@ mod tests {
     }
 
     #[test]
+    fn decision_group_review_policy_schema_matches_u32_boundaries() {
+        let policy = schema(SchemaTarget::Manifest)["$defs"]["review_policy"].clone();
+        for field in ["aging_after_days", "stale_after_days"] {
+            draft202012::validate(&policy, &json!({field: 4_294_967_295u64}))
+                .expect("u32 maximum should be accepted");
+            assert!(draft202012::validate(&policy, &json!({field: 4_294_967_296u64})).is_err());
+        }
+    }
+
+    #[test]
     fn card_schema_exposes_structured_entry_constraints() {
         let result = schema(SchemaTarget::Card);
         let constraints =
@@ -7077,6 +7128,175 @@ mod tests {
         assert_eq!(result["properties"]["now_utc"]["format"], "date-time");
         assert_eq!(result["properties"]["date_utc"]["format"], "date");
         assert_eq!(result["properties"]["timezone"]["const"], "UTC");
+    }
+
+    #[test]
+    fn temporal_authored_timestamps_require_strict_utc_shape() {
+        let pack = schema(SchemaTarget::Manifest);
+        let temporal = pack["$defs"]["decision_temporal"].clone();
+        for field in ["changed_at", "reviewed_at", "revoked_at", "superseded_at"] {
+            assert_eq!(
+                temporal["properties"][field],
+                json!({"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]}),
+                "{field} must use the shared authored timestamp schema"
+            );
+        }
+        let publication = pack["$defs"]["publication_temporal"].clone();
+        assert_eq!(
+            publication["properties"]["published_at"],
+            json!({"anyOf": [strict_utc_timestamp_schema(), {"type": "null"}]})
+        );
+        let valid = [
+            "2000-02-29T00:00:00Z",
+            "2024-02-29T23:59:59Z",
+            "2025-01-31T12:34:56Z",
+            "2025-04-30T00:00:00Z",
+            "2025-12-31T23:59:59Z",
+        ];
+        let invalid = [
+            "0000-01-01T00:00:00Z",
+            "0000-02-29T00:00:00Z",
+            "1900-02-29T00:00:00Z",
+            "2025-02-29T00:00:00Z",
+            "2100-02-29T00:00:00Z",
+            "2025-02-30T00:00:00Z",
+            "2025-04-31T00:00:00Z",
+            "2025-01-01T24:00:00Z",
+            "2025-01-01T00:60:00Z",
+            "2025-01-01T00:00:60Z",
+            "2026-01-02T03:04:05+00:00",
+            "2026-01-02T03:04:05.000Z",
+            "2026-99-02T03:04:05Z",
+            "2026-01-02T99:04:05Z",
+            "bananas",
+        ];
+        for (value, expected) in valid
+            .into_iter()
+            .map(|value| (value, true))
+            .chain(invalid.into_iter().map(|value| (value, false)))
+        {
+            assert_eq!(
+                crate::time::parse_utc_seconds(value).is_some(),
+                expected,
+                "runtime parser disagrees for {value}"
+            );
+            for field in ["changed_at", "reviewed_at", "revoked_at", "superseded_at"] {
+                let mut candidate = json!({"lifecycle":"current"});
+                candidate[field] = json!(value);
+                assert_eq!(
+                    jsonschema::draft202012::validate(&temporal, &candidate).is_ok(),
+                    expected,
+                    "decision {field} disagrees for {value}"
+                );
+            }
+            let candidate = json!({"published_at":value});
+            assert_eq!(
+                jsonschema::draft202012::validate(&publication, &candidate).is_ok(),
+                expected,
+                "publication disagrees for {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn optional_governance_schema_fields_accept_explicit_null() {
+        let pack = schema(SchemaTarget::Manifest);
+        let policy = pack["$defs"]["review_policy"].clone();
+        draft202012::validate(
+            &policy,
+            &json!({
+                "cadence": null,
+                "aging_after_days": null,
+                "stale_after_days": null
+            }),
+        )
+        .expect("Option-backed review policy fields accept null");
+
+        let temporal = pack["$defs"]["decision_temporal"].clone();
+        draft202012::validate(
+            &temporal,
+            &json!({
+                "lifecycle": "current",
+                "changed_at": null,
+                "reviewed_at": null,
+                "revoked_at": null,
+                "superseded_at": null,
+                "replacement_group": null
+            }),
+        )
+        .expect("Option-backed decision temporal fields accept null");
+
+        let publication = pack["$defs"]["publication_temporal"].clone();
+        draft202012::validate(
+            &publication,
+            &json!({
+                "published_at": null,
+                "receipt_ref": null,
+                "receipt_sha256": null
+            }),
+        )
+        .expect("Option-backed publication fields accept null");
+
+        let group = pack["properties"]["decision_groups"]["items"].clone();
+        draft202012::validate(&group["properties"]["owner"], &Value::Null)
+            .expect("optional decision owner accepts null");
+        assert_eq!(
+            group["properties"]["review_policy"],
+            json!({"anyOf": [{"$ref": "#/$defs/review_policy"}, {"type": "null"}]})
+        );
+        assert_eq!(
+            group["properties"]["temporal"],
+            json!({"anyOf": [{"$ref": "#/$defs/decision_temporal"}, {"type": "null"}]})
+        );
+        assert_eq!(
+            pack["properties"]["provenance"]["properties"]["temporal"],
+            json!({"anyOf": [{"$ref": "#/$defs/publication_temporal"}, {"type": "null"}]})
+        );
+    }
+
+    #[test]
+    fn authored_day_cadence_schema_matches_u32_parser_boundaries() {
+        let cadence =
+            schema(SchemaTarget::Manifest)["$defs"]["review_policy"]["properties"]["cadence"]
+                .clone();
+        for (value, expected) in [
+            ("P1D", true),
+            ("P999999999D", true),
+            ("P1000000000D", true),
+            ("P4294967295D", true),
+            ("P0D", false),
+            ("P01D", false),
+            ("P4294967296D", false),
+            ("P9999999999D", false),
+            ("P42949672950D", false),
+        ] {
+            assert_eq!(
+                crate::time::parse_day_cadence(value).is_some(),
+                expected,
+                "runtime parser expectation changed for {value}"
+            );
+            assert_eq!(
+                jsonschema::draft202012::validate(&cadence, &json!(value)).is_ok(),
+                expected,
+                "manifest schema disagrees for {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn decision_group_identity_schema_rejects_whitespace_only_text() {
+        let group =
+            schema(SchemaTarget::Manifest)["properties"]["decision_groups"]["items"].clone();
+        for field in ["id", "label", "owner"] {
+            let identity = group["properties"][field].clone();
+            assert!(jsonschema::draft202012::validate(&identity, &json!("meaningful")).is_ok());
+            for value in ["", " ", "\t", "\n", " \t\n "] {
+                assert!(
+                    jsonschema::draft202012::validate(&identity, &json!(value)).is_err(),
+                    "{field} accepted whitespace-only value {value:?}"
+                );
+            }
+        }
     }
 
     #[test]

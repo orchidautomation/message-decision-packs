@@ -26,6 +26,90 @@ fn json(args: &[&str]) -> (Output, Value) {
     (output, value)
 }
 
+#[test]
+fn temporal_health_command_accepts_explicit_as_of() {
+    let help = run(&["temporal-health", "--help"]);
+    assert!(help.status.success());
+    let help_text = String::from_utf8(help.stdout).unwrap();
+    assert!(help_text.contains("--as-of") && help_text.contains("strict UTC"));
+
+    let output = run(&[
+        "temporal-health",
+        "--dir",
+        "plugin/assets/templates/basic",
+        "--as-of",
+        "2026-09-02T00:00:00Z",
+    ]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("temporal health evaluated at 2026-09-02T00:00:00Z"));
+
+    let invalid = run(&[
+        "temporal-health",
+        "--dir",
+        "plugin/assets/templates/basic",
+        "--as-of",
+        "not-a-timestamp",
+    ]);
+    assert!(!invalid.status.success());
+    assert!(invalid.stdout.is_empty());
+    assert!(
+        String::from_utf8(invalid.stderr)
+            .unwrap()
+            .contains("strict UTC timestamp")
+    );
+
+    let schema = run(&["--json", "schema", "temporal-health-v1"]);
+    assert!(schema.status.success());
+    assert!(schema.stderr.is_empty());
+    let schema_value: Value = serde_json::from_slice(&schema.stdout).unwrap();
+    assert_eq!(
+        schema_value["data"]["properties"]["contract"]["const"],
+        "mdp.temporal-health.v1"
+    );
+}
+
+#[test]
+fn temporal_health_human_output_lists_diagnostics_before_next() {
+    let root = temp_root("temporal-diagnostic-human");
+    let init = run(&[
+        "init",
+        "--name",
+        "Temporal diagnostic fixture",
+        "--template",
+        "gtm",
+        "--target-name",
+        "Example Company",
+        "--dir",
+        root.to_str().unwrap(),
+    ]);
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    fs::write(
+        root.join(".mdp/sources.yaml"),
+        "format: mdp.sources.v0\nsources:\n- id: source\n  temporal:\n    observed_at: not-a-timestamp\n",
+    )
+    .unwrap();
+    let output = run(&[
+        "temporal-health",
+        "--dir",
+        root.to_str().unwrap(),
+        "--as-of",
+        "2026-09-02T00:00:00Z",
+    ]);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let text = String::from_utf8(output.stdout).unwrap();
+    let diagnostic = "temporal_timestamp_invalid_or_future at .mdp/sources.yaml#/sources/0/temporal/observed_at:";
+    assert!(text.contains(diagnostic));
+    assert!(text.find(diagnostic).unwrap() < text.find("Next:").unwrap());
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn temp_root(label: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
