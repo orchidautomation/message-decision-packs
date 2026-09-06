@@ -621,6 +621,14 @@ fn summarize(command: &str, data: &Value) -> Value {
             "decision_input_contract_count": array_len(&data["decision_input_contracts"]),
             "diagnostics": data["diagnostics"]
         }),
+        "temporal-health" => json!({
+            "contract": data["contract"], "status": data["status"],
+            "as_of": data["evaluation"]["as_of"],
+            "source_count": array_len(&data["sources"]),
+            "decision_group_count": array_len(&data["decision_review"]),
+            "diagnostic_count": array_len(&data["diagnostics"]),
+            "recommendation": data["recommendation"]
+        }),
         "validate-source-binding" => json!({
             "contract": data["contract"],
             "status": data["status"],
@@ -1260,6 +1268,39 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                 data["next_command"]
                     .as_str()
                     .unwrap_or("Run mdp check with an exact job id.")
+            );
+        }
+        "temporal-health" => {
+            println!(
+                "temporal health evaluated at {}",
+                data["evaluation"]["as_of"].as_str().unwrap_or("unknown")
+            );
+            println!("sources:");
+            for item in data["sources"].as_array().into_iter().flatten() {
+                println!(
+                    "- {}: {}",
+                    item["id"].as_str().unwrap_or("source"),
+                    item["state"].as_str().unwrap_or("unknown")
+                );
+            }
+            println!("decision review:");
+            for item in data["decision_review"].as_array().into_iter().flatten() {
+                println!(
+                    "- {}: {}",
+                    item["id"].as_str().unwrap_or("group"),
+                    item["state"].as_str().unwrap_or("unassessed")
+                );
+            }
+            if let Some(diagnostics) = data["diagnostics"].as_array() {
+                for diagnostic in diagnostics {
+                    println!("- {}", issue_message(diagnostic));
+                }
+            }
+            println!(
+                "Next: {}",
+                data["recommendation"]
+                    .as_str()
+                    .unwrap_or("Review declared temporal evidence.")
             );
         }
         "validate" => {

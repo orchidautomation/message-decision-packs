@@ -35,6 +35,8 @@ pub(crate) struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) classification_taxonomies: Vec<ClassificationTaxonomy>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) decision_groups: Vec<DecisionGroup>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) input_contracts: Vec<InputContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) jobs: Vec<ProfileJob>,
@@ -1060,6 +1062,81 @@ pub(crate) struct Provenance {
     pub(crate) owner: String,
     pub(crate) created_by: String,
     pub(crate) notes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) temporal: Option<PublicationTemporal>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReviewPolicy {
+    #[serde(default)]
+    pub(crate) cadence: Option<String>,
+    #[serde(default)]
+    pub(crate) aging_after_days: Option<u32>,
+    #[serde(default)]
+    pub(crate) stale_after_days: Option<u32>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DecisionGroup {
+    pub(crate) id: String,
+    pub(crate) label: String,
+    #[serde(default)]
+    pub(crate) entries: Vec<ProductFoundationEntryRef>,
+    #[serde(default)]
+    pub(crate) jobs: Vec<String>,
+    #[serde(default)]
+    pub(crate) owner: Option<String>,
+    #[serde(default)]
+    pub(crate) review_policy: Option<ReviewPolicy>,
+    #[serde(default)]
+    pub(crate) temporal: Option<DecisionTemporal>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DecisionTemporal {
+    pub(crate) lifecycle: String,
+    #[serde(default)]
+    pub(crate) changed_at: Option<String>,
+    #[serde(default)]
+    pub(crate) reviewed_at: Option<String>,
+    #[serde(default)]
+    pub(crate) revoked_at: Option<String>,
+    #[serde(default)]
+    pub(crate) superseded_at: Option<String>,
+    #[serde(default)]
+    pub(crate) replacement_group: Option<String>,
+    #[serde(default)]
+    pub(crate) source_revisions: Vec<SourceRevision>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SourceRevision {
+    pub(crate) source_id: String,
+    pub(crate) sha256: String,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PublicationTemporal {
+    pub(crate) published_at: Option<String>,
+    #[serde(default)]
+    pub(crate) receipt_ref: Option<String>,
+    #[serde(default)]
+    pub(crate) receipt_sha256: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SourceTemporal {
+    pub(crate) observed_at: Option<String>,
+    pub(crate) published_at: Option<String>,
+    pub(crate) imported_at: Option<String>,
+    pub(crate) sha256: Option<String>,
+    pub(crate) lifecycle: Option<String>,
+    pub(crate) revoked_at: Option<String>,
+    pub(crate) superseded_at: Option<String>,
+    pub(crate) superseded_by: Option<String>,
+    pub(crate) owner: Option<String>,
+    pub(crate) review_policy: Option<ReviewPolicy>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

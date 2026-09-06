@@ -1174,6 +1174,72 @@ fn json_mode_writes_nothing_to_stderr() {
 }
 
 #[test]
+fn temporal_health_json_stdout_contract() {
+    const PACK: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../plugin/assets/templates/basic"
+    );
+    let args = [
+        "--json",
+        "temporal-health",
+        "--dir",
+        PACK,
+        "--as-of",
+        "2026-09-02T00:00:00Z",
+    ];
+    let output = Command::new(mdp_bin())
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("mdp should run");
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["contract"], "mdp.temporal-health.v1");
+    assert_eq!(value["data"]["evaluation"]["as_of"], "2026-09-02T00:00:00Z");
+
+    let summary = Command::new(mdp_bin())
+        .args([
+            "--json",
+            "temporal-health",
+            "--summary",
+            "--dir",
+            PACK,
+            "--as-of",
+            "2026-09-02T00:00:00Z",
+        ])
+        .output()
+        .unwrap();
+    assert!(summary.status.success() && summary.stderr.is_empty());
+    let summary_value: serde_json::Value = serde_json::from_slice(&summary.stdout).unwrap();
+    assert_eq!(
+        summary_value["summary"]["contract"],
+        "mdp.temporal-health.v1"
+    );
+
+    let invalid = Command::new(mdp_bin())
+        .args([
+            "--json",
+            "temporal-health",
+            "--dir",
+            PACK,
+            "--as-of",
+            "invalid",
+        ])
+        .output()
+        .unwrap();
+    assert!(!invalid.status.success());
+    assert!(invalid.stderr.is_empty());
+    let invalid_value: serde_json::Value = serde_json::from_slice(&invalid.stdout).unwrap();
+    assert_eq!(invalid_value["ok"], false);
+    assert_eq!(
+        invalid_value["error"]["message"],
+        "--as-of must be strict UTC timestamp"
+    );
+}
+
+#[test]
 fn mutating_upgrade_json_rejection_is_one_stable_envelope() {
     let output = Command::new(mdp_bin())
         .args(["--json", "upgrade", "-y"])

@@ -27,6 +27,7 @@ pub(crate) mod skills;
 pub(crate) mod source_binding;
 pub(crate) mod status;
 pub(crate) mod synthetic_chain;
+pub(crate) mod temporal_health;
 pub(crate) mod upgrade;
 
 pub(crate) mod v3_normalization;
@@ -79,4 +80,5 @@ pub(crate) use skills::skills;
 pub(crate) use source_binding::validate_source_binding_file;
 pub(crate) use status::status;
 pub(crate) use synthetic_chain::rebind_synthetic_chain;
+pub(crate) use temporal_health::temporal_health;
 pub(crate) use upgrade::{check as upgrade_check, execute as execute_upgrade};

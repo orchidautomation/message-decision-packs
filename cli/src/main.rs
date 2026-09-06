@@ -28,6 +28,7 @@ mod skill_catalog;
 mod starter;
 mod target_starter;
 mod template_registry;
+mod time;
 mod utils;
 mod value_contracts;
 

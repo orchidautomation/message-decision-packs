@@ -22,10 +22,10 @@ use crate::commands::{
     render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
     requirements_model_context, route_budget_preflight_command,
     route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
-    run_request_file_with_transport, sample_leads, schema, skills, status, upgrade_check,
-    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
-    validate_source_binding_file, verify_output_file, verify_output_readable_file,
-    verify_run_files,
+    run_request_file_with_transport, sample_leads, schema, skills, status, temporal_health,
+    upgrade_check, validate_behavioral_files, validate_pack,
+    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
+    verify_output_readable_file, verify_run_files,
 };
 use crate::output::{
     PresentationOutcome, print_output, print_output_mode_conflict, print_output_with_status,
@@ -294,6 +294,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Commands::Status { dir } => {
             crate::output::print_status_and_exit(json_mode, summary_mode, status(&dir))
         }
+        Commands::TemporalHealth { dir, as_of } => print_output(
+            json_mode,
+            summary_mode,
+            "temporal-health",
+            temporal_health(&dir, as_of.as_deref())?,
+        ),
         Commands::Check {
             dir,
             job,

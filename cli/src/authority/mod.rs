@@ -89,6 +89,7 @@ pub(crate) enum SurfaceRole {
 pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("capabilities", SurfaceRole::Projection),
     ("status", SurfaceRole::Diagnostic),
+    ("temporal-health", SurfaceRole::Diagnostic),
     ("check", SurfaceRole::Projection),
     ("conformance", SurfaceRole::Verifier),
     ("init", SurfaceRole::ArtifactWriter),

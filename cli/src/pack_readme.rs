@@ -1515,6 +1515,7 @@ mod tests {
             primitive_map: BTreeMap::new(),
             decision_input_contracts: vec![],
             classification_taxonomies: vec![],
+            decision_groups: vec![],
             input_contracts: vec![],
             jobs: vec![],
             profile_eval: Default::default(),
@@ -1530,6 +1531,7 @@ mod tests {
                 owner: "test".into(),
                 created_by: "test".into(),
                 notes: vec![],
+                temporal: None,
             },
         }
     }

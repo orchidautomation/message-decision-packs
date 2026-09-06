@@ -2599,6 +2599,7 @@ mod tests {
             primitive_map: std::collections::BTreeMap::new(),
             decision_input_contracts: Vec::new(),
             classification_taxonomies: Vec::new(),
+            decision_groups: Vec::new(),
             input_contracts: Vec::new(),
             jobs: Vec::new(),
             profile_eval: crate::models::ProfileEval::default(),
@@ -2655,6 +2656,7 @@ mod tests {
                 owner: "local".to_string(),
                 created_by: "test".to_string(),
                 notes: vec![],
+                temporal: None,
             },
         }
     }

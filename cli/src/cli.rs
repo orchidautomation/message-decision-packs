@@ -59,6 +59,13 @@ pub(crate) enum Commands {
         )]
         dir: PathBuf,
     },
+    #[command(about = "Project deterministic offline source and decision review health")]
+    TemporalHealth {
+        #[arg(long, default_value = ".", value_name = "PACK_ROOT")]
+        dir: PathBuf,
+        #[arg(long, help = "Trusted strict UTC evaluation instant")]
+        as_of: Option<String>,
+    },
     #[command(about = "Print agent-readable CLI capabilities and contracts")]
     Capabilities,
     #[command(
@@ -1109,6 +1116,7 @@ pub(crate) enum SchemaTarget {
     ReadinessV1,
     RouteBudget,
     RouteBudgetSummaryV1,
+    TemporalHealthV1,
     RequirementsModelContextV1,
 }
 
