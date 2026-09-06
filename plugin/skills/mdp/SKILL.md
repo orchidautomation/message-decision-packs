@@ -48,6 +48,10 @@ Never treat a request to decide, audit, validate, or explain as permission to
 edit durable pack authority. After an authoring handoff, rerun the CLI before
 resuming use; do not reuse the earlier decision.
 
+Every Use and decide lane follows the Apply skill's requirements-first loop and
+final usability gate. Presented requirements and generated output require exact
+CLI verification.
+
 ## Minimal Operator Journey
 
 For human orientation, run `mdp status --dir PACK_ROOT` first. It is

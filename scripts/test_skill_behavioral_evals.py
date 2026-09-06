@@ -66,6 +66,7 @@ class BehavioralEvalTests(unittest.TestCase):
         paths = {row["path"] for row in inputs}
         self.assertIn("mdp-pack-apply/references/communication-contract.md", paths)
         self.assertIn("mdp-pack-apply/references/workflow-bundle-handoff.md", paths)
+        self.assertIn("mdp-pack-apply/references/requirements-first-execution.md", paths)
 
 
 if __name__ == "__main__":

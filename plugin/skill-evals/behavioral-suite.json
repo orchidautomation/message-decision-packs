@@ -1,6 +1,6 @@
 {
   "model": "mdp.skill-behavioral-suite.v1",
-  "revision": "mdp-262.v1",
+  "revision": "mdp-389.v1",
   "trigger_repeats": 2,
   "trigger_case_ids": [
     "builder-named-mdp-validation",
@@ -15,7 +15,11 @@
     "builder-gtm-approved-boundary-train",
     "review-structural-validation",
     "gtm-fit-validation",
-    "proposal-bid-validation"
+    "proposal-bid-validation",
+    "requirements-reuse-gtm-train",
+    "requirements-stale-support-validation",
+    "requirements-unenforced-recruiting-train",
+    "requirements-final-proposal-validation"
   ],
   "input_files": {
     "builder-named-mdp-validation": ["plugin/assets/templates/basic/.mdp/manifest.yaml"],
