@@ -1670,13 +1670,32 @@ fn check_claims_artifact_scoped_with_job_policy(
             "pass --text, --file, --subject, --artifact, or at least one --field"
         ));
     }
-    let legacy_text_path = raw.as_ref().and_then(|_| {
-        declared_fields
+    let legacy_text_path = declared_fields
+        .iter()
+        .find(|field| field.legacy_input.as_deref() == Some("text"))
+        .map(|field| field.path.as_str());
+    let derived_raw = legacy_text_path.map(|path| {
+        text_surfaces
             .iter()
-            .find(|field| field.legacy_input.as_deref() == Some("text"))
-            .map(|field| field.path.as_str())
+            .filter(|surface| {
+                surface.field_path == path || surface.field_path.starts_with(&format!("{path}/"))
+            })
+            .map(|surface| surface.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
     });
-    let raw = raw.unwrap_or_default();
+    let raw = raw.or(derived_raw).unwrap_or_default();
+    let derived_subject = declared_fields
+        .iter()
+        .find(|field| field.legacy_input.as_deref() == Some("subject"))
+        .and_then(|field| {
+            text_surfaces.iter().find(|surface| {
+                surface.field_path == field.path
+                    || surface.field_path.starts_with(&format!("{}/", field.path))
+            })
+        })
+        .map(|surface| surface.text.as_str());
+    let subject = subject.or(derived_subject);
     let paragraph_count = count_paragraphs(&raw);
     let lower = raw.to_lowercase();
     let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
@@ -4796,6 +4815,20 @@ optional:
     #[test]
     fn claim_check_applies_universal_avoid_rules_to_declared_subject_path() {
         let root = temp_pack("declared-subject-guardrail");
+        let output_rules_path = root.join(".mdp/cards/output-rules.yaml");
+        let raw = std::fs::read_to_string(&output_rules_path)
+            .expect("output rules should be readable");
+        let mut card: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("output rules should parse");
+        card["entries"][0]["constraints"] = serde_yaml::from_str(
+            "word_count: {min: 10, max: 100}\nsubject_avoid: [urgent]\n",
+        )
+        .expect("synthetic constraints should parse");
+        std::fs::write(
+            &output_rules_path,
+            serde_yaml::to_string(&card).expect("output rules should serialize"),
+        )
+        .expect("output rules should be writable");
         let scope = vec!["product=local-cli".to_string()];
         let result = check_claims_artifact_scoped(
             &root,
@@ -4836,6 +4869,46 @@ optional:
                 .unwrap()
                 .iter()
                 .any(|hit| hit["field_path"] == "/artifact/subject_options")
+        );
+        let artifact_path = root.join("artifact.json");
+        std::fs::write(
+            &artifact_path,
+            serde_json::to_vec(&json!({
+                "artifact": {
+                    "message_body": "Too short.",
+                    "subject_options": ["urgent"]
+                }
+            }))
+            .expect("artifact should serialize"),
+        )
+        .expect("artifact should be writable");
+        let artifact = check_claims_artifact_scoped(
+            &root,
+            None,
+            None,
+            None,
+            Some(&artifact_path),
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &scope,
+        )
+        .expect("declared artifact adapters should drive structured constraints");
+        assert_eq!(artifact["checked"]["subject"], true);
+        assert!(
+            artifact["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["rule"] == "constraints.word_count" && hit["actual"] == 2),
+            "artifact claim check should use the declared body adapter: {artifact}"
+        );
+        assert!(
+            artifact["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["rule"] == "constraints.subject_avoid")
         );
         let legacy_body = check_claims_artifact_scoped(
             &root,
