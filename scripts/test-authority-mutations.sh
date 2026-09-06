@@ -6,10 +6,10 @@ EXPECTED_VERSION="27.1.0"
 MAX_CANDIDATES=24
 MAX_SMOKE_CANDIDATES=8
 BUILD_TIMEOUT_SECONDS=120
-# The unmutated CLI suite now runs close to three minutes on hosted runners.
+# The unmutated CLI suite now runs close to four minutes on hosted runners.
 # Keep enough headroom for normal runner variance so the mutation gate tests
 # authority changes rather than intermittently timing out its baseline.
-TEST_TIMEOUT_SECONDS=240
+TEST_TIMEOUT_SECONDS=360
 SELECTOR='(from_run|permits_projection)'
 SMOKE_SELECTORS=(
   'replace SourceAuthority::from_run -> Self with Default::default\(\)'
