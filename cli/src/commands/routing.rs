@@ -1492,22 +1492,102 @@ pub(crate) fn check_claims_scoped(
     job: Option<&str>,
     scope_selectors: &[String],
 ) -> Result<Value> {
-    if persona.is_some() != job.is_some() {
+    check_claims_artifact_scoped(
+        root,
+        text,
+        file,
+        subject,
+        None,
+        &[],
+        persona,
+        job,
+        scope_selectors,
+    )
+}
+
+pub(crate) fn check_claims_artifact_scoped(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    artifact: Option<&Path>,
+    supplied_fields: &[String],
+    persona: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+) -> Result<Value> {
+    if persona.is_some() && job.is_none() {
         return Err(anyhow!(
-            "pass both --persona and --job for route-scoped constraint checks"
+            "pass --job with --persona for route-scoped constraint checks"
         ));
     }
     let raw = match (text, file) {
-        (Some(value), None) => value.to_string(),
+        (Some(value), None) => Some(value.to_string()),
         (None, Some(path)) => {
-            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?
+            Some(fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?)
         }
         (Some(_), Some(_)) => return Err(anyhow!("pass either --text or --file, not both")),
-        (None, None) => return Err(anyhow!("pass --text or --file")),
+        (None, None) => None,
     };
+    let manifest = read_manifest(root)?;
+    let selected_job = job.and_then(|job_id| {
+        manifest
+            .jobs
+            .iter()
+            .find(|candidate| candidate.id == job_id)
+    });
+    let declared_fields = selected_job
+        .map(|job| job.artifact_text_fields.as_slice())
+        .unwrap_or(&[]);
+    let artifact_value = artifact
+        .map(|path| {
+            let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+            if bytes.len() > 4 * 1024 * 1024 {
+                return Err(anyhow!("--artifact exceeds 4 MiB"));
+            }
+            serde_json::from_slice::<Value>(&bytes)
+                .with_context(|| format!("parsing {}", path.display()))
+        })
+        .transpose()?;
+    let (surface_instance, text_surfaces) = if declared_fields.is_empty() {
+        if artifact_value.is_some() || !supplied_fields.is_empty() {
+            return Err(anyhow!(
+                "selected job must declare artifact_text_fields for --artifact or --field"
+            ));
+        }
+        let mut values = Vec::new();
+        if let Some(value) = raw.as_deref() {
+            values.push(crate::text_surfaces::TextSurfaceValue {
+                field_path: "/text".to_string(),
+                text: value.to_string(),
+            });
+        }
+        (Value::Null, values)
+    } else {
+        let instance = crate::text_surfaces::direct_instance(
+            declared_fields,
+            artifact_value,
+            supplied_fields,
+            raw.as_deref(),
+            subject,
+        )?;
+        let values = crate::text_surfaces::declared_values(&instance, declared_fields)?;
+        (instance, values)
+    };
+    if text_surfaces.is_empty() {
+        return Err(anyhow!(
+            "pass --text, --file, --subject, --artifact, or at least one --field"
+        ));
+    }
+    let legacy_text_path = raw.as_ref().and_then(|_| {
+        declared_fields
+            .iter()
+            .find(|field| field.legacy_input.as_deref() == Some("text"))
+            .map(|field| field.path.as_str())
+    });
+    let raw = raw.unwrap_or_default();
     let paragraph_count = count_paragraphs(&raw);
     let lower = raw.to_lowercase();
-    let manifest = read_manifest(root)?;
     let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
     let claims_cards = read_cards_by_id_or_kind(root, "claims", CardKind::Claims)?;
     let avoid_cards = read_cards_by_id_or_kind(root, "avoid-rules", CardKind::AvoidRules)?;
@@ -1551,17 +1631,32 @@ pub(crate) fn check_claims_scoped(
     let mut guardrail_hits = Vec::new();
     let mut constraint_warnings = Vec::new();
     let mut unchecked_constraints = Vec::new();
-    let unsupported_claims = unsupported_claims(&lower, &approved_claim_context);
+    let unsupported_claims = text_surfaces
+        .iter()
+        .flat_map(|surface| {
+            unsupported_claims(&surface.text.to_lowercase(), &approved_claim_context)
+                .into_iter()
+                .map(|mut hit| {
+                    hit["field_path"] = Value::String(surface.field_path.clone());
+                    hit
+                })
+        })
+        .collect::<Vec<_>>();
     let mut route_persona_resolution = Value::Null;
     let mut resolved_persona_for_output: Option<String> = None;
 
     for card in &claims_cards {
-        collect_guardrail_hits(
-            &mut guardrail_hits,
-            &lower,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
+        for surface in &text_surfaces {
+            collect_guardrail_hits(
+                &mut guardrail_hits,
+                &surface.text,
+                &surface.field_path,
+                !declared_fields.is_empty()
+                    && legacy_text_path != Some(surface.field_path.as_str()),
+                &card.id,
+                card.entries.iter().filter(|entry| entry_compatible(entry)),
+            );
+        }
         for entry in card.entries.iter().filter(|entry| entry_compatible(entry)) {
             let title = entry.title.to_lowercase();
             let title_match = title.len() > 4 && lower.contains(&title);
@@ -1575,20 +1670,30 @@ pub(crate) fn check_claims_scoped(
         }
     }
     for card in &avoid_cards {
-        collect_guardrail_hits(
-            &mut guardrail_hits,
-            &lower,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
+        for surface in &text_surfaces {
+            collect_guardrail_hits(
+                &mut guardrail_hits,
+                &surface.text,
+                &surface.field_path,
+                !declared_fields.is_empty()
+                    && legacy_text_path != Some(surface.field_path.as_str()),
+                &card.id,
+                card.entries.iter().filter(|entry| entry_compatible(entry)),
+            );
+        }
     }
     for card in &output_rules_cards {
-        collect_guardrail_hits(
-            &mut guardrail_hits,
-            &lower,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
+        for surface in &text_surfaces {
+            collect_guardrail_hits(
+                &mut guardrail_hits,
+                &surface.text,
+                &surface.field_path,
+                !declared_fields.is_empty()
+                    && legacy_text_path != Some(surface.field_path.as_str()),
+                &card.id,
+                card.entries.iter().filter(|entry| entry_compatible(entry)),
+            );
+        }
         collect_output_structure_hits(
             &mut guardrail_hits,
             paragraph_count,
@@ -1641,6 +1746,8 @@ pub(crate) fn check_claims_scoped(
         "scope_blocked": scope_blocked,
         "checked": {
             "subject": subject.is_some(),
+            "artifact": !surface_instance.is_null(),
+            "field_paths": text_surfaces.iter().map(|surface| surface.field_path.as_str()).collect::<Vec<_>>(),
             "route_scoped": persona.is_some() && job.is_some(),
             "persona": persona,
             "resolved_persona": resolved_persona_for_output,
@@ -1659,15 +1766,21 @@ pub(crate) fn check_claims_scoped(
 
 fn collect_guardrail_hits<'a>(
     guardrail_hits: &mut Vec<Value>,
-    lower: &str,
+    text: &str,
+    field_path: &str,
+    literal: bool,
     card_id: &str,
     entries: impl IntoIterator<Item = &'a crate::models::Entry>,
 ) {
     for entry in entries {
         for term in &entry.avoid {
-            if contains_guardrail_term(lower, term) {
+            if if literal {
+                crate::text_surfaces::contains_ascii_case_insensitive(text, term)
+            } else {
+                contains_guardrail_term(&text.to_lowercase(), term)
+            } {
                 guardrail_hits.push(
-                    json!({"card_id": card_id, "entry_id": entry.id, "term": term, "title": entry.title}),
+                    json!({"card_id": card_id, "entry_id": entry.id, "term": term, "title": entry.title, "field_path": field_path}),
                 );
             }
         }
@@ -2125,7 +2238,7 @@ fn contains_standalone_number(text: &str) -> bool {
     false
 }
 
-fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
+pub(crate) fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
     let mut hits = Vec::new();
     let mut push_hit = |category: &str, trigger: &str, reason: &str| {
         if !approved_context.contains(trigger) {
@@ -2441,7 +2554,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
     hits
 }
 
-fn contains_guardrail_term(text: &str, term: &str) -> bool {
+pub(crate) fn contains_guardrail_term(text: &str, term: &str) -> bool {
     let needle = term.trim().to_lowercase();
     if needle.is_empty() {
         return false;
@@ -4331,6 +4444,71 @@ optional:
                 .any(|hit| hit["card_id"] == "output-rules" && hit["entry_id"] == "no-em-dashes")
         );
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_applies_universal_avoid_rules_to_declared_subject_path() {
+        let root = temp_pack("declared-subject-guardrail");
+        let result = check_claims_artifact_scoped(
+            &root,
+            Some("A clean synthetic body."),
+            None,
+            Some("A prohibited — subject"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &[],
+        )
+        .expect("declared subject should be checked");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["term"] == "—" && hit["field_path"] == "/artifact/subject_options")
+        );
+        let unsupported = check_claims_artifact_scoped(
+            &root,
+            Some("A clean synthetic body."),
+            None,
+            Some("Guaranteed meetings"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &[],
+        )
+        .expect("declared subject claims should be checked");
+        assert!(
+            unsupported["unsupported_claims"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["field_path"] == "/artifact/subject_options")
+        );
+        let legacy_body = check_claims_artifact_scoped(
+            &root,
+            Some("MDP does not send emails."),
+            None,
+            None,
+            None,
+            &[],
+            None,
+            Some("outbound-copy-brief"),
+            &[],
+        )
+        .expect("legacy body adapter should retain negation-aware checks");
+        assert!(
+            legacy_body["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|hit| hit["term"] != "send emails")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

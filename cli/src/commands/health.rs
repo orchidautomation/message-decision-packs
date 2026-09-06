@@ -1601,6 +1601,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "product_foundation",
             "model_task",
             "context_budget",
+            "artifact_text_fields",
         ],
         ".mdp/manifest.yaml#/jobs",
         "manifest_profile_job_unknown_field",
@@ -1624,6 +1625,17 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
                 "manifest_profile_job_context_budget_unknown_field",
                 issues,
             );
+            if let Some(fields) =
+                yaml_get(job, "artifact_text_fields").and_then(YamlValue::as_sequence)
+            {
+                validate_sequence_object_keys(
+                    Some(&YamlValue::Sequence(fields.clone())),
+                    &["path", "legacy_input"],
+                    &format!(".mdp/manifest.yaml#/jobs/{index}/artifact_text_fields"),
+                    "manifest_profile_job_artifact_text_field_unknown_field",
+                    issues,
+                );
+            }
             if !budget.is_null() {
                 for field in ["max_entries", "max_bytes"] {
                     let valid = yaml_get(budget, field)
@@ -2892,6 +2904,22 @@ fn validate_profile_jobs(
             issues,
         );
         validate_job_model_task(job, prompt_inventory, &job_path, issues);
+        if let Err(error) = crate::text_surfaces::validate_declarations(&job.artifact_text_fields) {
+            issues.push(issue(
+                "profile_job_artifact_text_fields_invalid",
+                "error",
+                format!("{job_path}/artifact_text_fields"),
+                error.to_string(),
+            ));
+        }
+        if !job.artifact_text_fields.is_empty() && job.model_task.is_none() {
+            issues.push(issue(
+                "profile_job_artifact_text_fields_without_model_task",
+                "error",
+                format!("{job_path}/artifact_text_fields"),
+                "artifact text fields require a job-owned governed model task",
+            ));
+        }
         if let Some(binding) = job.model_task.as_ref()
             && !binding.prompt.trim().is_empty()
             && let Some(first_job_id) =

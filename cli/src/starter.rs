@@ -433,6 +433,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 max_bytes: 45_881,
                 optional_kind_quotas: BTreeMap::new(),
             }),
+            artifact_text_fields: Vec::new(),
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -478,6 +479,16 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 max_bytes: 55_673,
                 optional_kind_quotas: BTreeMap::new(),
             }),
+            artifact_text_fields: vec![
+                crate::models::ArtifactTextField {
+                    path: "/artifact/message_body".to_string(),
+                    legacy_input: Some("text".to_string()),
+                },
+                crate::models::ArtifactTextField {
+                    path: "/artifact/subject_options".to_string(),
+                    legacy_input: Some("subject".to_string()),
+                },
+            ],
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -518,6 +529,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 max_bytes: 65_536,
                 optional_kind_quotas: BTreeMap::new(),
             }),
+            artifact_text_fields: Vec::new(),
         },
     ]
 }

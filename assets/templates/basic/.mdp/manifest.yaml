@@ -920,6 +920,11 @@ jobs:
   context_budget:
     max_entries: 52
     max_bytes: 55673
+  artifact_text_fields:
+  - path: /artifact/message_body
+    legacy_input: text
+  - path: /artifact/subject_options
+    legacy_input: subject
 - id: outbound-copy-review
   skill_id: mdp-pack-apply
   label: Supplied outbound copy review
