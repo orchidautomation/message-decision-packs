@@ -11,8 +11,8 @@
       "prompt_version": "clay-self-serve-enterprise-expansion.v4"
     }
   ],
-  "source_attempt_request_sha256": "9942eaadd989052cc32a4b3cc71bcde10dd668311589036d86c8b66a0ce65148",
-  "collected_attempt_results_sha256": "e0b1c2ceae6b8fc9d81ca196fc10fc4509b78dd9f80e6b407b41cd813b5ed0ca",
+  "source_attempt_request_sha256": "e632235766d5444d5fa3d0d32cef0bdaaf575e4c9c3af0308107b6b14ef81af3",
+  "collected_attempt_results_sha256": "9dbb4584a17e0335446702d0b0a61a4521198e6b8e6e3f7e2ff1011ae88ed2c6",
   "attributes": {
     "company_name": {
       "status": "observed",
@@ -291,7 +291,7 @@
   },
   "outcome": "ready",
   "draft_allowed": false,
-  "source_binding_sha256": "15ef18fe7c5f72ee68175e5077bef0012c8987e12613f605540e507babe0c924",
+  "source_binding_sha256": "a9ab22ab7d54bad165f0559adf21273fbf5c47dc6aba14f774354f8bf1d313bf",
   "signal_observations": [
     {
       "contract": "mdp.signal-observation.v2",
@@ -315,9 +315,9 @@
       "observed_at": "2026-07-29T12:00:00Z",
       "confidence": 100,
       "receipt": {
-        "source_binding_sha256": "15ef18fe7c5f72ee68175e5077bef0012c8987e12613f605540e507babe0c924",
-        "source_attempt_request_sha256": "9942eaadd989052cc32a4b3cc71bcde10dd668311589036d86c8b66a0ce65148",
-        "collected_results_sha256": "e0b1c2ceae6b8fc9d81ca196fc10fc4509b78dd9f80e6b407b41cd813b5ed0ca"
+        "source_binding_sha256": "a9ab22ab7d54bad165f0559adf21273fbf5c47dc6aba14f774354f8bf1d313bf",
+        "source_attempt_request_sha256": "e632235766d5444d5fa3d0d32cef0bdaaf575e4c9c3af0308107b6b14ef81af3",
+        "collected_results_sha256": "9dbb4584a17e0335446702d0b0a61a4521198e6b8e6e3f7e2ff1011ae88ed2c6"
       }
     },
     {
@@ -342,9 +342,9 @@
       "observed_at": "2026-07-29T12:00:00Z",
       "confidence": 100,
       "receipt": {
-        "source_binding_sha256": "15ef18fe7c5f72ee68175e5077bef0012c8987e12613f605540e507babe0c924",
-        "source_attempt_request_sha256": "9942eaadd989052cc32a4b3cc71bcde10dd668311589036d86c8b66a0ce65148",
-        "collected_results_sha256": "e0b1c2ceae6b8fc9d81ca196fc10fc4509b78dd9f80e6b407b41cd813b5ed0ca"
+        "source_binding_sha256": "a9ab22ab7d54bad165f0559adf21273fbf5c47dc6aba14f774354f8bf1d313bf",
+        "source_attempt_request_sha256": "e632235766d5444d5fa3d0d32cef0bdaaf575e4c9c3af0308107b6b14ef81af3",
+        "collected_results_sha256": "9dbb4584a17e0335446702d0b0a61a4521198e6b8e6e3f7e2ff1011ae88ed2c6"
       }
     },
     {
@@ -369,9 +369,9 @@
       "observed_at": "2026-07-29T12:00:00Z",
       "confidence": 100,
       "receipt": {
-        "source_binding_sha256": "15ef18fe7c5f72ee68175e5077bef0012c8987e12613f605540e507babe0c924",
-        "source_attempt_request_sha256": "9942eaadd989052cc32a4b3cc71bcde10dd668311589036d86c8b66a0ce65148",
-        "collected_results_sha256": "e0b1c2ceae6b8fc9d81ca196fc10fc4509b78dd9f80e6b407b41cd813b5ed0ca"
+        "source_binding_sha256": "a9ab22ab7d54bad165f0559adf21273fbf5c47dc6aba14f774354f8bf1d313bf",
+        "source_attempt_request_sha256": "e632235766d5444d5fa3d0d32cef0bdaaf575e4c9c3af0308107b6b14ef81af3",
+        "collected_results_sha256": "9dbb4584a17e0335446702d0b0a61a4521198e6b8e6e3f7e2ff1011ae88ed2c6"
       }
     },
     {
@@ -396,9 +396,9 @@
       "observed_at": "2026-07-29T12:00:00Z",
       "confidence": 100,
       "receipt": {
-        "source_binding_sha256": "15ef18fe7c5f72ee68175e5077bef0012c8987e12613f605540e507babe0c924",
-        "source_attempt_request_sha256": "9942eaadd989052cc32a4b3cc71bcde10dd668311589036d86c8b66a0ce65148",
-        "collected_results_sha256": "e0b1c2ceae6b8fc9d81ca196fc10fc4509b78dd9f80e6b407b41cd813b5ed0ca"
+        "source_binding_sha256": "a9ab22ab7d54bad165f0559adf21273fbf5c47dc6aba14f774354f8bf1d313bf",
+        "source_attempt_request_sha256": "e632235766d5444d5fa3d0d32cef0bdaaf575e4c9c3af0308107b6b14ef81af3",
+        "collected_results_sha256": "9dbb4584a17e0335446702d0b0a61a4521198e6b8e6e3f7e2ff1011ae88ed2c6"
       }
     }
   ]
