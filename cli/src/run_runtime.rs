@@ -5,7 +5,7 @@ use crate::authority::{ProjectionFidelity, SourceAuthority};
 use crate::commands::prompt_output::{
     validate_prompt_output_file_with_inputs, validate_prompt_output_file_with_lineage_inputs,
 };
-use crate::commands::requirements::requirements;
+use crate::commands::requirements::{evaluate_selected_job_execution_prerequisites, requirements};
 use crate::commands::routing::{
     fit, fit_normalized, fit_prospect_with_governed_authority, resolve_job_ingress,
 };
@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
@@ -775,6 +775,7 @@ fn prepare_native_request(
             .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "model-step-not-declared"))?;
     validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
     validate_selected_prompt(staged_pack, staged_prompt, &step)?;
+    validate_selected_job_execution_prerequisites(staged_pack, &step, staged_inputs)?;
     validate_step_inputs(&step, staged_inputs)?;
     validate_generative_input_gates(staged_pack, manifest, staged_inputs, &identity.job_id)?;
 
@@ -4037,6 +4038,49 @@ fn validate_step_inputs(step: &CompiledModelStepV1, staged: &[StagedInput]) -> R
     Ok(())
 }
 
+fn validate_selected_job_execution_prerequisites(
+    staged_pack: &Path,
+    step: &CompiledModelStepV1,
+    staged: &[StagedInput],
+) -> Result<()> {
+    let compiled = requirements(staged_pack, &step.job_id)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-readiness-unavailable"))?;
+    let mut bound = staged
+        .iter()
+        .map(|input| input.logical_name.clone())
+        .collect::<BTreeSet<_>>();
+    bound.extend(
+        step.declared_inputs
+            .iter()
+            .filter(|input| input.required && is_host_invocation_metadata(&input.name))
+            .map(|input| input.name.clone()),
+    );
+    let evaluated = evaluate_selected_job_execution_prerequisites(
+        &compiled["job_prerequisites"],
+        &step.step_id,
+        &bound,
+    );
+    if evaluated["status"] == "ready" {
+        return Ok(());
+    }
+    let blocker = &evaluated["first_blocker"];
+    Err(run_failure_with_diagnostic(
+        RunFailureKind::PolicyBlocked,
+        "selected-job-prerequisite-unsatisfied",
+        policy_diagnostic(
+            "generative-preflight",
+            "selected-job-prerequisites",
+            "missing-required-field",
+            blocker["input_name"]
+                .as_str()
+                .and_then(safe_logical_input_name),
+            None,
+            diagnostic_value("binding", "declared"),
+            diagnostic_value("binding", "missing"),
+        ),
+    ))
+}
+
 fn safe_logical_input_name(name: &str) -> Option<&'static str> {
     match name {
         "routed_context" | "routed-context" => Some("routed_context"),
@@ -6124,7 +6168,7 @@ mod tests {
         routed_context_shape_diagnostic, routed_context_validation_diagnostic,
         sanitized_host_envelope_diagnostic, sanitized_prompt_validation_diagnostic,
         seal_driver_request, seal_driver_result, serialize_recovery_claim, validate_driver_result,
-        validate_request,
+        validate_request, validate_selected_job_execution_prerequisites,
     };
     use crate::commands::init::init_pack;
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
@@ -6139,6 +6183,25 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn run_preflight_uses_selected_job_prerequisite_authority() {
+        let root = Path::new("../plugin/assets/templates/basic");
+        let manifest = crate::pack_io::read_manifest(root).unwrap();
+        let step = crate::model_steps::resolve_selected_model_step(
+            root,
+            &manifest,
+            "outbound-copy-brief",
+            "model:outbound-copy-brief/generation",
+        )
+        .unwrap();
+        let error = validate_selected_job_execution_prerequisites(root, &step, &[])
+            .expect_err("missing required execution input must fail preflight");
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "selected-job-prerequisite-unsatisfied"
+        );
+    }
 
     fn proposal_input(
         proof_status: &str,

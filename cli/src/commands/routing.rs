@@ -3,7 +3,7 @@ use crate::commands::prompt_output::{
     read_bounded_bytes, validate_prompt_output_file_with_lineage_inputs,
 };
 use crate::commands::requirements::{
-    evaluate_selected_job_prerequisites, requirements, resolve_job_decision_inputs,
+    evaluate_selected_job_decision_prerequisites, requirements, resolve_job_decision_inputs,
 };
 use crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3;
 use crate::models::{CardKind, Manifest, QualificationGates};
@@ -239,7 +239,7 @@ pub(crate) fn fit_normalized(
     }
     let compiled = requirements(root, job_id)?;
     let prerequisites =
-        evaluate_selected_job_prerequisites(&compiled["job_prerequisites"], &normalized);
+        evaluate_selected_job_decision_prerequisites(&compiled["job_prerequisites"], &normalized);
     if prerequisites["status"] == "blocked" {
         return Err(anyhow!(
             "selected_job_prerequisite_unsatisfied: {}",
