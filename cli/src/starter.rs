@@ -434,6 +434,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 optional_kind_quotas: BTreeMap::new(),
             }),
             artifact_text_fields: Vec::new(),
+            post_generation_validators: Vec::new(),
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -489,6 +490,10 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                     legacy_input: Some("subject".to_string()),
                 },
             ],
+            post_generation_validators: vec![crate::models::PostGenerationValidator {
+                id: "routed-text-policy".to_string(),
+                engine: "routed-text-policy".to_string(),
+            }],
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -530,6 +535,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 optional_kind_quotas: BTreeMap::new(),
             }),
             artifact_text_fields: Vec::new(),
+            post_generation_validators: Vec::new(),
         },
     ]
 }

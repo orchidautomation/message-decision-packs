@@ -194,6 +194,8 @@ pub(crate) struct ProfileJob {
     pub(crate) context_budget: Option<JobContextBudget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) artifact_text_fields: Vec<ArtifactTextField>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) post_generation_validators: Vec<PostGenerationValidator>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -201,6 +203,12 @@ pub(crate) struct ArtifactTextField {
     pub(crate) path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) legacy_input: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PostGenerationValidator {
+    pub(crate) id: String,
+    pub(crate) engine: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]

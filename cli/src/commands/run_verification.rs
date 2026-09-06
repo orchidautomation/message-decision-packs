@@ -194,6 +194,61 @@ pub(crate) fn verify_run(
         issues.push("no-draft-authority-leak".to_string());
     }
 
+    if receipt.artifact_state.is_none()
+        && (!receipt.post_generation_validations.is_empty() || receipt.final_validation.is_some())
+    {
+        issues.push("final-validation-state-missing".to_string());
+    }
+    if !bundle.post_generation_validator_ids.is_empty()
+        && receipt.validation.is_some()
+        && matches!(
+            receipt.terminal_state,
+            crate::run_contracts::TerminalState::Success
+                | crate::run_contracts::TerminalState::NoDraftOutputInvalid
+        )
+        && receipt.artifact_state.is_none()
+    {
+        issues.push("required-final-validation-missing".to_string());
+    }
+    if bundle.post_generation_validator_ids.is_empty() && receipt.artifact_state.is_some() {
+        issues.push("undeclared-final-validation-authority".to_string());
+    }
+    if receipt.decision.as_ref().is_some_and(|decision| {
+        decision
+            .reason_codes
+            .iter()
+            .any(|code| code == "final-validation-passed")
+    }) && receipt.artifact_state.as_deref() != Some("valid")
+    {
+        issues.push("final-validation-authority-missing".to_string());
+    }
+    match receipt.artifact_state.as_deref() {
+        Some("valid") if !receipt.terminal_state.is_success() => {
+            issues.push("valid-artifact-not-successful".to_string())
+        }
+        Some("rejected") if receipt.terminal_state.is_success() => {
+            issues.push("rejected-artifact-marked-successful".to_string())
+        }
+        Some("generated-pending-validation") if receipt.terminal_state.is_success() => {
+            issues.push("pending-artifact-marked-successful".to_string())
+        }
+        Some("valid" | "rejected" | "generated-pending-validation") | None => {}
+        Some(_) => issues.push("artifact-state-invalid".to_string()),
+    }
+    if receipt.artifact_state.is_some() && receipt.post_generation_validations.is_empty() {
+        issues.push("post-generation-validation-results-missing".to_string());
+    }
+    if receipt.artifact_state.as_deref() == Some("valid")
+        && !receipt.decision.as_ref().is_some_and(|decision| {
+            decision
+                .reason_codes
+                .iter()
+                .any(|code| code == "final-validation-passed")
+        })
+    {
+        issues.push("final-validation-decision-binding-missing".to_string());
+    }
+
     let mut dimensions = std::collections::HashSet::new();
     let expected_dimensions = [
         "declared-input-isolation",
@@ -258,6 +313,18 @@ pub(crate) fn verify_run(
         {
             verify_artifact(root, artifact, &mut issues);
         }
+        for artifact in &receipt.post_generation_validations {
+            verify_artifact(root, artifact, &mut issues);
+        }
+        if let Some(artifact) = &receipt.final_validation {
+            verify_artifact(root, artifact, &mut issues);
+        }
+        verify_final_validation(
+            root,
+            receipt,
+            &bundle.post_generation_validator_ids,
+            &mut issues,
+        );
     }
 
     Ok(RunVerificationV1 {
@@ -268,6 +335,169 @@ pub(crate) fn verify_run(
         terminal_state: receipt.terminal_state,
         recomputed_assurance,
         issues,
+    })
+}
+
+fn verify_final_validation(
+    root: &Path,
+    receipt: &RunReceiptV1,
+    required_ids: &[String],
+    issues: &mut Vec<String>,
+) {
+    let Some(state) = receipt.artifact_state.as_deref() else {
+        return;
+    };
+    let Some(final_authority) = receipt.final_validation.as_ref() else {
+        issues.push("final-validation-summary-missing".to_string());
+        return;
+    };
+    let final_bytes = match fs::read(root.join(&final_authority.logical_name)) {
+        Ok(bytes) => bytes,
+        Err(_) => return,
+    };
+    let summary: Value = match parse_authority_json(&final_bytes, AuthorityJsonLimits::default()) {
+        Ok(value) => value,
+        Err(_) => {
+            issues.push("final-validation-summary-invalid".to_string());
+            return;
+        }
+    };
+    if !has_exact_keys(
+        &summary,
+        &[
+            "contract",
+            "input_artifact_state",
+            "artifact_state",
+            "validators",
+        ],
+    ) || summary["contract"] != "mdp.final-validation.v1"
+        || summary["input_artifact_state"] != "generated-pending-validation"
+        || summary["artifact_state"] != state
+    {
+        issues.push("final-validation-summary-mismatch".to_string());
+        return;
+    }
+    let summaries = summary["validators"].as_array();
+    if summaries.is_none_or(|items| items.len() != receipt.post_generation_validations.len()) {
+        issues.push("final-validation-result-count-mismatch".to_string());
+        return;
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut ordered_ids = Vec::new();
+    let mut all_passed = true;
+    for (index, (record, authority)) in summaries
+        .unwrap()
+        .iter()
+        .zip(receipt.post_generation_validations.iter())
+        .enumerate()
+    {
+        if !has_exact_keys(record, &["validator_id", "status", "result_sha256"]) {
+            issues.push(format!("final-validation-record-invalid:{index}"));
+        }
+        if record["result_sha256"].as_str() != Some(authority.sha256.as_str()) {
+            issues.push(format!("final-validation-result-hash-mismatch:{index}"));
+        }
+        let bytes = match fs::read(root.join(&authority.logical_name)) {
+            Ok(bytes) => bytes,
+            Err(_) => continue,
+        };
+        let result: Value = match parse_authority_json(&bytes, AuthorityJsonLimits::default()) {
+            Ok(value) => value,
+            Err(_) => {
+                issues.push(format!("post-generation-validation-invalid:{index}"));
+                continue;
+            }
+        };
+        let id = result["validator_id"].as_str().unwrap_or_default();
+        ordered_ids.push(id.to_string());
+        let status = result["status"].as_str().unwrap_or_default();
+        if !valid_post_generation_result(&result)
+            || result["contract"] != "mdp.post-generation-validator-result.v1"
+            || record["validator_id"].as_str() != Some(id)
+            || record["status"].as_str() != Some(status)
+            || !matches!(status, "passed" | "failed")
+        {
+            issues.push(format!("post-generation-validation-mismatch:{index}"));
+        }
+        if !ids.insert(id.to_string()) {
+            issues.push(format!("duplicate-post-generation-validator:{id}"));
+        }
+        all_passed &= status == "passed";
+    }
+    if ordered_ids != required_ids {
+        issues.push("post-generation-validator-order-mismatch".to_string());
+    }
+    if (state == "valid") != all_passed || (state == "rejected" && all_passed) {
+        issues.push("final-validation-status-mismatch".to_string());
+    }
+}
+
+fn has_exact_keys(value: &Value, expected: &[&str]) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.len() == expected.len() && expected.iter().all(|key| object.contains_key(*key))
+    })
+}
+
+fn bounded_category(value: &Value, max: usize) -> bool {
+    value.as_str().is_some_and(|text| {
+        !text.is_empty()
+            && text.len() <= max
+            && text.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/' | b'~')
+            })
+    })
+}
+
+fn valid_post_generation_result(result: &Value) -> bool {
+    if !has_exact_keys(
+        result,
+        &[
+            "contract",
+            "validator_id",
+            "engine",
+            "status",
+            "checked_paths",
+            "violations",
+        ],
+    ) || result["engine"] != "routed-text-policy"
+        || !bounded_category(&result["validator_id"], 64)
+    {
+        return false;
+    }
+    let paths = result["checked_paths"].as_array();
+    if paths.is_none_or(|paths| {
+        paths.len() > 64 || paths.iter().any(|path| !bounded_category(path, 256))
+    }) {
+        return false;
+    }
+    result["violations"].as_array().is_some_and(|violations| {
+        let status_matches = match result["status"].as_str() {
+            Some("passed") => violations.is_empty(),
+            Some("failed") => !violations.is_empty(),
+            _ => false,
+        };
+        status_matches
+            && violations.len() <= 256
+            && violations.iter().all(|violation| {
+                let Some(code) = violation["code"].as_str() else {
+                    return false;
+                };
+                let expected = match code {
+                    "forbidden-term" => &["code", "field_path", "card_id", "entry_id"][..],
+                    "unsupported-claim" => &["code", "field_path", "category"][..],
+                    "structured-constraint" => {
+                        &["code", "field_path", "card_id", "entry_id", "rule"][..]
+                    }
+                    _ => return false,
+                };
+                has_exact_keys(violation, expected)
+                    && expected.iter().filter(|key| **key != "code").all(|key| {
+                        bounded_category(
+                            &violation[*key],
+                            if *key == "field_path" { 256 } else { 64 },
+                        )
+                    })
+            })
     })
 }
 
@@ -803,8 +1033,9 @@ fn verify_artifact(root: &Path, authority: &ArtifactAuthority, issues: &mut Vec<
 mod tests {
     use super::{
         is_canonical_sha256, provider_request_evidence_issue, provider_request_schema_issue,
-        provider_response_evidence_issue, recompute_assurance, verify_identity_observations,
-        verify_legacy_v0_receipt, verify_run,
+        provider_response_evidence_issue, recompute_assurance, valid_post_generation_result,
+        verify_final_validation, verify_identity_observations, verify_legacy_v0_receipt,
+        verify_run,
     };
     use crate::artifact_hash::{canonical_json_sha256_for_domain, sha256_hex};
     use crate::run_contracts::*;
@@ -1290,6 +1521,114 @@ mod tests {
     }
 
     #[test]
+    fn final_validation_rejects_missing_duplicate_reordered_and_changed_results() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-final-validation-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let make_result = |id: &str| {
+            serde_json::json!({
+                "contract": "mdp.post-generation-validator-result.v1",
+                "validator_id": id,
+                "engine": "routed-text-policy",
+                "status": "passed",
+                "checked_paths": ["/artifact/body"],
+                "violations": []
+            })
+        };
+        for (name, id) in [("v0.json", "first"), ("v1.json", "second")] {
+            fs::write(
+                root.join(name),
+                serde_json::to_vec(&make_result(id)).unwrap(),
+            )
+            .unwrap();
+        }
+        let records = vec![artifact(&root, "v0.json"), artifact(&root, "v1.json")];
+        let summary = serde_json::json!({
+            "contract": "mdp.final-validation.v1",
+            "input_artifact_state": "generated-pending-validation",
+            "artifact_state": "valid",
+            "validators": [
+                {"validator_id": "first", "status": "passed", "result_sha256": records[0].sha256},
+                {"validator_id": "second", "status": "passed", "result_sha256": records[1].sha256}
+            ]
+        });
+        fs::write(
+            root.join("final.json"),
+            serde_json::to_vec(&summary).unwrap(),
+        )
+        .unwrap();
+        let bundle = sample_bundle();
+        let mut receipt = sample_receipt(&bundle, &root);
+        receipt.artifact_state = Some("valid".into());
+        receipt.post_generation_validations = records.clone();
+        receipt.final_validation = Some(artifact(&root, "final.json"));
+        let mut issues = Vec::new();
+        let required_ids = vec!["first".to_string(), "second".to_string()];
+        verify_final_validation(&root, &receipt, &required_ids, &mut issues);
+        assert!(issues.is_empty(), "{issues:?}");
+
+        for mutation in ["missing", "duplicate", "reordered", "changed"] {
+            let mut changed = receipt.clone();
+            match mutation {
+                "missing" => {
+                    changed.post_generation_validations.pop();
+                }
+                "duplicate" => {
+                    changed.post_generation_validations[1] = records[0].clone();
+                }
+                "reordered" => {
+                    changed.post_generation_validations.swap(0, 1);
+                }
+                "changed" => {
+                    changed.post_generation_validations[0].sha256 = "f".repeat(64);
+                }
+                _ => unreachable!(),
+            }
+            let mut issues = Vec::new();
+            verify_final_validation(&root, &changed, &required_ids, &mut issues);
+            assert!(!issues.is_empty(), "{mutation}");
+        }
+        let mut privacy_bearing = make_result("first");
+        privacy_bearing["raw_output"] = serde_json::json!("private generated prose");
+        assert!(!valid_post_generation_result(&privacy_bearing));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bundle_declared_validator_cannot_be_omitted_from_a_final_run() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-required-final-validation-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        for name in ["output.json", "context.json", "validation.json"] {
+            fs::write(root.join(name), b"{}\n").unwrap();
+        }
+        let mut bundle = sample_bundle();
+        bundle.post_generation_validator_ids = vec!["routed-text-policy".into()];
+        let mut receipt = sample_receipt(&bundle, &root);
+        write_audit(&root, &receipt);
+        receipt.runner_audit = artifact(&root, "audit.json");
+        seal_receipt(&mut receipt);
+
+        let result = verify_run(&bundle, &receipt, Some(&root)).unwrap();
+        assert!(
+            result
+                .issues
+                .contains(&"required-final-validation-missing".to_string())
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn legacy_audit_grade_label_never_upgrades_to_v1_assurance() {
         let legacy = serde_json::json!({
             "contract": "mdp.run-receipt.v0",
@@ -1335,6 +1674,7 @@ mod tests {
             driver: None,
             model: None,
             model_facts: None,
+            post_generation_validator_ids: Vec::new(),
         }
     }
 
@@ -1355,6 +1695,9 @@ mod tests {
             decision: Some(sealed_decision()),
             compiled_context: Some(artifact_or_placeholder(root, "context.json")),
             validation: Some(artifact_or_placeholder(root, "validation.json")),
+            artifact_state: None,
+            post_generation_validations: Vec::new(),
+            final_validation: None,
             runner_audit: artifact_or_placeholder(root, "audit.json"),
             deadline: None,
             diagnostic_code: None,

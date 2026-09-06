@@ -8,6 +8,7 @@ use crate::commands::prompt_output::{
 use crate::commands::requirements::{evaluate_selected_job_execution_prerequisites, requirements};
 use crate::commands::routing::{
     fit, fit_normalized, fit_prospect_with_governed_authority, resolve_job_ingress,
+    validate_routed_artifact_text_policy,
 };
 use crate::commands::schemas::prompt_output_schema_for_ref;
 #[path = "reference_vocabulary.rs"]
@@ -2409,6 +2410,17 @@ where
         driver: bound_driver.clone().or_else(|| request.driver.clone()),
         model: bound_model.clone().or_else(|| request.model.clone()),
         model_facts: bound_model_facts.clone(),
+        post_generation_validator_ids: request
+            .job_identity
+            .as_ref()
+            .and_then(|identity| manifest.jobs.iter().find(|job| job.id == identity.job_id))
+            .map(|job| {
+                job.post_generation_validators
+                    .iter()
+                    .map(|validator| validator.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default(),
     };
     let bundle_value = serde_json::to_value(&bundle)?;
     let bundle_sha256 = canonical_json_sha256_for_domain(RUN_BUNDLE_V1, &bundle_value)?;
@@ -2424,6 +2436,8 @@ where
     let mut diagnostic_code = None;
     let mut diagnostic_phase = None;
     let mut diagnostic_detail = None;
+    let mut post_validation_results = Vec::new();
+    let mut artifact_state = None;
     let (mut terminal_state, mut success_values) = if request.mode == RunMode::Generative {
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
             run_failure(RunFailureKind::PolicyBlocked, "generative-prompt-missing")
@@ -2453,6 +2467,8 @@ where
         driver_request_sha256 = Some(outcome.driver_request_sha256);
         driver_result_sha256 = Some(outcome.driver_result_sha256);
         validation = outcome.validation;
+        post_validation_results = outcome.post_validation_results;
+        artifact_state = outcome.artifact_state;
         if let Some(observations) = identity_observations.as_mut() {
             observations.provider_request = ProviderRequestObservationV1 {
                 provider_request_body_sha256: outcome.provider_request_body_sha256.clone(),
@@ -2882,6 +2898,8 @@ where
         }
         terminal_state = TerminalState::NoDraftAuditIncomplete;
         success_values = None;
+        post_validation_results.clear();
+        artifact_state = None;
         // The schema-valid source-integrity diagnostics in the authority
         // block carry the rejection reason. Publishing the prior
         // model-rejection code under an audit-incomplete terminal state
@@ -2910,13 +2928,54 @@ where
         None
     };
 
+    let mut post_generation_validations = Vec::new();
+    for (index, value) in post_validation_results.iter().enumerate() {
+        let logical_name = format!("artifacts/post-generation-validation-{index}.json");
+        let path = transaction_dir.join(&logical_name);
+        write_json_create_new(&path, value)?;
+        post_generation_validations.push(authority_for_file(
+            &logical_name,
+            "mdp.post-generation-validator-result.v1",
+            "application/json",
+            &path,
+            EvidenceProvenance::MdpObserved,
+            vec![bundle_sha256.clone()],
+        )?);
+    }
+    let mut final_validation = if let Some(state) = artifact_state.as_deref() {
+        let value = json!({
+            "contract": "mdp.final-validation.v1",
+            "input_artifact_state": "generated-pending-validation",
+            "artifact_state": state,
+            "validators": post_validation_results.iter().zip(post_generation_validations.iter()).map(|(result, authority)| json!({
+                "validator_id": result["validator_id"],
+                "status": result["status"],
+                "result_sha256": authority.sha256,
+            })).collect::<Vec<_>>(),
+        });
+        let path = artifacts_dir.join("final-validation.json");
+        write_json_create_new(&path, &value)?;
+        Some(authority_for_file(
+            "artifacts/final-validation.json",
+            "mdp.final-validation.v1",
+            "application/json",
+            &path,
+            EvidenceProvenance::MdpObserved,
+            vec![bundle_sha256.clone()],
+        )?)
+    } else {
+        None
+    };
+
     if request.mode == RunMode::Generative
         && terminal_state.is_success()
         && deadline.check_phase(DeadlinePhase::Finalization).is_err()
     {
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
-        validation = None;
+        artifact_state = None;
+        post_generation_validations.clear();
+        final_validation = None;
     }
     let deadline_observation = deadline.terminal_observation();
     let assurance = assurance_dimensions(
@@ -3015,6 +3074,9 @@ where
         decision,
         compiled_context,
         validation: validation_authority,
+        artifact_state,
+        post_generation_validations,
+        final_validation,
         runner_audit: audit_authority,
         deadline: deadline_observation.clone(),
         diagnostic_code: audit.diagnostic_code.clone(),
@@ -3067,6 +3129,8 @@ struct GenerativeOutcome {
     terminal_state: TerminalState,
     success: Option<SuccessArtifacts>,
     validation: Option<Value>,
+    post_validation_results: Vec<Value>,
+    artifact_state: Option<String>,
     provider_request_body_sha256: Option<String>,
     provider_request_schema_id: Option<String>,
     provider_response_body_sha256: Option<String>,
@@ -3275,6 +3339,8 @@ where
             terminal_state: TerminalState::NoDraftRunnerFailed,
             success: None,
             validation: None,
+            post_validation_results: Vec::new(),
+            artifact_state: None,
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
             provider_response_body_sha256: None,
@@ -3301,6 +3367,8 @@ where
             terminal_state: result.terminal_state,
             success: None,
             validation: None,
+            post_validation_results: Vec::new(),
+            artifact_state: None,
             provider_request_body_sha256: result.provider_request_body_sha256,
             provider_request_schema_id: result.provider_request_schema_id,
             provider_response_body_sha256: result.provider_response_body_sha256,
@@ -3404,10 +3472,75 @@ where
             deadline_phase_label(deadline.current_phase()),
         );
     }
-    let valid = validation["valid"].as_bool() == Some(true);
-    let validation_diagnostic =
-        (!valid).then(|| sanitized_prompt_validation_diagnostic(&validation));
-    let validation_detail = (!valid).then(|| prompt_validation_diagnostic_detail(&validation));
+    let prompt_valid = validation["valid"].as_bool() == Some(true);
+    let manifest = read_manifest(staged_pack)?;
+    let job = manifest
+        .jobs
+        .iter()
+        .find(|job| job.id == identity.job_id)
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-not-declared"))?;
+    let mut post_validation_results = Vec::new();
+    if prompt_valid && !job.post_generation_validators.is_empty() {
+        let context_input = routed_context
+            .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
+        let context: Value = serde_json::from_slice(&fs::read(&context_input.staged_path)?)
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
+        let artifact: Value = serde_json::from_slice(&output_bytes).map_err(|_| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "post-generation-artifact-invalid",
+            )
+        })?;
+        for validator in &job.post_generation_validators {
+            let result = match validator.engine.as_str() {
+                "routed-text-policy" => validate_routed_artifact_text_policy(
+                    &validator.id,
+                    &artifact,
+                    &job.artifact_text_fields,
+                    &context,
+                ),
+                _ => Err(anyhow!("unsupported post-generation validator")),
+            }
+            .map_err(|_| {
+                run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "post-generation-validator-invalid",
+                )
+            })?;
+            post_validation_results.push(result);
+        }
+    }
+    let post_valid = post_validation_results
+        .iter()
+        .all(|result| result["status"] == "passed");
+    let valid = prompt_valid && post_valid;
+    let validation_diagnostic = if !prompt_valid {
+        Some(sanitized_prompt_validation_diagnostic(&validation))
+    } else if !post_valid {
+        Some("post-generation-validator-failed".to_string())
+    } else {
+        None
+    };
+    let validation_detail = if !prompt_valid {
+        Some(prompt_validation_diagnostic_detail(&validation))
+    } else if !post_valid {
+        let path = post_validation_results
+            .iter()
+            .find(|result| result["status"] == "failed")
+            .and_then(|result| result["violations"].as_array())
+            .and_then(|violations| violations.first())
+            .and_then(|violation| violation["field_path"].as_str())
+            .map(safe_prompt_validation_path)
+            .unwrap_or_else(|| "$/artifact/*".into());
+        Some(DiagnosticDetailV1 {
+            code: "post-generation-validator-failed".into(),
+            path,
+            expected: "passed".into(),
+            observed: "failed".into(),
+        })
+    } else {
+        None
+    };
     let diagnostic_phase = validation_diagnostic
         .is_some()
         .then(|| "validation".to_string());
@@ -3424,11 +3557,15 @@ where
                 bundle_sha256,
                 &output_path,
                 validation.clone(),
+                !job.post_generation_validators.is_empty(),
             )?)
         } else {
             None
         },
-        validation: if valid { Some(validation) } else { None },
+        validation: if prompt_valid { Some(validation) } else { None },
+        artifact_state: (prompt_valid && !job.post_generation_validators.is_empty())
+            .then(|| if valid { "valid" } else { "rejected" }.to_string()),
+        post_validation_results,
         provider_request_body_sha256: result.provider_request_body_sha256,
         provider_request_schema_id: result.provider_request_schema_id,
         provider_response_body_sha256: result.provider_response_body_sha256,
@@ -3465,6 +3602,8 @@ fn failed_generative_outcome(
         terminal_state: TerminalState::NoDraftRunnerFailed,
         success: None,
         validation: None,
+        post_validation_results: Vec::new(),
+        artifact_state: None,
         provider_request_body_sha256: None,
         provider_request_schema_id: None,
         provider_response_body_sha256: None,
@@ -3487,6 +3626,8 @@ fn host_envelope_failure_outcome(
         terminal_state: TerminalState::NoDraftOutputInvalid,
         success: None,
         validation: None,
+        post_validation_results: Vec::new(),
+        artifact_state: None,
         provider_request_body_sha256: result.provider_request_body_sha256,
         provider_request_schema_id: result.provider_request_schema_id,
         provider_response_body_sha256: result.provider_response_body_sha256,
@@ -3646,6 +3787,7 @@ fn generative_success_artifacts(
     bundle_sha256: &str,
     output_path: &Path,
     validation: Value,
+    post_validated: bool,
 ) -> Result<SuccessArtifacts> {
     let output_bytes = fs::read(output_path)?;
     let compiled_context = json!({
@@ -3667,7 +3809,11 @@ fn generative_success_artifacts(
     let mut decision = DecisionAuthority {
         schema_id: "mdp.model-step-decision.v1".into(),
         decision: "governed-output".into(),
-        reason_codes: vec!["validation-passed".into()],
+        reason_codes: if post_validated {
+            vec!["validation-passed".into(), "final-validation-passed".into()]
+        } else {
+            vec!["validation-passed".into()]
+        },
         sha256: String::new(),
     };
     decision.sha256 =
@@ -7256,6 +7402,7 @@ mod tests {
             driver: request.driver.clone(),
             model: request.model.clone(),
             model_facts: None,
+            post_generation_validator_ids: Vec::new(),
         };
         let driver_identity = request.driver.clone().unwrap();
         let output = model_output.to_string();
@@ -9055,6 +9202,7 @@ mod tests {
             driver: None,
             model: None,
             model_facts: None,
+            post_generation_validator_ids: Vec::new(),
         };
         gtm_success_artifacts(
             &request,
