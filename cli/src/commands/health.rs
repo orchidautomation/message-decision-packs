@@ -483,7 +483,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     validate_product_foundation(&manifest, &card_entry_index, &mut issues);
     let product_foundation_index = ProductFoundationIndex::from_cards(&foundation_cards);
     let loaded_prompts = validate_prompts(root, &mut issues)?;
-    let prompt_inventory = prompt_inventory(&loaded_prompts);
+    let prompt_inventory = prompt_inventory(root, &loaded_prompts);
     validate_decision_input_contracts(&manifest, &prompt_inventory, &mut issues);
     let eval_inventory = collect_eval_inventory(root, &mut issues)?;
     if scoped_entry_count > 0 {
@@ -2919,6 +2919,34 @@ fn validate_profile_jobs(
                 format!("{job_path}/artifact_text_fields"),
                 "artifact text fields require a job-owned governed model task",
             ));
+        }
+        if !job.artifact_text_fields.is_empty()
+            && let Some(prompt) = job
+                .model_task
+                .as_ref()
+                .and_then(|binding| prompt_inventory.get(&binding.prompt))
+        {
+            if let Some(schema) = prompt.schema.as_ref() {
+                for (field_index, field) in job.artifact_text_fields.iter().enumerate() {
+                    if let Err(error) =
+                        crate::text_surfaces::validate_schema_path(schema, &field.path)
+                    {
+                        issues.push(issue(
+                            "profile_job_artifact_text_field_schema_invalid",
+                            "error",
+                            format!("{job_path}/artifact_text_fields/{field_index}/path"),
+                            error.to_string(),
+                        ));
+                    }
+                }
+            } else {
+                issues.push(issue(
+                    "profile_job_artifact_text_field_schema_missing",
+                    "error",
+                    format!("{job_path}/model_task/prompt"),
+                    "artifact text fields require an inline job-owned output schema",
+                ));
+            }
         }
         if let Some(binding) = job.model_task.as_ref()
             && !binding.prompt.trim().is_empty()
@@ -5574,6 +5602,7 @@ struct PromptInventoryEntry {
     schema_ref: Option<String>,
     version: Option<String>,
     canonical_path: Option<String>,
+    schema: Option<Value>,
     required_inputs: BTreeSet<String>,
 }
 
@@ -5587,9 +5616,13 @@ impl PromptInventory {
     }
 }
 
-fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
+fn prompt_inventory(root: &Path, loaded_prompts: &[Value]) -> PromptInventory {
     let mut inventory = PromptInventory::default();
     for prompt in loaded_prompts {
+        let schema = prompt["path"]
+            .as_str()
+            .and_then(|path| read_prompt(&root.join(path)).ok())
+            .and_then(|prompt| prompt.output_contract.schema);
         let entry = PromptInventoryEntry {
             id: prompt["id"].as_str().map(ToOwned::to_owned),
             format: prompt["format"].as_str().map(ToOwned::to_owned),
@@ -5607,6 +5640,7 @@ fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
             canonical_path: prompt["path"]
                 .as_str()
                 .map(|path| path.strip_prefix(".mdp/").unwrap_or(path).to_string()),
+            schema,
             required_inputs: prompt["required_inputs"]
                 .as_array()
                 .into_iter()
@@ -7699,6 +7733,49 @@ prompt: normalize-prospect-row
             "1"
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn artifact_text_fields_must_resolve_to_owned_prompt_text_schema_nodes() {
+        for (case, declared_path) in [
+            ("missing", "/artifact/not_declared"),
+            ("wrong-type", "/artifact/channel"),
+        ] {
+            let root = temp_pack(&format!("artifact-text-schema-{case}"));
+            let manifest_path = root.join(".mdp/manifest.yaml");
+            let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+            let mut manifest: YamlValue =
+                serde_yaml::from_str(&raw).expect("manifest should parse");
+            let job = manifest["jobs"]
+                .as_sequence_mut()
+                .expect("jobs should be a sequence")
+                .iter_mut()
+                .find(|job| job["id"].as_str() == Some("outbound-copy-brief"))
+                .expect("outbound job should exist");
+            job["artifact_text_fields"][0]["path"] = YamlValue::String(declared_path.to_string());
+            std::fs::write(
+                &manifest_path,
+                serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+            )
+            .expect("manifest should be writable");
+
+            let result = validate_pack(&root).expect("validation should return diagnostics");
+            assert!(
+                result["issues"]
+                    .as_array()
+                    .expect("issues")
+                    .iter()
+                    .any(|issue| {
+                        issue["code"] == "profile_job_artifact_text_field_schema_invalid"
+                            && issue["path"]
+                                .as_str()
+                                .is_some_and(|path| path.ends_with("/artifact_text_fields/0/path"))
+                    }),
+                "{case}: {}",
+                result["issues"]
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]

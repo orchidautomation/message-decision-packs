@@ -226,6 +226,7 @@ pub(crate) fn compile_provider_schema(
     let pattern = negative_contains_pattern(&terms)?;
     let mut compiled = schema.clone();
     for field in fields {
+        validate_schema_path(schema, &field.path)?;
         let node = schema_node_mut(&mut compiled, &field.path)?;
         let target = match node.get("type").and_then(Value::as_str) {
             Some("string") => node,
@@ -244,6 +245,31 @@ pub(crate) fn compile_provider_schema(
         object.insert("pattern".into(), Value::String(pattern.clone()));
     }
     Ok(compiled)
+}
+
+pub(crate) fn validate_schema_path(schema: &Value, instance_path: &str) -> Result<()> {
+    validate_pointer(instance_path)?;
+    let mut node = schema;
+    for encoded in instance_path.split('/').skip(1) {
+        let segment = encoded.replace("~1", "/").replace("~0", "~");
+        node = node
+            .get("properties")
+            .and_then(|properties| properties.get(&segment))
+            .ok_or_else(|| anyhow!("artifact-text-surface-schema-missing"))?;
+    }
+    match node.get("type").and_then(Value::as_str) {
+        Some("string") => Ok(()),
+        Some("array")
+            if node
+                .get("items")
+                .and_then(|items| items.get("type"))
+                .and_then(Value::as_str)
+                == Some("string") =>
+        {
+            Ok(())
+        }
+        _ => Err(anyhow!("artifact-text-surface-schema-invalid")),
+    }
 }
 
 fn schema_node_mut<'a>(schema: &'a mut Value, instance_path: &str) -> Result<&'a mut Value> {
