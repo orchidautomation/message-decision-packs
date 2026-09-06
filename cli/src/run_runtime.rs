@@ -82,6 +82,7 @@ const MAX_POLICY_OUTPUT_BYTES: u64 = 1024 * 1024;
 const MAX_POLICY_DIAGNOSTICS: usize = 4;
 const MAX_POLICY_DIAGNOSTIC_BYTES: usize = 4096;
 const MAX_DIAGNOSTIC_INPUT_BYTES: usize = 64;
+const MAX_PREREQUISITE_ID_BYTES: usize = 1024;
 const DRIVER_RESULT_ENVELOPE_BYTES: u64 = 64 * 1024;
 const MAX_FINALIZATION_RESERVE_MS: u64 = 250;
 pub(crate) const RECOMMENDED_TIMEOUT_MS: u64 = 60_000;
@@ -4064,6 +4065,8 @@ fn validate_selected_job_execution_prerequisites(
         return Ok(());
     }
     let blocker = &evaluated["first_blocker"];
+    let prerequisite_id = bounded_prerequisite_id(&blocker["id"])
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-readiness-unavailable"))?;
     let mut diagnostic = policy_diagnostic(
         "generative-preflight",
         "selected-job-prerequisites",
@@ -4075,12 +4078,22 @@ fn validate_selected_job_execution_prerequisites(
         diagnostic_value("binding", "declared"),
         diagnostic_value("binding", "missing"),
     );
-    diagnostic.input = blocker["id"].as_str().map(|id| Cow::Owned(id.to_string()));
+    diagnostic.input = Some(prerequisite_id);
     Err(run_failure_with_diagnostic(
         RunFailureKind::PolicyBlocked,
         "selected-job-prerequisite-unsatisfied",
         diagnostic,
     ))
+}
+
+fn bounded_prerequisite_id(value: &Value) -> Option<Cow<'static, str>> {
+    let id = value.as_str()?;
+    (!id.is_empty()
+        && id.len() <= MAX_PREREQUISITE_ID_BYTES
+        && id.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'/' | b'#' | b'.')
+        }))
+    .then(|| Cow::Owned(id.to_string()))
 }
 
 fn safe_logical_input_name(name: &str) -> Option<&'static str> {
@@ -6161,7 +6174,8 @@ mod tests {
     use super::read_recovery_claim;
     use super::{
         MAX_EXECUTION_ID_BYTES, MAX_OUTPUT_LEAF_BYTES, MAX_RECOVERY_CLAIM_BYTES, RunDeadline,
-        RunFailure, RunFailureKind, RunRecoveryClaim, deterministic_proposal_pursuit,
+        RunFailure, RunFailureKind, RunRecoveryClaim, bounded_prerequisite_id,
+        constrain_governed_selected_authority, deterministic_proposal_pursuit,
         execute_generative_step, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
         host_wrap_governed_output, host_wrap_v3_normalization_output,
@@ -6206,6 +6220,22 @@ mod tests {
             Some("model-step:model:outbound-copy-brief/generation/input:normalized_prospect")
         );
         assert_eq!(failure.diagnostics()[0].field, Some("/prerequisite_id"));
+    }
+
+    #[test]
+    fn prerequisite_diagnostic_identity_has_a_dedicated_exact_bound() {
+        let long_id = format!(
+            "model-step:model:{}/generation/input:routed_context",
+            "a".repeat(256)
+        );
+        assert!(long_id.len() > super::MAX_DIAGNOSTIC_INPUT_BYTES);
+        assert_eq!(
+            bounded_prerequisite_id(&serde_json::json!(long_id)).as_deref(),
+            Some(long_id.as_str())
+        );
+
+        let oversized = "a".repeat(super::MAX_PREREQUISITE_ID_BYTES + 1);
+        assert!(bounded_prerequisite_id(&serde_json::json!(oversized)).is_none());
     }
 
     fn proposal_input(
