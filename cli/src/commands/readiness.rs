@@ -272,6 +272,21 @@ pub(crate) fn readiness(
         input_validation_path.is_some(),
         input_validation_result.as_ref(),
     );
+    let mut first_blocker = first.map(|gate| {
+        json!({
+            "gate": gate.id,
+            "reason_code": gate.reason_code,
+            "message": gate.message
+        })
+    });
+    if first.is_some_and(|gate| gate.id == "input_ready")
+        && let Some(prerequisite_id) = input_validation_result
+            .as_ref()
+            .and_then(selected_job_prerequisite_id)
+    {
+        first_blocker.as_mut().expect("input gate blocker exists")["prerequisite_id"] =
+            json!(prerequisite_id);
+    }
     json!({
         "contract": READINESS_CONTRACT,
         "status": status,
@@ -284,11 +299,7 @@ pub(crate) fn readiness(
         "input_ready": gates[5].value(),
         "safe_to_draft_or_act": gates[6].value(),
         "gates": gates.iter().map(Gate::list_value).collect::<Vec<_>>(),
-        "first_blocker": first.map(|gate| json!({
-            "gate": gate.id,
-            "reason_code": gate.reason_code,
-            "message": gate.message
-        })),
+        "first_blocker": first_blocker,
         "next_action": next_action,
         "contributors": contributors,
         "diagnostics": diagnostics
@@ -411,6 +422,19 @@ fn input_gate(
                 "governed_input_valid",
             )
         }
+        Some(value)
+            if validation_result_is_bound(value, requirements, requested_job)
+                && selected_job_prerequisite_id(value).is_some() =>
+        {
+            Gate {
+                id: "input_ready",
+                state: State::False,
+                authority: PROMPT_OUTPUT_VALIDATION_CONTRACT,
+                reason_code: "selected_job_prerequisite_unsatisfied",
+                message: "A required selected-job prerequisite is unresolved.",
+                next_action: "Resolve the prerequisite identified by the validation result and validate again.",
+            }
+        }
         Some(value) if validation_result_is_bound(value, requirements, requested_job) => Gate {
             id: "input_ready",
             state: State::False,
@@ -428,6 +452,14 @@ fn input_gate(
             next_action: "Supply JSON emitted by `mdp --json validate-prompt-output`.",
         },
     }
+}
+
+fn selected_job_prerequisite_id(value: &Value) -> Option<&str> {
+    value["issues"]
+        .as_array()?
+        .iter()
+        .find(|issue| issue["code"] == "selected_job_prerequisite_unsatisfied")?["prerequisite_id"]
+        .as_str()
 }
 
 fn read_input_validation(path: &Path) -> Option<Value> {
@@ -608,7 +640,38 @@ mod tests {
                 .find(file.to_string_lossy().as_ref())
                 .is_none()
         );
+
+        let prerequisite_id = "decision-input:neutral.case-context#approval_state";
+        let mut blocked = result_for_prerequisite_test(&file);
+        blocked["valid"] = json!(false);
+        blocked["authority"]["validation_state"] = json!("invalid");
+        blocked["authority"]["decision_state"] = json!("blocked");
+        blocked["issues"] = json!([{
+            "code": "selected_job_prerequisite_unsatisfied",
+            "severity": "error",
+            "path": "redacted#/attributes/approval_state",
+            "message": "selected prerequisite is unresolved",
+            "prerequisite_id": prerequisite_id
+        }]);
+        let mut authority = blocked["authority"].clone();
+        authority.as_object_mut().unwrap().remove("binding_sha256");
+        blocked["authority"]["binding_sha256"] = json!(canonical_json_sha256(&authority).unwrap());
+        fs::write(&file, serde_json::to_vec(&blocked).unwrap()).unwrap();
+        let blocked_readiness =
+            readiness(template_root(), Some("outbound-copy-brief"), Some(&file));
+        assert_eq!(
+            blocked_readiness["first_blocker"]["reason_code"],
+            "selected_job_prerequisite_unsatisfied"
+        );
+        assert_eq!(
+            blocked_readiness["first_blocker"]["prerequisite_id"],
+            prerequisite_id
+        );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn result_for_prerequisite_test(file: &Path) -> Value {
+        serde_json::from_slice(&fs::read(file).unwrap()).unwrap()
     }
 
     #[test]

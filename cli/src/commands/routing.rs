@@ -2,7 +2,9 @@ use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
 use crate::commands::prompt_output::{
     read_bounded_bytes, validate_prompt_output_file_with_lineage_inputs,
 };
-use crate::commands::requirements::{requirements, resolve_job_decision_inputs};
+use crate::commands::requirements::{
+    evaluate_selected_job_prerequisites, requirements, resolve_job_decision_inputs,
+};
 use crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3;
 use crate::models::{CardKind, Manifest, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
@@ -235,6 +237,17 @@ pub(crate) fn fit_normalized(
             "normalized decision input job_id does not match --job"
         ));
     }
+    let compiled = requirements(root, job_id)?;
+    let prerequisites =
+        evaluate_selected_job_prerequisites(&compiled["job_prerequisites"], &normalized);
+    if prerequisites["status"] == "blocked" {
+        return Err(anyhow!(
+            "selected_job_prerequisite_unsatisfied: {}",
+            prerequisites["first_blocker"]["id"]
+                .as_str()
+                .unwrap_or("unknown")
+        ));
+    }
     let validation = validate_prompt_output_file_with_lineage_inputs(
         root,
         normalized_path,
@@ -277,7 +290,6 @@ pub(crate) fn fit_normalized(
         let projected_hash = Some(canonical_json_sha256(&normalized["normalized_prospect"])?);
         (prospect, authority, projected_hash)
     };
-    let compiled = requirements(root, job_id)?;
     let requirements_sha256 = canonical_json_sha256(&compiled)?;
     let eligibility_policy = json!({
         "version": "mdp.signal-eligibility.v1",
