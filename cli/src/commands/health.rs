@@ -1602,6 +1602,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "model_task",
             "context_budget",
             "artifact_text_fields",
+            "post_generation_validators",
         ],
         ".mdp/manifest.yaml#/jobs",
         "manifest_profile_job_unknown_field",
@@ -1633,6 +1634,17 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
                     &["path", "legacy_input"],
                     &format!(".mdp/manifest.yaml#/jobs/{index}/artifact_text_fields"),
                     "manifest_profile_job_artifact_text_field_unknown_field",
+                    issues,
+                );
+            }
+            if let Some(validators) =
+                yaml_get(job, "post_generation_validators").and_then(YamlValue::as_sequence)
+            {
+                validate_sequence_object_keys(
+                    Some(&YamlValue::Sequence(validators.clone())),
+                    &["id", "engine"],
+                    &format!(".mdp/manifest.yaml#/jobs/{index}/post_generation_validators"),
+                    "manifest_profile_job_post_generation_validator_unknown_field",
                     issues,
                 );
             }
@@ -2904,6 +2916,53 @@ fn validate_profile_jobs(
             issues,
         );
         validate_job_model_task(job, prompt_inventory, &job_path, issues);
+        let mut validator_ids = BTreeSet::new();
+        for (validator_index, validator) in job.post_generation_validators.iter().enumerate() {
+            let validator_path = format!("{job_path}/post_generation_validators/{validator_index}");
+            if validator.id.is_empty()
+                || validator.id.len() > 64
+                || !validator.id.chars().enumerate().all(|(index, character)| {
+                    if index == 0 {
+                        character.is_ascii_lowercase()
+                    } else {
+                        character.is_ascii_lowercase()
+                            || character.is_ascii_digit()
+                            || character == '-'
+                    }
+                })
+            {
+                issues.push(issue(
+                    "profile_job_post_generation_validator_id_invalid",
+                    "error",
+                    format!("{validator_path}/id"),
+                    "post-generation validator id must be a bounded lowercase kebab-case identifier",
+                ));
+            }
+            if !validator_ids.insert(validator.id.as_str()) {
+                issues.push(issue(
+                    "profile_job_post_generation_validator_id_duplicate",
+                    "error",
+                    format!("{validator_path}/id"),
+                    "post-generation validator ids must be unique within a job",
+                ));
+            }
+            if validator.engine != "routed-text-policy" {
+                issues.push(issue(
+                    "profile_job_post_generation_validator_engine_invalid",
+                    "error",
+                    format!("{validator_path}/engine"),
+                    "post-generation validator engine must be routed-text-policy",
+                ));
+            }
+            if job.model_task.is_none() || job.artifact_text_fields.is_empty() {
+                issues.push(issue(
+                    "profile_job_post_generation_validator_inputs_missing",
+                    "error",
+                    validator_path,
+                    "routed-text-policy requires a job-owned model task and declared artifact text fields",
+                ));
+            }
+        }
         if let Err(error) = crate::text_surfaces::validate_declarations(&job.artifact_text_fields) {
             issues.push(issue(
                 "profile_job_artifact_text_fields_invalid",
@@ -7771,6 +7830,55 @@ prompt: normalize-prospect-row
                                 .as_str()
                                 .is_some_and(|path| path.ends_with("/artifact_text_fields/0/path"))
                     }),
+                "{case}: {}",
+                result["issues"]
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn post_generation_validator_declarations_are_closed_and_unique() {
+        for (case, mutate, expected) in [
+            (
+                "duplicate",
+                "duplicate",
+                "profile_job_post_generation_validator_id_duplicate",
+            ),
+            (
+                "engine",
+                "engine",
+                "profile_job_post_generation_validator_engine_invalid",
+            ),
+        ] {
+            let root = temp_pack(&format!("post-validator-{case}"));
+            let manifest_path = root.join(".mdp/manifest.yaml");
+            let raw = std::fs::read_to_string(&manifest_path).unwrap();
+            let mut manifest: YamlValue = serde_yaml::from_str(&raw).unwrap();
+            let job = manifest["jobs"]
+                .as_sequence_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|job| job["id"].as_str() == Some("outbound-copy-brief"))
+                .unwrap();
+            if mutate == "duplicate" {
+                let validator = job["post_generation_validators"][0].clone();
+                job["post_generation_validators"]
+                    .as_sequence_mut()
+                    .unwrap()
+                    .push(validator);
+            } else {
+                job["post_generation_validators"][0]["engine"] =
+                    YamlValue::String("remote-review".into());
+            }
+            std::fs::write(&manifest_path, serde_yaml::to_string(&manifest).unwrap()).unwrap();
+            let result = validate_pack(&root).unwrap();
+            assert!(
+                result["issues"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|issue| issue["code"] == expected),
                 "{case}: {}",
                 result["issues"]
             );

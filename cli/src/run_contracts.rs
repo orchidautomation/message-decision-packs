@@ -491,6 +491,8 @@ pub(crate) struct RunBundleV1 {
     pub(crate) model: Option<ModelIdentity>,
     #[serde(default)]
     pub(crate) model_facts: Option<ModelParametersFactsV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) post_generation_validator_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -710,6 +712,14 @@ pub(crate) struct RunReceiptV1 {
     pub(crate) decision: Option<DecisionAuthority>,
     pub(crate) compiled_context: Option<ArtifactAuthority>,
     pub(crate) validation: Option<ArtifactAuthority>,
+    /// Absent on historical receipts and jobs that declared no deterministic
+    /// post-generation validators. Presence never upgrades legacy authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) artifact_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) post_generation_validations: Vec<ArtifactAuthority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) final_validation: Option<ArtifactAuthority>,
     pub(crate) runner_audit: ArtifactAuthority,
     #[serde(default)]
     pub(crate) deadline: Option<DeadlineObservationV1>,

@@ -657,6 +657,9 @@ jobs:
   context_budget: {max_entries: 64, max_bytes: 65536}
   artifact_text_fields:
   - path: /artifact/findings
+  post_generation_validators:
+  - id: routed-text-policy
+    engine: routed-text-policy
 - id: compliance-review
   skill_id: mdp-pack-apply
   label: Compliance review
@@ -695,6 +698,9 @@ jobs:
   - path: /artifact/unsupported_or_risky_claims
   - path: /artifact/missing_requirements_or_sources
   - path: /artifact/next_questions
+  post_generation_validators:
+  - id: routed-text-policy
+    engine: routed-text-policy
 - id: proof-review
   skill_id: mdp-pack-apply
   label: Proof or win theme review
@@ -732,6 +738,9 @@ jobs:
   context_budget: {max_entries: 64, max_bytes: 65536}
   artifact_text_fields:
   - path: /artifact/findings
+  post_generation_validators:
+  - id: routed-text-policy
+    engine: routed-text-policy
 - id: red-team-review
   skill_id: mdp-pack-apply
   label: Red-team gap review
@@ -776,6 +785,9 @@ jobs:
   - path: /artifact/unsupported_or_risky_claims
   - path: /artifact/contradictions_or_boundary_risks
   - path: /artifact/missing_sources_or_requirements
+  post_generation_validators:
+  - id: routed-text-policy
+    engine: routed-text-policy
 profile_eval:
   required_categories:
   - proceed

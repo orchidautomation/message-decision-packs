@@ -1948,7 +1948,13 @@ fn run_bundle_v1_schema() -> Value {
             "execution_policy_sha256": sha256_schema(),
             "driver": nullable_object_schema(driver_identity_v1_schema()),
             "model": nullable_object_schema(model_identity_v1_schema()),
-            "model_facts": nullable_object_schema(model_parameters_facts_v1_schema())
+            "model_facts": nullable_object_schema(model_parameters_facts_v1_schema()),
+            "post_generation_validator_ids": {
+                "type": "array",
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 64}
+            }
         },
         "oneOf": [
             {
@@ -2233,6 +2239,16 @@ fn run_receipt_v1_schema() -> Value {
             "decision": nullable_object_schema(decision_authority_v1_schema()),
             "compiled_context": nullable_object_schema(artifact_authority_v1_schema()),
             "validation": nullable_object_schema(artifact_authority_v1_schema()),
+            "artifact_state": {
+                "type": ["string", "null"],
+                "enum": ["generated-pending-validation", "valid", "rejected", null]
+            },
+            "post_generation_validations": {
+                "type": "array",
+                "maxItems": 16,
+                "items": artifact_authority_v1_schema()
+            },
+            "final_validation": nullable_object_schema(artifact_authority_v1_schema()),
             "runner_audit": artifact_authority_v1_schema(),
             "deadline": nullable_object_schema(deadline_observation_v1_schema()),
             "diagnostic_code": {"type": ["string", "null"]},
@@ -3437,6 +3453,24 @@ fn profile_jobs_schema() -> Value {
                                 "pattern": "^/artifact/(?:[^/~]|~[01])+(?:/(?:[^/~]|~[01])+)*$"
                             },
                             "legacy_input": {"enum": ["text", "subject"]}
+                        }
+                    }
+                },
+                "post_generation_validators": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                        "type": "object",
+                        "required": ["id", "engine"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "pattern": "^[a-z][a-z0-9-]*$"
+                            },
+                            "engine": {"enum": ["routed-text-policy"]}
                         }
                     }
                 },

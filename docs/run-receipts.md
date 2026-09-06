@@ -76,6 +76,28 @@ receipt. The customer host separately sequences normalization, deterministic
 fit/routing, and generation/review. A receipt does not imply automatic
 multi-step orchestration.
 
+### Declared post-generation validation
+
+A model job may declare an ordered `post_generation_validators` list. The
+initial closed engine, `routed-text-policy`, evaluates only that job's
+`artifact_text_fields` against the exact routed context already bound into the
+invocation. It does not re-route, infer a persona, inspect metadata fields, or
+rewrite generated text.
+
+For an opted-in job, provider completion first creates an internal
+`generated-pending-validation` state. MDP publishes final output and the
+`final-validation-passed` decision reason only after every declared validator
+passes. The receipt then records `artifact_state: valid`, one ordered,
+content-bound validator result, and an `mdp.final-validation.v1` summary. A
+failed validator records `artifact_state: rejected` and a no-draft terminal;
+rejected prose remains private and diagnostics expose only bounded validator,
+rule, and JSON-pointer categories. There is no automatic retry.
+
+Jobs with no declaration retain their historical v1 behavior. Receipts that
+omit the additive fields remain readable but do not claim that post-generation
+validation ran. `verify-run` rejects missing, duplicated, reordered, failed, or
+hash-mismatched evidence when a receipt claims a final artifact state.
+
 Inspect the exact contracts with:
 
 ```bash

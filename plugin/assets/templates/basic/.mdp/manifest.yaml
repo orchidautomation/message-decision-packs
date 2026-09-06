@@ -925,6 +925,9 @@ jobs:
     legacy_input: text
   - path: /artifact/subject_options
     legacy_input: subject
+  post_generation_validators:
+  - id: routed-text-policy
+    engine: routed-text-policy
 - id: outbound-copy-review
   skill_id: mdp-pack-apply
   label: Supplied outbound copy review

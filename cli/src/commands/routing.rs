@@ -2001,6 +2001,127 @@ fn collect_routed_guardrail_hits(
     Ok(())
 }
 
+/// Evaluate a generated artifact against the exact routed context already
+/// bound into the model invocation. This deliberately does not route again:
+/// callers must supply the job-owned text declarations and immutable context.
+pub(crate) fn validate_routed_artifact_text_policy(
+    validator_id: &str,
+    artifact: &Value,
+    fields: &[crate::models::ArtifactTextField],
+    context: &Value,
+) -> Result<Value> {
+    let surfaces = crate::text_surfaces::declared_values(artifact, fields)?;
+    let avoid_hits = crate::text_surfaces::guardrail_hits(artifact, fields, context)?;
+    let approved_claim_context = context["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["card_kind"].as_str() == Some("claims"))
+        .map(|entry| {
+            format!(
+                "{} {} {}",
+                entry["title"].as_str().unwrap_or_default(),
+                entry["body"].as_str().unwrap_or_default(),
+                entry["evidence"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let mut violations = avoid_hits
+        .into_iter()
+        .map(|hit| {
+            json!({
+                "code": "forbidden-term",
+                "field_path": hit.field_path,
+                "card_id": hit.card_id,
+                "entry_id": hit.entry_id,
+            })
+        })
+        .collect::<Vec<_>>();
+    for surface in &surfaces {
+        for hit in unsupported_claims(&surface.text.to_lowercase(), &approved_claim_context) {
+            violations.push(json!({
+                "code": "unsupported-claim",
+                "field_path": surface.field_path,
+                "category": hit["category"],
+            }));
+        }
+    }
+    let legacy_text_path = fields
+        .iter()
+        .find(|field| field.legacy_input.as_deref() == Some("text"))
+        .map(|field| field.path.as_str());
+    let raw = if let Some(path) = legacy_text_path {
+        surfaces
+            .iter()
+            .filter(|surface| {
+                surface.field_path == path || surface.field_path.starts_with(&format!("{path}/"))
+            })
+            .map(|surface| surface.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        surfaces
+            .iter()
+            .map(|surface| surface.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let subject = fields
+        .iter()
+        .find(|field| field.legacy_input.as_deref() == Some("subject"))
+        .and_then(|field| {
+            surfaces.iter().find(|surface| {
+                surface.field_path == field.path
+                    || surface.field_path.starts_with(&format!("{}/", field.path))
+            })
+        })
+        .map(|surface| surface.text.as_str());
+    let mut constraint_hits = Vec::new();
+    let mut constraint_warnings = Vec::new();
+    let mut unchecked_constraints = Vec::new();
+    collect_context_constraint_hits(
+        &mut constraint_hits,
+        &mut constraint_warnings,
+        &mut unchecked_constraints,
+        &raw,
+        count_paragraphs(&raw),
+        subject,
+        context,
+        false,
+    );
+    for hit in constraint_hits {
+        let default_path = legacy_text_path
+            .or_else(|| surfaces.first().map(|surface| surface.field_path.as_str()))
+            .unwrap_or("/artifact");
+        violations.push(json!({
+            "code": "structured-constraint",
+            "field_path": hit["field_path"].as_str().unwrap_or(default_path),
+            "card_id": hit["card_id"],
+            "entry_id": hit["entry_id"],
+            "rule": hit["rule"],
+        }));
+    }
+    if violations.len() > 256 {
+        return Err(anyhow!("post-generation-validator-limit-exceeded"));
+    }
+    Ok(json!({
+        "contract": "mdp.post-generation-validator-result.v1",
+        "validator_id": validator_id,
+        "engine": "routed-text-policy",
+        "status": if violations.is_empty() { "passed" } else { "failed" },
+        "checked_paths": surfaces.iter().map(|surface| surface.field_path.as_str()).collect::<Vec<_>>(),
+        "violations": violations,
+    }))
+}
+
 fn collect_guardrail_hits<'a>(
     guardrail_hits: &mut Vec<Value>,
     text: &str,
@@ -5386,5 +5507,55 @@ optional:
         );
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn routed_post_generation_policy_is_domain_neutral_and_uses_bound_context() {
+        for (domain, path) in [
+            ("gtm", "/artifact/subject"),
+            ("support", "/artifact/response"),
+            ("recruiting", "/artifact/summary"),
+            ("proposal", "/artifact/finding"),
+        ] {
+            let key = path.rsplit('/').next().unwrap();
+            let fields = vec![crate::models::ArtifactTextField {
+                path: path.to_string(),
+                legacy_input: None,
+            }];
+            let context = serde_json::json!({"entries": [{
+                "card_id": format!("{domain}-rules"),
+                "card_kind": "avoid-rules",
+                "entry_id": "no-two-questions",
+                "title": "No two questions",
+                "body": "",
+                "evidence": [],
+                "avoid": [],
+                "constraints": {"max_questions": 1}
+            }]});
+            let rejected = serde_json::json!({"artifact": {key: "First? Second?"}});
+            let result = validate_routed_artifact_text_policy(
+                "routed-text-policy",
+                &rejected,
+                &fields,
+                &context,
+            )
+            .unwrap();
+            assert_eq!(result["status"], "failed", "{domain}");
+            assert_eq!(result["violations"][0]["field_path"], path, "{domain}");
+            assert!(!result.to_string().contains("First"));
+
+            let clean = serde_json::json!({"artifact": {key: "One clear question?"}});
+            assert_eq!(
+                validate_routed_artifact_text_policy(
+                    "routed-text-policy",
+                    &clean,
+                    &fields,
+                    &context,
+                )
+                .unwrap()["status"],
+                "passed",
+                "{domain}"
+            );
+        }
     }
 }
