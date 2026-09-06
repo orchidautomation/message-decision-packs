@@ -4816,14 +4816,13 @@ optional:
     fn claim_check_applies_universal_avoid_rules_to_declared_subject_path() {
         let root = temp_pack("declared-subject-guardrail");
         let output_rules_path = root.join(".mdp/cards/output-rules.yaml");
-        let raw = std::fs::read_to_string(&output_rules_path)
-            .expect("output rules should be readable");
+        let raw =
+            std::fs::read_to_string(&output_rules_path).expect("output rules should be readable");
         let mut card: serde_yaml::Value =
             serde_yaml::from_str(&raw).expect("output rules should parse");
-        card["entries"][0]["constraints"] = serde_yaml::from_str(
-            "word_count: {min: 10, max: 100}\nsubject_avoid: [urgent]\n",
-        )
-        .expect("synthetic constraints should parse");
+        card["entries"][0]["constraints"] =
+            serde_yaml::from_str("word_count: {min: 10, max: 100}\nsubject_avoid: [urgent]\n")
+                .expect("synthetic constraints should parse");
         std::fs::write(
             &output_rules_path,
             serde_yaml::to_string(&card).expect("output rules should serialize"),
