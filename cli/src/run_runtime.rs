@@ -2414,8 +2414,9 @@ where
             .job_identity
             .as_ref()
             .and_then(|identity| manifest.jobs.iter().find(|job| job.id == identity.job_id))
-            .map(|job| {
-                job.post_generation_validators
+            .and_then(|job| prepared_native.as_ref().map(|prepared| (job, prepared)))
+            .map(|(job, prepared)| {
+                post_generation_validators_for_step(job, &prepared.step)
                     .iter()
                     .map(|validator| validator.id.clone())
                     .collect()
@@ -3479,8 +3480,9 @@ where
         .iter()
         .find(|job| job.id == identity.job_id)
         .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-not-declared"))?;
+    let post_generation_validators = post_generation_validators_for_step(job, &prepared.step);
     let mut post_validation_results = Vec::new();
-    if prompt_valid && !job.post_generation_validators.is_empty() {
+    if prompt_valid && !post_generation_validators.is_empty() {
         let context_input = routed_context
             .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
         let context: Value = serde_json::from_slice(&fs::read(&context_input.staged_path)?)
@@ -3491,7 +3493,7 @@ where
                 "post-generation-artifact-invalid",
             )
         })?;
-        for validator in &job.post_generation_validators {
+        for validator in post_generation_validators {
             let result = match validator.engine.as_str() {
                 "routed-text-policy" => validate_routed_artifact_text_policy(
                     &validator.id,
@@ -3557,13 +3559,13 @@ where
                 bundle_sha256,
                 &output_path,
                 validation.clone(),
-                !job.post_generation_validators.is_empty(),
+                !post_generation_validators.is_empty(),
             )?)
         } else {
             None
         },
         validation: if prompt_valid { Some(validation) } else { None },
-        artifact_state: (prompt_valid && !job.post_generation_validators.is_empty())
+        artifact_state: (prompt_valid && !post_generation_validators.is_empty())
             .then(|| if valid { "valid" } else { "rejected" }.to_string()),
         post_validation_results,
         provider_request_body_sha256: result.provider_request_body_sha256,
@@ -3576,6 +3578,17 @@ where
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
     })
+}
+
+fn post_generation_validators_for_step<'a>(
+    job: &'a crate::models::ProfileJob,
+    step: &CompiledModelStepV1,
+) -> &'a [crate::models::PostGenerationValidator] {
+    if step.phase == ModelStepPhase::Generation {
+        &job.post_generation_validators
+    } else {
+        &[]
+    }
 }
 
 fn failed_generative_outcome(
@@ -6344,12 +6357,13 @@ mod tests {
         deterministic_proposal_pursuit, execute_generative_step, execute_run_inner,
         execute_run_inner_with_driver, governed_normalization_outcome, gtm_lineage_schema_ids,
         gtm_success_artifacts, host_wrap_governed_output, host_wrap_v3_normalization_output,
-        project_output_schema_for_openai, prompt_validation_diagnostic_detail,
-        provider_max_output_tokens, provider_schema_source, provider_schema_source_for_contract,
-        routed_context_shape_diagnostic, routed_context_validation_diagnostic,
-        sanitized_host_envelope_diagnostic, sanitized_prompt_validation_diagnostic,
-        seal_driver_request, seal_driver_result, serialize_recovery_claim, validate_driver_result,
-        validate_request, validate_selected_job_execution_prerequisites,
+        post_generation_validators_for_step, project_output_schema_for_openai,
+        prompt_validation_diagnostic_detail, provider_max_output_tokens, provider_schema_source,
+        provider_schema_source_for_contract, routed_context_shape_diagnostic,
+        routed_context_validation_diagnostic, sanitized_host_envelope_diagnostic,
+        sanitized_prompt_validation_diagnostic, seal_driver_request, seal_driver_result,
+        serialize_recovery_claim, validate_driver_result, validate_request,
+        validate_selected_job_execution_prerequisites,
     };
     use crate::commands::init::init_pack;
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
@@ -6385,6 +6399,39 @@ mod tests {
             Some("model-step:model:outbound-copy-brief/generation/input:normalized_prospect")
         );
         assert_eq!(failure.diagnostics()[0].field, Some("/prerequisite_id"));
+    }
+
+    #[test]
+    fn post_generation_validators_are_scoped_to_the_generation_step() {
+        let root = Path::new("../plugin/assets/templates/basic");
+        let manifest = crate::pack_io::read_manifest(root).unwrap();
+        let job = manifest
+            .jobs
+            .iter()
+            .find(|job| job.id == "outbound-copy-brief")
+            .unwrap();
+        assert!(!job.post_generation_validators.is_empty());
+
+        let normalization = crate::model_steps::resolve_selected_model_step(
+            root,
+            &manifest,
+            &job.id,
+            "model:outbound-copy-brief/normalization",
+        )
+        .unwrap();
+        let generation = crate::model_steps::resolve_selected_model_step(
+            root,
+            &manifest,
+            &job.id,
+            "model:outbound-copy-brief/generation",
+        )
+        .unwrap();
+
+        assert!(post_generation_validators_for_step(job, &normalization).is_empty());
+        assert_eq!(
+            post_generation_validators_for_step(job, &generation),
+            job.post_generation_validators.as_slice()
+        );
     }
 
     #[test]
