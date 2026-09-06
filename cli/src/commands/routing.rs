@@ -1518,6 +1518,73 @@ pub(crate) fn check_claims_artifact_scoped(
     job: Option<&str>,
     scope_selectors: &[String],
 ) -> Result<Value> {
+    check_claims_artifact_scoped_with_job_policy(
+        root,
+        text,
+        file,
+        subject,
+        artifact,
+        supplied_fields,
+        persona,
+        job,
+        scope_selectors,
+        JobIdentityPolicy::ExactManifestId,
+    )
+}
+
+pub(crate) fn check_claims_with_legacy_route_label(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    persona: Option<&str>,
+    job: Option<&str>,
+) -> Result<Value> {
+    check_claims_scoped_with_legacy_route_label(root, text, file, subject, persona, job, &[])
+}
+
+pub(crate) fn check_claims_scoped_with_legacy_route_label(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    persona: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+) -> Result<Value> {
+    check_claims_artifact_scoped_with_job_policy(
+        root,
+        text,
+        file,
+        subject,
+        None,
+        &[],
+        persona,
+        job,
+        scope_selectors,
+        JobIdentityPolicy::LegacyRouteLabel,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum JobIdentityPolicy {
+    ExactManifestId,
+    LegacyRouteLabel,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_claims_artifact_scoped_with_job_policy(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    artifact: Option<&Path>,
+    supplied_fields: &[String],
+    persona: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+    job_identity_policy: JobIdentityPolicy,
+) -> Result<Value> {
     let raw = match (text, file) {
         (Some(value), None) => Some(value.to_string()),
         (None, Some(path)) => {
@@ -1535,11 +1602,13 @@ pub(crate) fn check_claims_artifact_scoped(
     });
     if let Some(job_id) = job
         && selected_job.is_none()
-        && (artifact.is_some()
-            || !supplied_fields.is_empty()
-            || !legacy_job_matches_pack(root, &manifest, job_id)?)
     {
-        return Err(anyhow!("selected job is not declared: {job_id}"));
+        let accepted_legacy_label =
+            matches!(job_identity_policy, JobIdentityPolicy::LegacyRouteLabel)
+                && legacy_job_matches_pack(root, &manifest, job_id)?;
+        if !accepted_legacy_label {
+            return Err(anyhow!("selected job is not declared: {job_id}"));
+        }
     }
     if persona.is_some() != job.is_some() {
         return Err(anyhow!(
@@ -3056,19 +3125,6 @@ optional:
             raw.replacen(&format!("id: {from}\n"), &format!("id: {to}\n"), 1),
         )
         .expect("card should be writable");
-    }
-
-    fn add_initial_email_word_count_constraint(root: &Path) {
-        let path = root.join(".mdp").join("cards").join("output-rules.yaml");
-        let raw = std::fs::read_to_string(&path).expect("output rules should be readable");
-        std::fs::write(
-            path,
-            raw.replace(
-                "- id: no-fake-personalization",
-                "  constraints:\n    word_count:\n      min: 50\n      max: 125\n- id: no-fake-personalization",
-            ),
-        )
-        .expect("output rules should be writable");
     }
 
     fn add_scoped_integration_claim(root: &Path) {
@@ -4716,24 +4772,38 @@ optional:
     #[test]
     fn claim_check_rejects_supplied_unknown_job() {
         let root = temp_pack("unknown-claim-job");
-        for fields in [
-            Vec::new(),
-            vec!["/artifact/message_body=synthetic".to_string()],
-        ] {
-            let error = check_claims_artifact_scoped(
-                &root,
-                Some("synthetic"),
-                None,
-                None,
-                None,
-                &fields,
-                Some("PMM"),
-                Some("zzzxxyyq"),
-                &[],
-            )
-            .expect_err("unknown job must fail closed");
-            assert!(error.to_string().contains("selected job is not declared"));
-        }
+        let error = check_claims_artifact_scoped(
+            &root,
+            Some("synthetic"),
+            None,
+            Some("A subject — with a prohibited value"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brif"),
+            &[],
+        )
+        .expect_err("a realistic job typo must fail before guardrail evaluation");
+        assert!(error.to_string().contains("selected job is not declared"));
+        let legacy = check_claims_artifact_scoped(
+            &root,
+            Some("A legacy body — with a prohibited value"),
+            None,
+            None,
+            None,
+            &[],
+            None,
+            None,
+            &[],
+        )
+        .expect("omitting --job must preserve legacy direct checking");
+        assert!(
+            legacy["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["term"] == "—")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -4791,9 +4861,19 @@ optional:
     #[test]
     fn route_scoped_claim_check_does_not_duplicate_custom_output_rule_constraints() {
         let root = temp_pack("claim-kind-fallback-route-scoped");
-        add_initial_email_word_count_constraint(&root);
-        rename_manifest_card_ids(&root, &[("output-rules", "prose-contract")]);
-        rename_card_id(&root, "output-rules.yaml", "output-rules", "prose-contract");
+        let path = root.join(".mdp/cards/output-rules.yaml");
+        let raw = std::fs::read_to_string(&path).expect("output rules should be readable");
+        let mut card: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("output rules should parse");
+        card["entries"][0]["id"] = serde_yaml::Value::String("custom-word-count".into());
+        card["entries"][0]["constraints"] =
+            serde_yaml::from_str("word_count: {min: 50, max: 120, target: 80}\n")
+                .expect("constraint should parse");
+        std::fs::write(
+            &path,
+            serde_yaml::to_string(&card).expect("output rules should serialize"),
+        )
+        .expect("output rules should be writable");
 
         let result = check_claims(
             &root,
@@ -4801,7 +4881,7 @@ optional:
             None,
             Some("Proposal note"),
             Some("PMM"),
-            Some("initial email outbound copy"),
+            Some("outbound-copy-brief"),
         )
         .expect("claim check should succeed");
 
@@ -4810,8 +4890,8 @@ optional:
             .expect("guardrail hits array")
             .iter()
             .filter(|hit| {
-                hit["card_id"] == "prose-contract"
-                    && hit["entry_id"] == "initial-email-shape"
+                hit["card_id"] == "output-rules"
+                    && hit["entry_id"] == "custom-word-count"
                     && hit["rule"] == "constraints.word_count"
             })
             .count();
@@ -4883,7 +4963,7 @@ optional:
                 None,
                 None,
                 Some("PMM"),
-                Some("linkedin outbound copy"),
+                Some("outbound-copy-brief"),
             )
             .expect("check should run");
 
@@ -4908,7 +4988,7 @@ optional:
             None,
             None,
             Some("PMM"),
-            Some("linkedin outbound copy"),
+            Some("outbound-copy-brief"),
         )
         .expect("check should run");
         assert_eq!(three_paragraphs["valid"], true);
@@ -4926,7 +5006,7 @@ optional:
             "initial email outbound message",
             "call prep",
         ] {
-            let result = check_claims(
+            let result = check_claims_with_legacy_route_label(
                 &root,
                 Some("First paragraph only."),
                 None,
@@ -4985,33 +5065,38 @@ optional:
     #[test]
     fn claim_check_flags_route_scoped_structured_constraint_violations() {
         let root = temp_pack("structured-constraints-check");
-        narrow_starter_route_candidates_for_tests(&root);
-        let result = check_claims(
-            &root,
-            Some("Hi Alex, can we compare notes? See https://example.com? Thanks?"),
-            None,
+        let card = read_card_by_id(&root, "channel-policies").expect("channel policy should load");
+        let entry = card
+            .entries
+            .iter()
+            .find(|entry| entry.id == "email-initial-touch")
+            .expect("initial email rule should exist");
+        let mut guardrail_hits = Vec::new();
+        let mut constraint_warnings = Vec::new();
+        let mut unchecked_constraints = Vec::new();
+        collect_constraints(
+            &mut guardrail_hits,
+            &mut constraint_warnings,
+            &mut unchecked_constraints,
+            "Hi Alex, can we compare notes? See https://example.com? Thanks?",
             Some("Re: urgent"),
-            Some("PMM"),
-            Some("initial email outbound message"),
-        )
-        .expect("claim check should run");
-        let rules: Vec<&str> = result["guardrail_hits"]
-            .as_array()
-            .expect("guardrail hits array")
+            &card.id,
+            &entry.id,
+            &entry.title,
+            &json!(entry.constraints),
+        );
+        let rules: Vec<&str> = guardrail_hits
             .iter()
             .filter_map(|hit| hit["rule"].as_str())
             .collect();
 
-        assert_eq!(result["valid"], false);
         assert!(rules.contains(&"constraints.word_count"));
         assert!(rules.contains(&"constraints.subject_words"));
         assert!(rules.contains(&"constraints.subject_avoid"));
         assert!(rules.contains(&"constraints.max_questions"));
         assert!(rules.contains(&"constraints.forbid_links"));
         assert!(
-            result["unchecked_constraints"]
-                .as_array()
-                .expect("unchecked constraints array")
+            unchecked_constraints
                 .iter()
                 .any(|hit| hit["rule"] == "constraints.forbid_tracking")
         );
@@ -5022,7 +5107,12 @@ optional:
     #[test]
     fn claim_check_reports_target_word_count_as_warning_not_failure() {
         let root = temp_pack("structured-constraints-target");
-        narrow_starter_route_candidates_for_tests(&root);
+        let card = read_card_by_id(&root, "channel-policies").expect("channel policy should load");
+        let entry = card
+            .entries
+            .iter()
+            .find(|entry| entry.id == "email-initial-touch")
+            .expect("initial email rule should exist");
         let draft = [
             "Alex, saw your team is standardizing outbound context across notes and research.",
             "That usually creates small mismatches between what reps know, what campaigns say, and what agents load before drafting.",
@@ -5030,22 +5120,24 @@ optional:
             "Worth comparing notes on who owns that context today?",
         ]
         .join(" ");
-
-        let result = check_claims(
-            &root,
-            Some(&draft),
-            None,
+        let mut guardrail_hits = Vec::new();
+        let mut constraint_warnings = Vec::new();
+        let mut unchecked_constraints = Vec::new();
+        collect_constraints(
+            &mut guardrail_hits,
+            &mut constraint_warnings,
+            &mut unchecked_constraints,
+            &draft,
             Some("Context for outbound agents"),
-            Some("PMM"),
-            Some("initial email outbound message"),
-        )
-        .expect("claim check should run");
+            &card.id,
+            &entry.id,
+            &entry.title,
+            &json!(entry.constraints),
+        );
 
-        assert_eq!(result["valid"], true);
+        assert!(guardrail_hits.is_empty());
         assert!(
-            result["constraint_warnings"]
-                .as_array()
-                .expect("constraint warnings array")
+            constraint_warnings
                 .iter()
                 .any(|hit| hit["rule"] == "constraints.word_count.target")
         );

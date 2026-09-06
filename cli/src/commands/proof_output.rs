@@ -1,5 +1,5 @@
 use crate::commands::health::issue;
-use crate::commands::routing::check_claims;
+use crate::commands::routing::check_claims_with_legacy_route_label;
 use crate::models::{Card, CardKind, Entry, Manifest, PromptFile, ProofOutputConstraints};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::routing::{select_cards, selector_is_universal, selector_matches_persona};
@@ -1803,7 +1803,14 @@ fn run_claim_check(
             )
         })
         .unwrap_or((None, None));
-    let claim_check = check_claims(root, Some(&artifact.output.text), None, None, persona, job)?;
+    let claim_check = check_claims_with_legacy_route_label(
+        root,
+        Some(&artifact.output.text),
+        None,
+        None,
+        persona,
+        job,
+    )?;
 
     for (index, hit) in claim_check["guardrail_hits"]
         .as_array()
