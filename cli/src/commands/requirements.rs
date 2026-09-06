@@ -125,29 +125,99 @@ impl PrerequisiteState {
 /// normalized artifact. Execution inputs remain unassessed here because their
 /// presence is owned by the run-request compiler/preflight.
 pub(crate) fn evaluate_selected_job_prerequisites(projection: &Value, normalized: &Value) -> Value {
+    evaluate_selected_job_prerequisites_with_inputs(projection, normalized, None)
+}
+
+fn evaluate_selected_job_prerequisites_with_inputs(
+    projection: &Value,
+    normalized: &Value,
+    bound_execution_inputs: Option<&BTreeSet<String>>,
+) -> Value {
     let mut evaluated = Vec::new();
     for prerequisite in projection["prerequisites"].as_array().into_iter().flatten() {
         let mut item = prerequisite.clone();
         let state = if prerequisite["kind"] == "decision-input" {
             evaluate_decision_input_prerequisite(prerequisite, normalized)
+        } else if prerequisite["blocking"] != true {
+            PrerequisiteState::NotApplicable
+        } else if prerequisite["input_name"]
+            .as_str()
+            .is_some_and(|name| bound_execution_inputs.is_some_and(|bound| bound.contains(name)))
+        {
+            PrerequisiteState::True
         } else {
             PrerequisiteState::Unknown
         };
         item["state"] = json!(state.as_str());
         evaluated.push(item);
     }
-    let first_blocker = evaluated.iter().find(|item| {
-        item["kind"] == "decision-input"
-            && item["blocking"] == true
-            && matches!(item["state"].as_str(), Some("false" | "unknown"))
-    });
+    let first_blocker = evaluated
+        .iter()
+        .find(|item| item["blocking"] == true && item["state"] == "false")
+        .or_else(|| {
+            evaluated
+                .iter()
+                .find(|item| item["blocking"] == true && item["state"] == "unknown")
+        });
+    let status = match first_blocker.and_then(|item| item["state"].as_str()) {
+        Some("false") => "blocked",
+        Some("unknown") => "unknown",
+        _ => "ready",
+    };
     json!({
         "contract": JOB_PREREQUISITES_CONTRACT,
         "job_id": projection["job_id"],
-        "status": if first_blocker.is_some() { "blocked" } else { "ready" },
+        "status": status,
         "first_blocker": first_blocker.cloned().unwrap_or(Value::Null),
         "prerequisites": evaluated
     })
+}
+
+pub(crate) fn evaluate_selected_job_decision_prerequisites(
+    projection: &Value,
+    normalized: &Value,
+) -> Value {
+    let mut evaluated = evaluate_selected_job_prerequisites(projection, normalized);
+    let decision_inputs = evaluated["prerequisites"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|item| item["kind"] == "decision-input")
+        .cloned()
+        .collect::<Vec<_>>();
+    let first_blocker = decision_inputs
+        .iter()
+        .find(|item| item["blocking"] == true && item["state"] == "false")
+        .or_else(|| {
+            decision_inputs
+                .iter()
+                .find(|item| item["blocking"] == true && item["state"] == "unknown")
+        });
+    evaluated["status"] = json!(if first_blocker.is_some() {
+        "blocked"
+    } else {
+        "ready"
+    });
+    evaluated["first_blocker"] = first_blocker.cloned().unwrap_or(Value::Null);
+    evaluated
+}
+
+pub(crate) fn evaluate_selected_job_execution_prerequisites(
+    projection: &Value,
+    step_id: &str,
+    bound_inputs: &BTreeSet<String>,
+) -> Value {
+    let mut scoped = projection.clone();
+    scoped["prerequisites"] = Value::Array(
+        projection["prerequisites"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|item| item["kind"] != "decision-input" && item["authority"] == step_id)
+            .cloned()
+            .collect(),
+    );
+    evaluate_selected_job_prerequisites_with_inputs(&scoped, &Value::Null, Some(bound_inputs))
 }
 
 fn evaluate_decision_input_prerequisite(
@@ -823,7 +893,7 @@ pub(crate) fn validate_normalized_decision_input_with_projection(
 
     let mut issues = Vec::new();
     let prerequisite_evaluation =
-        evaluate_selected_job_prerequisites(&compiled["job_prerequisites"], output);
+        evaluate_selected_job_decision_prerequisites(&compiled["job_prerequisites"], output);
     if prerequisite_evaluation["status"] == "blocked" {
         let blocker = &prerequisite_evaluation["first_blocker"];
         let mut issue = decision_input_issue(
@@ -4191,7 +4261,7 @@ mod tests {
             &projection,
             &json!({"attributes": {}, "classifications": {}}),
         );
-        assert_eq!(unresolved["status"], "blocked");
+        assert_eq!(unresolved["status"], "unknown");
         assert_eq!(unresolved["first_blocker"]["state"], "unknown");
     }
 
@@ -4217,6 +4287,37 @@ mod tests {
             assert_eq!(projection["prerequisites"][0]["state"], "unassessed");
             assert_eq!(projection["prerequisites"][0]["blocking"], true);
         }
+    }
+
+    #[test]
+    fn required_execution_prerequisites_are_unknown_until_bound() {
+        let projection = compile_selected_job_prerequisites(
+            "case-review",
+            &[],
+            &json!({"steps": [{
+                "step_id": "model:case-review/generation",
+                "phase": "generation",
+                "declared_inputs": [
+                    {"name": "routed_context", "required": true, "producer": "mdp"},
+                    {"name": "supplemental_notes", "required": false, "producer": "host"}
+                ]
+            }]}),
+        );
+        let unresolved = evaluate_selected_job_prerequisites(&projection, &Value::Null);
+        assert_eq!(unresolved["status"], "unknown");
+        assert_eq!(
+            unresolved["first_blocker"]["id"],
+            "model-step:model:case-review/generation/input:routed_context"
+        );
+
+        let bound = BTreeSet::from(["routed_context".to_string()]);
+        let ready = evaluate_selected_job_execution_prerequisites(
+            &projection,
+            "model:case-review/generation",
+            &bound,
+        );
+        assert_eq!(ready["status"], "ready");
+        assert_eq!(ready["prerequisites"][1]["state"], "not-applicable");
     }
 
     #[test]
@@ -5224,6 +5325,19 @@ optional:
         request_sha256: &str,
         prompt_path: &Path,
     ) -> BTreeSet<String> {
+        semantic_issues(root, request, response, request_sha256, prompt_path)
+            .into_iter()
+            .filter_map(|issue| issue["code"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    fn semantic_issues(
+        root: &Path,
+        request: &Value,
+        response: &Value,
+        request_sha256: &str,
+        prompt_path: &Path,
+    ) -> Vec<Value> {
         let results_raw = std::fs::read(root.join("fixtures/collected-attempt-results.json"))
             .expect("collected-results fixture bytes should load");
         let mut results: Value =
@@ -5253,9 +5367,33 @@ optional:
             Some((&results, "synthetic-results", &results_sha256)),
         )
         .expect("semantic validation should run")
-        .into_iter()
-        .filter_map(|issue| issue["code"].as_str().map(str::to_string))
-        .collect()
+    }
+
+    #[test]
+    fn schema_valid_normalization_surfaces_exact_selected_job_prerequisite_id() {
+        let (root, request, mut response, request_sha256, prompt_path) = clay_validation_fixture();
+        response["outcome"] = json!("insufficient-context");
+        response["attributes"]["company_domain"] = json!({"status": "not_found"});
+        response["normalized_prospect"]
+            .as_object_mut()
+            .unwrap()
+            .remove("company_domain");
+        let compiled = requirements(&root, "prospect-fit-or-brief").unwrap();
+        assert!(
+            draft202012::validate(&compiled["normalized_output_schema"], &response).is_ok(),
+            "the normalization result must remain structurally valid"
+        );
+
+        let issues = semantic_issues(&root, &request, &response, &request_sha256, &prompt_path);
+        let prerequisite = issues
+            .iter()
+            .find(|issue| issue["code"] == "selected_job_prerequisite_unsatisfied")
+            .expect("production validation must evaluate selected-job prerequisites");
+        assert_eq!(
+            prerequisite["prerequisite_id"],
+            "decision-input:clay.audiences.self_serve_enterprise_expansion#company_domain"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
