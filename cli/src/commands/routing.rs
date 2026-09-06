@@ -7,7 +7,9 @@ use crate::commands::requirements::{
 };
 use crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3;
 use crate::models::{CardKind, Manifest, QualificationGates};
-use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
+use crate::pack_io::{
+    read_card, read_cards_by_id_or_kind, read_manifest, read_prospect, resolve_pack_path,
+};
 use crate::routing::{
     RouteBudgetQuery, entry_context_scoped, entry_route_scoped, project_route_budget,
     route_budget_preflight, select_cards, selector_is_universal,
@@ -1504,22 +1506,179 @@ pub(crate) fn check_claims_scoped(
     job: Option<&str>,
     scope_selectors: &[String],
 ) -> Result<Value> {
+    check_claims_artifact_scoped(
+        root,
+        text,
+        file,
+        subject,
+        None,
+        &[],
+        persona,
+        job,
+        scope_selectors,
+    )
+}
+
+pub(crate) fn check_claims_artifact_scoped(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    artifact: Option<&Path>,
+    supplied_fields: &[String],
+    persona: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+) -> Result<Value> {
+    check_claims_artifact_scoped_with_job_policy(
+        root,
+        text,
+        file,
+        subject,
+        artifact,
+        supplied_fields,
+        persona,
+        job,
+        scope_selectors,
+        JobIdentityPolicy::ExactManifestId,
+    )
+}
+
+pub(crate) fn check_claims_with_legacy_route_label(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    persona: Option<&str>,
+    job: Option<&str>,
+) -> Result<Value> {
+    check_claims_scoped_with_legacy_route_label(root, text, file, subject, persona, job, &[])
+}
+
+pub(crate) fn check_claims_scoped_with_legacy_route_label(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    persona: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+) -> Result<Value> {
+    check_claims_artifact_scoped_with_job_policy(
+        root,
+        text,
+        file,
+        subject,
+        None,
+        &[],
+        persona,
+        job,
+        scope_selectors,
+        JobIdentityPolicy::LegacyRouteLabel,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum JobIdentityPolicy {
+    ExactManifestId,
+    LegacyRouteLabel,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_claims_artifact_scoped_with_job_policy(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    artifact: Option<&Path>,
+    supplied_fields: &[String],
+    persona: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+    job_identity_policy: JobIdentityPolicy,
+) -> Result<Value> {
+    let raw = match (text, file) {
+        (Some(value), None) => Some(value.to_string()),
+        (None, Some(path)) => {
+            Some(fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?)
+        }
+        (Some(_), Some(_)) => return Err(anyhow!("pass either --text or --file, not both")),
+        (None, None) => None,
+    };
+    let manifest = read_manifest(root)?;
+    let selected_job = job.and_then(|job_id| {
+        manifest
+            .jobs
+            .iter()
+            .find(|candidate| candidate.id == job_id)
+    });
+    if let Some(job_id) = job
+        && selected_job.is_none()
+    {
+        let accepted_legacy_label =
+            matches!(job_identity_policy, JobIdentityPolicy::LegacyRouteLabel)
+                && legacy_job_matches_pack(root, &manifest, job_id)?;
+        if !accepted_legacy_label {
+            return Err(anyhow!("selected job is not declared: {job_id}"));
+        }
+    }
     if persona.is_some() != job.is_some() {
         return Err(anyhow!(
             "pass both --persona and --job for route-scoped constraint checks"
         ));
     }
-    let raw = match (text, file) {
-        (Some(value), None) => value.to_string(),
-        (None, Some(path)) => {
-            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?
+    let declared_fields = selected_job
+        .map(|job| job.artifact_text_fields.as_slice())
+        .unwrap_or(&[]);
+    let artifact_value = artifact
+        .map(|path| {
+            let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+            if bytes.len() > 4 * 1024 * 1024 {
+                return Err(anyhow!("--artifact exceeds 4 MiB"));
+            }
+            serde_json::from_slice::<Value>(&bytes)
+                .with_context(|| format!("parsing {}", path.display()))
+        })
+        .transpose()?;
+    let (surface_instance, text_surfaces) = if declared_fields.is_empty() {
+        if artifact_value.is_some() || !supplied_fields.is_empty() {
+            return Err(anyhow!(
+                "selected job must declare artifact_text_fields for --artifact or --field"
+            ));
         }
-        (Some(_), Some(_)) => return Err(anyhow!("pass either --text or --file, not both")),
-        (None, None) => return Err(anyhow!("pass --text or --file")),
+        let mut values = Vec::new();
+        if let Some(value) = raw.as_deref() {
+            values.push(crate::text_surfaces::TextSurfaceValue {
+                field_path: "/text".to_string(),
+                text: value.to_string(),
+            });
+        }
+        (Value::Null, values)
+    } else {
+        let instance = crate::text_surfaces::direct_instance(
+            declared_fields,
+            artifact_value,
+            supplied_fields,
+            raw.as_deref(),
+            subject,
+        )?;
+        let values = crate::text_surfaces::declared_values(&instance, declared_fields)?;
+        (instance, values)
     };
+    if text_surfaces.is_empty() {
+        return Err(anyhow!(
+            "pass --text, --file, --subject, --artifact, or at least one --field"
+        ));
+    }
+    let legacy_text_path = raw.as_ref().and_then(|_| {
+        declared_fields
+            .iter()
+            .find(|field| field.legacy_input.as_deref() == Some("text"))
+            .map(|field| field.path.as_str())
+    });
+    let raw = raw.unwrap_or_default();
     let paragraph_count = count_paragraphs(&raw);
     let lower = raw.to_lowercase();
-    let manifest = read_manifest(root)?;
     let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
     let claims_cards = read_cards_by_id_or_kind(root, "claims", CardKind::Claims)?;
     let avoid_cards = read_cards_by_id_or_kind(root, "avoid-rules", CardKind::AvoidRules)?;
@@ -1543,81 +1702,9 @@ pub(crate) fn check_claims_scoped(
         .count();
     let mut portfolio_sensitive = scoped_rule_count > 0;
     let mut route_scope_blocked = false;
-    let approved_claim_context = claims_cards
-        .iter()
-        .flat_map(|card| card.entries.iter())
-        .filter(|entry| entry_compatible(entry))
-        .map(|entry| {
-            format!(
-                "{} {} {}",
-                entry.title,
-                entry.body,
-                entry.evidence.join(" ")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
-    let mut matched_claims = Vec::new();
-    let mut claim_gaps = Vec::new();
-    let mut guardrail_hits = Vec::new();
-    let mut constraint_warnings = Vec::new();
-    let mut unchecked_constraints = Vec::new();
-    let unsupported_claims = unsupported_claims(&lower, &approved_claim_context);
     let mut route_persona_resolution = Value::Null;
     let mut resolved_persona_for_output: Option<String> = None;
-
-    for card in &claims_cards {
-        collect_guardrail_hits(
-            &mut guardrail_hits,
-            &lower,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
-        for entry in card.entries.iter().filter(|entry| entry_compatible(entry)) {
-            let title = entry.title.to_lowercase();
-            let title_match = title.len() > 4 && lower.contains(&title);
-            let evidence_missing = entry.evidence.is_empty();
-            if title_match {
-                matched_claims.push(json!({"id": entry.id, "title": entry.title, "evidence": entry.evidence, "evidence_missing": evidence_missing}));
-                if evidence_missing {
-                    claim_gaps.push(json!({"id": entry.id, "title": entry.title, "reason": "matched claim has no evidence"}));
-                }
-            }
-        }
-    }
-    for card in &avoid_cards {
-        collect_guardrail_hits(
-            &mut guardrail_hits,
-            &lower,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
-    }
-    for card in &output_rules_cards {
-        collect_guardrail_hits(
-            &mut guardrail_hits,
-            &lower,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
-        collect_output_structure_hits(
-            &mut guardrail_hits,
-            paragraph_count,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
-        collect_output_constraint_hits(
-            &mut guardrail_hits,
-            &mut constraint_warnings,
-            &mut unchecked_constraints,
-            &raw,
-            subject,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
-    }
-    if let (Some(persona), Some(job)) = (persona, job) {
+    let routed_context = if let (Some(persona), Some(job)) = (persona, job) {
         let persona_resolution = resolve_persona_label(&manifest, persona);
         let resolved_persona = routable_persona(persona, &persona_resolution);
         resolved_persona_for_output = Some(resolved_persona.to_string());
@@ -1625,6 +1712,187 @@ pub(crate) fn check_claims_scoped(
         portfolio_sensitive |= context["portfolio_sensitive"].as_bool().unwrap_or(false);
         route_scope_blocked = context["status"].as_str() == Some("blocked");
         route_persona_resolution = serde_json::to_value(&persona_resolution)?;
+        Some(
+            context
+                .get("model_context")
+                .filter(|value| value.is_object())
+                .unwrap_or(&context)
+                .clone(),
+        )
+    } else {
+        None
+    };
+    let approved_claim_context =
+        if let (Some(_), Some(context)) = (selected_job, routed_context.as_ref()) {
+            context["entries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["card_kind"].as_str() == Some("claims"))
+                .map(|entry| {
+                    format!(
+                        "{} {} {}",
+                        entry["title"].as_str().unwrap_or_default(),
+                        entry["body"].as_str().unwrap_or_default(),
+                        entry["evidence"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+        } else {
+            claims_cards
+                .iter()
+                .flat_map(|card| card.entries.iter())
+                .filter(|entry| entry_compatible(entry))
+                .map(|entry| {
+                    format!(
+                        "{} {} {}",
+                        entry.title,
+                        entry.body,
+                        entry.evidence.join(" ")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+        };
+    let mut matched_claims = Vec::new();
+    let mut claim_gaps = Vec::new();
+    let mut guardrail_hits = Vec::new();
+    let mut constraint_warnings = Vec::new();
+    let mut unchecked_constraints = Vec::new();
+    let unsupported_claims = text_surfaces
+        .iter()
+        .flat_map(|surface| {
+            unsupported_claims(&surface.text.to_lowercase(), &approved_claim_context)
+                .into_iter()
+                .map(|mut hit| {
+                    hit["field_path"] = Value::String(surface.field_path.clone());
+                    hit
+                })
+        })
+        .collect::<Vec<_>>();
+
+    if selected_job.is_none() {
+        for card in &claims_cards {
+            for surface in &text_surfaces {
+                collect_guardrail_hits(
+                    &mut guardrail_hits,
+                    &surface.text,
+                    &surface.field_path,
+                    !declared_fields.is_empty()
+                        && legacy_text_path != Some(surface.field_path.as_str()),
+                    &card.id,
+                    card.entries.iter().filter(|entry| entry_compatible(entry)),
+                );
+            }
+            for entry in card.entries.iter().filter(|entry| entry_compatible(entry)) {
+                let title = entry.title.to_lowercase();
+                let title_match = title.len() > 4 && lower.contains(&title);
+                let evidence_missing = entry.evidence.is_empty();
+                if title_match {
+                    matched_claims.push(json!({"id": entry.id, "title": entry.title, "evidence": entry.evidence, "evidence_missing": evidence_missing}));
+                    if evidence_missing {
+                        claim_gaps.push(json!({"id": entry.id, "title": entry.title, "reason": "matched claim has no evidence"}));
+                    }
+                }
+            }
+        }
+        for card in &avoid_cards {
+            for surface in &text_surfaces {
+                collect_guardrail_hits(
+                    &mut guardrail_hits,
+                    &surface.text,
+                    &surface.field_path,
+                    !declared_fields.is_empty()
+                        && legacy_text_path != Some(surface.field_path.as_str()),
+                    &card.id,
+                    card.entries.iter().filter(|entry| entry_compatible(entry)),
+                );
+            }
+        }
+        for card in &output_rules_cards {
+            for surface in &text_surfaces {
+                collect_guardrail_hits(
+                    &mut guardrail_hits,
+                    &surface.text,
+                    &surface.field_path,
+                    !declared_fields.is_empty()
+                        && legacy_text_path != Some(surface.field_path.as_str()),
+                    &card.id,
+                    card.entries.iter().filter(|entry| entry_compatible(entry)),
+                );
+            }
+            collect_output_structure_hits(
+                &mut guardrail_hits,
+                paragraph_count,
+                &card.id,
+                card.entries.iter().filter(|entry| entry_compatible(entry)),
+            );
+            collect_output_constraint_hits(
+                &mut guardrail_hits,
+                &mut constraint_warnings,
+                &mut unchecked_constraints,
+                &raw,
+                subject,
+                &card.id,
+                card.entries.iter().filter(|entry| entry_compatible(entry)),
+            );
+        }
+        if let Some(context) = routed_context.as_ref() {
+            collect_context_constraint_hits(
+                &mut guardrail_hits,
+                &mut constraint_warnings,
+                &mut unchecked_constraints,
+                &raw,
+                paragraph_count,
+                subject,
+                context,
+                true,
+            );
+        }
+    } else if let Some(context) = routed_context.as_ref() {
+        collect_routed_guardrail_hits(
+            &mut guardrail_hits,
+            &text_surfaces,
+            legacy_text_path,
+            !declared_fields.is_empty(),
+            context,
+        )?;
+        for entry in context["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry["card_kind"].as_str() == Some("claims"))
+        {
+            let title = entry["title"].as_str().unwrap_or_default();
+            let title_match = title.len() > 4 && lower.contains(&title.to_lowercase());
+            let evidence_missing = entry["evidence"]
+                .as_array()
+                .is_none_or(|evidence| evidence.is_empty());
+            if title_match {
+                matched_claims.push(json!({
+                    "id": entry["entry_id"],
+                    "title": title,
+                    "evidence": entry["evidence"],
+                    "evidence_missing": evidence_missing
+                }));
+                if evidence_missing {
+                    claim_gaps.push(json!({
+                        "id": entry["entry_id"],
+                        "title": title,
+                        "reason": "matched claim has no evidence"
+                    }));
+                }
+            }
+        }
         collect_context_constraint_hits(
             &mut guardrail_hits,
             &mut constraint_warnings,
@@ -1632,15 +1900,17 @@ pub(crate) fn check_claims_scoped(
             &raw,
             paragraph_count,
             subject,
-            &context,
+            context,
+            false,
         );
     }
     let scoped_rules_unsatisfied = scoped_rule_count > 0 && compatible_scoped_rule_count == 0;
-    let scope_blocked = portfolio_sensitive
-        && (scope.selected.is_empty()
-            || !scope.is_valid()
-            || scoped_rules_unsatisfied
-            || route_scope_blocked);
+    let scope_blocked = if routed_context.is_some() {
+        route_scope_blocked
+    } else {
+        portfolio_sensitive
+            && (scope.selected.is_empty() || !scope.is_valid() || scoped_rules_unsatisfied)
+    };
     let valid = !scope_blocked
         && guardrail_hits.is_empty()
         && claim_gaps.is_empty()
@@ -1653,6 +1923,8 @@ pub(crate) fn check_claims_scoped(
         "scope_blocked": scope_blocked,
         "checked": {
             "subject": subject.is_some(),
+            "artifact": !surface_instance.is_null(),
+            "field_paths": text_surfaces.iter().map(|surface| surface.field_path.as_str()).collect::<Vec<_>>(),
             "route_scoped": persona.is_some() && job.is_some(),
             "persona": persona,
             "resolved_persona": resolved_persona_for_output,
@@ -1669,17 +1941,83 @@ pub(crate) fn check_claims_scoped(
     }))
 }
 
+fn legacy_job_matches_pack(root: &Path, manifest: &Manifest, requested_job: &str) -> Result<bool> {
+    let requested_tokens = crate::routing::tokens(requested_job);
+    if requested_tokens.is_empty() {
+        return Ok(false);
+    }
+    for card_ref in &manifest.cards {
+        let card = read_card(&resolve_pack_path(root, &card_ref.path)?)?;
+        if card.entries.iter().any(|entry| {
+            let entry_text = format!("{} {}", entry.title, entry.body);
+            crate::routing::token_overlap(&requested_tokens, &crate::routing::tokens(&entry_text))
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn collect_routed_guardrail_hits(
+    guardrail_hits: &mut Vec<Value>,
+    surfaces: &[crate::text_surfaces::TextSurfaceValue],
+    legacy_text_path: Option<&str>,
+    has_declarations: bool,
+    context: &Value,
+) -> Result<()> {
+    if has_declarations {
+        let _ = crate::text_surfaces::avoid_terms(context)?;
+    }
+    for entry in context["entries"].as_array().into_iter().flatten() {
+        let card_id = entry["card_id"].as_str().unwrap_or("unknown");
+        let entry_id = entry["entry_id"].as_str().unwrap_or("unknown");
+        let title = entry["title"].as_str().unwrap_or("Untitled");
+        for term in entry["avoid"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            for surface in surfaces {
+                let literal =
+                    has_declarations && legacy_text_path != Some(surface.field_path.as_str());
+                let matches = if literal {
+                    crate::text_surfaces::contains_ascii_case_insensitive(&surface.text, term)
+                } else {
+                    contains_guardrail_term(&surface.text.to_lowercase(), term)
+                };
+                if matches {
+                    guardrail_hits.push(json!({
+                        "card_id": card_id,
+                        "entry_id": entry_id,
+                        "term": term,
+                        "title": title,
+                        "field_path": surface.field_path
+                    }));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn collect_guardrail_hits<'a>(
     guardrail_hits: &mut Vec<Value>,
-    lower: &str,
+    text: &str,
+    field_path: &str,
+    literal: bool,
     card_id: &str,
     entries: impl IntoIterator<Item = &'a crate::models::Entry>,
 ) {
     for entry in entries {
         for term in &entry.avoid {
-            if contains_guardrail_term(lower, term) {
+            if if literal {
+                crate::text_surfaces::contains_ascii_case_insensitive(text, term)
+            } else {
+                contains_guardrail_term(&text.to_lowercase(), term)
+            } {
                 guardrail_hits.push(
-                    json!({"card_id": card_id, "entry_id": entry.id, "term": term, "title": entry.title}),
+                    json!({"card_id": card_id, "entry_id": entry.id, "term": term, "title": entry.title, "field_path": field_path}),
                 );
             }
         }
@@ -1742,12 +2080,13 @@ fn collect_context_constraint_hits(
     paragraph_count: usize,
     subject: Option<&str>,
     context: &Value,
+    skip_output_rules: bool,
 ) {
     let Some(entries) = context["entries"].as_array() else {
         return;
     };
     for entry in entries {
-        if entry["card_kind"].as_str() == Some("output-rules") {
+        if skip_output_rules && entry["card_kind"].as_str() == Some("output-rules") {
             continue;
         }
         let card_id = entry["card_id"].as_str().unwrap_or("unknown");
@@ -2137,7 +2476,7 @@ fn contains_standalone_number(text: &str) -> bool {
     false
 }
 
-fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
+pub(crate) fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
     let mut hits = Vec::new();
     let mut push_hit = |category: &str, trigger: &str, reason: &str| {
         if !approved_context.contains(trigger) {
@@ -2453,7 +2792,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
     hits
 }
 
-fn contains_guardrail_term(text: &str, term: &str) -> bool {
+pub(crate) fn contains_guardrail_term(text: &str, term: &str) -> bool {
     let needle = term.trim().to_lowercase();
     if needle.is_empty() {
         return false;
@@ -2798,19 +3137,6 @@ optional:
             raw.replacen(&format!("id: {from}\n"), &format!("id: {to}\n"), 1),
         )
         .expect("card should be writable");
-    }
-
-    fn add_initial_email_word_count_constraint(root: &Path) {
-        let path = root.join(".mdp").join("cards").join("output-rules.yaml");
-        let raw = std::fs::read_to_string(&path).expect("output rules should be readable");
-        std::fs::write(
-            path,
-            raw.replace(
-                "- id: no-fake-personalization",
-                "  constraints:\n    word_count:\n      min: 50\n      max: 125\n- id: no-fake-personalization",
-            ),
-        )
-        .expect("output rules should be writable");
     }
 
     fn add_scoped_integration_claim(root: &Path) {
@@ -4347,6 +4673,153 @@ optional:
     }
 
     #[test]
+    fn claim_check_applies_universal_avoid_rules_to_declared_subject_path() {
+        let root = temp_pack("declared-subject-guardrail");
+        let scope = vec!["product=local-cli".to_string()];
+        let result = check_claims_artifact_scoped(
+            &root,
+            Some("A clean synthetic body."),
+            None,
+            Some("A prohibited — subject"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &scope,
+        )
+        .expect("declared subject should be checked");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["term"] == "—" && hit["field_path"] == "/artifact/subject_options")
+        );
+        let unsupported = check_claims_artifact_scoped(
+            &root,
+            Some("A clean synthetic body."),
+            None,
+            Some("Guaranteed meetings"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &scope,
+        )
+        .expect("declared subject claims should be checked");
+        assert!(
+            unsupported["unsupported_claims"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["field_path"] == "/artifact/subject_options")
+        );
+        let legacy_body = check_claims_artifact_scoped(
+            &root,
+            Some("MDP does not send emails."),
+            None,
+            None,
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &scope,
+        )
+        .expect("legacy body adapter should retain negation-aware checks");
+        assert!(
+            legacy_body["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|hit| hit["term"] != "send emails")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_uses_job_routed_fit_rule_avoid_entries() {
+        let root = temp_pack("routed-fit-rule-guardrail");
+        let path = root.join(".mdp/cards/fit-rules.yaml");
+        let raw = std::fs::read_to_string(&path).expect("fit rules should be readable");
+        let mut card: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("fit rules should parse");
+        for entry in card["entries"]
+            .as_sequence_mut()
+            .expect("fit rules entries")
+        {
+            entry["avoid"] =
+                serde_yaml::to_value(vec!["no source"]).expect("synthetic avoid should serialize");
+        }
+        std::fs::write(
+            &path,
+            serde_yaml::to_string(&card).expect("fit rules should serialize"),
+        )
+        .expect("fit rules should be writable");
+
+        let result = check_claims_artifact_scoped(
+            &root,
+            Some("A safe synthetic body."),
+            None,
+            Some("No source available"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &["product=local-cli".to_string()],
+        )
+        .expect("routed claim check should run");
+        assert!(
+            result["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["term"] == "no source"
+                    && hit["field_path"] == "/artifact/subject_options")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_rejects_supplied_unknown_job() {
+        let root = temp_pack("unknown-claim-job");
+        let error = check_claims_artifact_scoped(
+            &root,
+            Some("synthetic"),
+            None,
+            Some("A subject — with a prohibited value"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brif"),
+            &[],
+        )
+        .expect_err("a realistic job typo must fail before guardrail evaluation");
+        assert!(error.to_string().contains("selected job is not declared"));
+        let legacy = check_claims_artifact_scoped(
+            &root,
+            Some("A legacy body — with a prohibited value"),
+            None,
+            None,
+            None,
+            &[],
+            None,
+            None,
+            &[],
+        )
+        .expect("omitting --job must preserve legacy direct checking");
+        assert!(
+            legacy["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["term"] == "—")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn claim_check_uses_card_kinds_when_canonical_ids_are_absent() {
         let root = temp_pack("claim-kind-fallback");
         rename_manifest_card_ids(
@@ -4400,9 +4873,19 @@ optional:
     #[test]
     fn route_scoped_claim_check_does_not_duplicate_custom_output_rule_constraints() {
         let root = temp_pack("claim-kind-fallback-route-scoped");
-        add_initial_email_word_count_constraint(&root);
-        rename_manifest_card_ids(&root, &[("output-rules", "prose-contract")]);
-        rename_card_id(&root, "output-rules.yaml", "output-rules", "prose-contract");
+        let path = root.join(".mdp/cards/output-rules.yaml");
+        let raw = std::fs::read_to_string(&path).expect("output rules should be readable");
+        let mut card: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("output rules should parse");
+        card["entries"][0]["id"] = serde_yaml::Value::String("custom-word-count".into());
+        card["entries"][0]["constraints"] =
+            serde_yaml::from_str("word_count: {min: 50, max: 120, target: 80}\n")
+                .expect("constraint should parse");
+        std::fs::write(
+            &path,
+            serde_yaml::to_string(&card).expect("output rules should serialize"),
+        )
+        .expect("output rules should be writable");
 
         let result = check_claims(
             &root,
@@ -4410,7 +4893,7 @@ optional:
             None,
             Some("Proposal note"),
             Some("PMM"),
-            Some("initial email outbound copy"),
+            Some("outbound-copy-brief"),
         )
         .expect("claim check should succeed");
 
@@ -4419,8 +4902,8 @@ optional:
             .expect("guardrail hits array")
             .iter()
             .filter(|hit| {
-                hit["card_id"] == "prose-contract"
-                    && hit["entry_id"] == "initial-email-shape"
+                hit["card_id"] == "output-rules"
+                    && hit["entry_id"] == "custom-word-count"
                     && hit["rule"] == "constraints.word_count"
             })
             .count();
@@ -4492,7 +4975,7 @@ optional:
                 None,
                 None,
                 Some("PMM"),
-                Some("linkedin outbound copy"),
+                Some("outbound-copy-brief"),
             )
             .expect("check should run");
 
@@ -4517,7 +5000,7 @@ optional:
             None,
             None,
             Some("PMM"),
-            Some("linkedin outbound copy"),
+            Some("outbound-copy-brief"),
         )
         .expect("check should run");
         assert_eq!(three_paragraphs["valid"], true);
@@ -4535,7 +5018,7 @@ optional:
             "initial email outbound message",
             "call prep",
         ] {
-            let result = check_claims(
+            let result = check_claims_with_legacy_route_label(
                 &root,
                 Some("First paragraph only."),
                 None,
@@ -4594,33 +5077,38 @@ optional:
     #[test]
     fn claim_check_flags_route_scoped_structured_constraint_violations() {
         let root = temp_pack("structured-constraints-check");
-        narrow_starter_route_candidates_for_tests(&root);
-        let result = check_claims(
-            &root,
-            Some("Hi Alex, can we compare notes? See https://example.com? Thanks?"),
-            None,
+        let card = read_card_by_id(&root, "channel-policies").expect("channel policy should load");
+        let entry = card
+            .entries
+            .iter()
+            .find(|entry| entry.id == "email-initial-touch")
+            .expect("initial email rule should exist");
+        let mut guardrail_hits = Vec::new();
+        let mut constraint_warnings = Vec::new();
+        let mut unchecked_constraints = Vec::new();
+        collect_constraints(
+            &mut guardrail_hits,
+            &mut constraint_warnings,
+            &mut unchecked_constraints,
+            "Hi Alex, can we compare notes? See https://example.com? Thanks?",
             Some("Re: urgent"),
-            Some("PMM"),
-            Some("initial email outbound message"),
-        )
-        .expect("claim check should run");
-        let rules: Vec<&str> = result["guardrail_hits"]
-            .as_array()
-            .expect("guardrail hits array")
+            &card.id,
+            &entry.id,
+            &entry.title,
+            &json!(entry.constraints),
+        );
+        let rules: Vec<&str> = guardrail_hits
             .iter()
             .filter_map(|hit| hit["rule"].as_str())
             .collect();
 
-        assert_eq!(result["valid"], false);
         assert!(rules.contains(&"constraints.word_count"));
         assert!(rules.contains(&"constraints.subject_words"));
         assert!(rules.contains(&"constraints.subject_avoid"));
         assert!(rules.contains(&"constraints.max_questions"));
         assert!(rules.contains(&"constraints.forbid_links"));
         assert!(
-            result["unchecked_constraints"]
-                .as_array()
-                .expect("unchecked constraints array")
+            unchecked_constraints
                 .iter()
                 .any(|hit| hit["rule"] == "constraints.forbid_tracking")
         );
@@ -4631,7 +5119,12 @@ optional:
     #[test]
     fn claim_check_reports_target_word_count_as_warning_not_failure() {
         let root = temp_pack("structured-constraints-target");
-        narrow_starter_route_candidates_for_tests(&root);
+        let card = read_card_by_id(&root, "channel-policies").expect("channel policy should load");
+        let entry = card
+            .entries
+            .iter()
+            .find(|entry| entry.id == "email-initial-touch")
+            .expect("initial email rule should exist");
         let draft = [
             "Alex, saw your team is standardizing outbound context across notes and research.",
             "That usually creates small mismatches between what reps know, what campaigns say, and what agents load before drafting.",
@@ -4639,22 +5132,24 @@ optional:
             "Worth comparing notes on who owns that context today?",
         ]
         .join(" ");
-
-        let result = check_claims(
-            &root,
-            Some(&draft),
-            None,
+        let mut guardrail_hits = Vec::new();
+        let mut constraint_warnings = Vec::new();
+        let mut unchecked_constraints = Vec::new();
+        collect_constraints(
+            &mut guardrail_hits,
+            &mut constraint_warnings,
+            &mut unchecked_constraints,
+            &draft,
             Some("Context for outbound agents"),
-            Some("PMM"),
-            Some("initial email outbound message"),
-        )
-        .expect("claim check should run");
+            &card.id,
+            &entry.id,
+            &entry.title,
+            &json!(entry.constraints),
+        );
 
-        assert_eq!(result["valid"], true);
+        assert!(guardrail_hits.is_empty());
         assert!(
-            result["constraint_warnings"]
-                .as_array()
-                .expect("constraint warnings array")
+            constraint_warnings
                 .iter()
                 .any(|hit| hit["rule"] == "constraints.word_count.target")
         );

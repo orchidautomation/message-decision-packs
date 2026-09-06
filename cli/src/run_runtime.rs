@@ -860,6 +860,26 @@ fn prepare_native_request(
                 },
             )
         })?;
+        let job = manifest
+            .jobs
+            .iter()
+            .find(|job| job.id == identity.job_id)
+            .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-not-declared"))?;
+        provider_schema_source = crate::text_surfaces::compile_provider_schema(
+            &provider_schema_source,
+            &job.artifact_text_fields,
+            &routed_context,
+        )
+        .map_err(|error| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                if error.to_string().contains("limit-exceeded") {
+                    "provider-text-guardrail-limit-exceeded"
+                } else {
+                    "provider-text-guardrail-invalid"
+                },
+            )
+        })?;
     }
     let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
     let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;

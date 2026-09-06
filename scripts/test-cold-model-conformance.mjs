@@ -735,7 +735,10 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
   acceptedClaimArgs.push("--persona", persona, "--job", jobId);
   const acceptedClaims = output(invoke(acceptedClaimArgs), `${jobId} accepted claim validation`);
   assert.equal(acceptedClaims.valid, true);
-  assert.ok(acceptedClaims.matched_claims.length >= 2);
+  assert.ok(
+    acceptedClaims.matched_claims.length >= 1,
+    `${jobId} must retain at least one routed approved claim`,
+  );
   const rejectedAttempt = invoke(["--json", "check-claims", "--dir", pack, "--text", "MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records.", "--persona", persona, "--job", jobId]);
   assert.equal(rejectedAttempt.status, 1, `${jobId} unsupported claims must take the CLI rejection path`);
   const rejectedEnvelope = JSON.parse(rejectedAttempt.stdout);

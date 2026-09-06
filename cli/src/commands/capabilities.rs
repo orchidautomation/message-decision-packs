@@ -398,7 +398,7 @@ pub(crate) fn capabilities() -> Value {
             command("route-budget", "mdp.route-budget.v0", "read-only", false, false, true, &["--dir", "--strict", "--job", "--persona", "--summary"]),
             command("sample-leads", "mdp.sample-leads.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--count", "--seed", "--format"]),
             command("fit", "mdp.fit.v0", "read-only", false, false, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--job"]),
-            command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--subject", "--persona", "--job", "--scope", "--strict"]),
+            command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--artifact", "--field", "--subject", "--persona", "--job", "--scope", "--strict"]),
             command("gaps", "mdp.gaps.v0", "read-only", false, false, false, &["--dir"]),
             command("eval", "mdp.eval.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("brief", "mdp.message-brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--channel", "--job", "--context", "--routed-context-out", "--readable", "--out", "--dry-run"]),
