@@ -4044,20 +4044,22 @@ fn validate_selected_job_execution_prerequisites(
         return Ok(());
     }
     let blocker = &evaluated["first_blocker"];
+    let mut diagnostic = policy_diagnostic(
+        "generative-preflight",
+        "selected-job-prerequisites",
+        "missing-required-field",
+        blocker["input_name"]
+            .as_str()
+            .and_then(safe_logical_input_name),
+        Some("/prerequisite_id"),
+        diagnostic_value("binding", "declared"),
+        diagnostic_value("binding", "missing"),
+    );
+    diagnostic.input = blocker["id"].as_str().map(|id| Cow::Owned(id.to_string()));
     Err(run_failure_with_diagnostic(
         RunFailureKind::PolicyBlocked,
         "selected-job-prerequisite-unsatisfied",
-        policy_diagnostic(
-            "generative-preflight",
-            "selected-job-prerequisites",
-            "missing-required-field",
-            blocker["input_name"]
-                .as_str()
-                .and_then(safe_logical_input_name),
-            None,
-            diagnostic_value("binding", "declared"),
-            diagnostic_value("binding", "missing"),
-        ),
+        diagnostic,
     ))
 }
 
@@ -6276,10 +6278,13 @@ mod tests {
         .unwrap();
         let error = validate_selected_job_execution_prerequisites(root, &step, &[])
             .expect_err("missing required execution input must fail preflight");
+        let failure = error.downcast_ref::<RunFailure>().unwrap();
+        assert_eq!(failure.code(), "selected-job-prerequisite-unsatisfied");
         assert_eq!(
-            error.downcast_ref::<RunFailure>().unwrap().code(),
-            "selected-job-prerequisite-unsatisfied"
+            failure.diagnostics()[0].input.as_deref(),
+            Some("model-step:model:outbound-copy-brief/generation/input:normalized_prospect")
         );
+        assert_eq!(failure.diagnostics()[0].field, Some("/prerequisite_id"));
     }
 
     fn proposal_input(
