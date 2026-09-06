@@ -6175,10 +6175,9 @@ mod tests {
     use super::{
         MAX_EXECUTION_ID_BYTES, MAX_OUTPUT_LEAF_BYTES, MAX_RECOVERY_CLAIM_BYTES, RunDeadline,
         RunFailure, RunFailureKind, RunRecoveryClaim, bounded_prerequisite_id,
-        constrain_governed_selected_authority, deterministic_proposal_pursuit,
-        execute_generative_step, execute_run_inner, execute_run_inner_with_driver,
-        governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
-        host_wrap_governed_output, host_wrap_v3_normalization_output,
+        deterministic_proposal_pursuit, execute_generative_step, execute_run_inner,
+        execute_run_inner_with_driver, governed_normalization_outcome, gtm_lineage_schema_ids,
+        gtm_success_artifacts, host_wrap_governed_output, host_wrap_v3_normalization_output,
         project_output_schema_for_openai, prompt_validation_diagnostic_detail,
         provider_max_output_tokens, provider_schema_source, provider_schema_source_for_contract,
         routed_context_shape_diagnostic, routed_context_validation_diagnostic,
