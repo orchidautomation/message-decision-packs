@@ -2,7 +2,9 @@ use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
 use crate::commands::prompt_output::validate_prompt_output_value_with_source_audit;
 use crate::commands::requirements::requirements;
-use crate::commands::routing::{check_claims_scoped, fit_prospect_for_job, route_scoped};
+use crate::commands::routing::{
+    check_claims_scoped_with_legacy_route_label, fit_prospect_for_job, route_scoped,
+};
 use crate::commands::{verify_output_file, verify_output_value};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
@@ -190,7 +192,7 @@ fn run_fixture(
         )?,
         "validate-prompt-output" => validate_prompt_output_fixture(root, path, fixture)?,
         "verify-output" => validate_proof_output_fixture(root, path, fixture)?,
-        "check-claims" => check_claims_scoped(
+        "check-claims" => check_claims_scoped_with_legacy_route_label(
             root,
             fixture.text.as_deref(),
             None,
