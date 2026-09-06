@@ -52,6 +52,13 @@ Before using the CLI, MCP, or a plugin helper, read [runtime compatibility](refe
 Use exact canonical job IDs. Product foundation facets must index exact existing card/entry refs rather than duplicate prose. Keep README only as concise secondary navigation. Preserve unsupported facts as gaps; never invent them to make a job ready. Foundation `ready` is veto-only and cannot promote
 an otherwise unready job.
 
+When handing a validated pack to Use and decide, name the exact pack digest and
+canonical job so `$mdp-pack-apply` can compile or verify its requirements.
+Classify intended mechanical, semantic-model, and human-review constraints,
+but do not claim that prose in a prompt enforces a rule. A declared mechanical
+constraint without current schema or CLI proof remains
+`declared-but-unenforced` and cannot be handed off as final-ready.
+
 ## Universal Authority And Ownership
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.

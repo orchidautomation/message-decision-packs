@@ -53,6 +53,15 @@ never report authority. Public results must exclude private content,
 provider/session identifiers, evaluator rationale, reviewer identity, paths,
 and private digests.
 
+For requirements or execution findings, compare any presented requirements
+artifact to a fresh exact-pack and exact-job CLI projection. Flag a wrong
+contract, stale, incomplete, unverified, or cross-job reuse. Inspect each
+declared mechanical constraint for executable schema or CLI enforcement;
+prompt-only rules are `declared-but-unenforced` and block final readiness. A
+usable-artifact claim also requires a passing explicit `verify-run`, exact
+ordered declared final-validator evidence, and separately satisfied model and
+human review.
+
 ## Universal Authority And Ownership
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.

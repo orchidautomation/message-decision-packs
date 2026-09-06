@@ -1,6 +1,6 @@
 ---
 name: mdp-pack-apply
-description: Apply an existing Message Decision Pack to supplied inputs for the exact profile job selected by the local mdp CLI. Do not edit the pack, collect missing data, perform downstream actions, or infer a job from vertical terminology.
+description: Apply a Message Decision Pack through the requirements-first and usability loop for a CLI-selected job. Do not edit the pack or perform downstream actions.
 metadata:
   compatibility: Requires the mdp CLI on PATH. Node.js 18+ is also required for generative direct-CLI runs and native plugin helpers; non-generative CLI paths do not require Node.js. A portable skill install does not imply PLUGIN_ROOT or MCP support.
 ---
@@ -42,7 +42,8 @@ Then load only the direct job reference selected by CLI output:
 - Proposal `proof-review` → [proof](references/proposal-proof.md)
 - Proposal `red-team-review` → [red team](references/proposal-red-team.md)
 
-Do not load both. For CLI versus MCP, local/native-call consent, clean-context
+First read the shared [requirements-first execution loop](references/requirements-first-execution.md),
+then only the selected job reference. For CLI versus MCP, local/native-call consent, clean-context
 evaluation, file ownership, run artifacts, or resume/verification behavior,
 read [runtime compatibility](references/runtime-compatibility.md) and then the
 task-specific [runtime and execution contract](references/runtime-execution.md).
@@ -59,14 +60,17 @@ for a separately authorized rewrite after the review closes.
 ## Common Apply Path
 
 1. Treat the selected pack and supplied inputs as immutable authority.
-2. Run exact-job validation, gaps, and requirements. Stop on invalid, blocked,
+2. Follow the shared loop for requirements authority, minimal collection,
+   attempt history, enforcement ownership, and final usability.
+3. Run exact-job validation and gaps. Stop on invalid, blocked,
    unavailable, ambiguous, or no-draft results.
-3. Prepare only the CLI-selected normalized input, prompt invocation, and
+4. Prepare only the CLI-selected normalized input, prompt invocation, and
    bounded routed context. Never expose the whole pack to the evaluation call.
-4. Use the CLI directly, or the existing four-tool MCP adapter only when the
+5. Use the CLI directly, or the existing four-tool MCP adapter only when the
    host needs local stdio transport for evaluation.
-5. Validate the governed output, claims where applicable, run receipt, and
-   verification receipt before reporting a result.
+6. Require a passing `verify-run`, exact ordered declared final-validator
+   evidence, and any separate model or human review before reporting an
+   artifact as usable.
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, unknown, advisory, or unassessed.
 New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
@@ -96,4 +100,6 @@ The result is decision support, not certification, legal advice, approval, or su
 
 Close with the exact profile, job, pack, supplied-input boundary, canonical
 decision or artifact, accepted and rejected evidence, gaps, run/receipt state,
-and next permitted action. Never report pack files as changed.
+requirements state, enforcement owners, ordered final-validator state,
+artifact usability, and next permitted action. Never report pack files as
+changed.

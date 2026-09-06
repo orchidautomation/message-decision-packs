@@ -56,7 +56,11 @@
     "proposal-chat-fact-gap-train",
     "proposal-ocr-mismatch-validation",
     "proposal-tampered-resume-validation",
-    "proposal-silent-authority-mutation-validation"
+    "proposal-silent-authority-mutation-validation",
+    "requirements-reuse-gtm-train",
+    "requirements-stale-support-validation",
+    "requirements-unenforced-recruiting-train",
+    "requirements-final-proposal-validation"
   ],
   "supported_modes": [
     "prospect-fit-or-brief",
