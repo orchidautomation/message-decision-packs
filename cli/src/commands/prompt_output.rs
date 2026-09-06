@@ -655,6 +655,93 @@ fn validate_prompt_output_parsed(
                             "governed-artifact reference vocabulary could not be compiled",
                         )),
                     }
+                    let manifest = read_manifest(root)?;
+                    match output["job_id"]
+                        .as_str()
+                        .and_then(|job_id| manifest.jobs.iter().find(|job| job.id == job_id))
+                    {
+                        Some(job) => match crate::text_surfaces::guardrail_hits(
+                            output,
+                            &job.artifact_text_fields,
+                            context,
+                        ) {
+                            Ok(hits) => {
+                                for hit in hits {
+                                    issues.push(issue(
+                                        "governed_artifact_text_guardrail_hit",
+                                        "error",
+                                        format!("{artifact_path}#{}", hit.field_path),
+                                        format!(
+                                            "declared text field matches avoid rule {}/{} ({})",
+                                            hit.card_id, hit.entry_id, hit.title
+                                        ),
+                                    ));
+                                }
+                                let approved_claim_context = context["entries"]
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter(|entry| entry["card_kind"].as_str() == Some("claims"))
+                                    .map(|entry| {
+                                        format!(
+                                            "{} {} {}",
+                                            entry["title"].as_str().unwrap_or_default(),
+                                            entry["body"].as_str().unwrap_or_default(),
+                                            entry["evidence"]
+                                                .as_array()
+                                                .into_iter()
+                                                .flatten()
+                                                .filter_map(Value::as_str)
+                                                .collect::<Vec<_>>()
+                                                .join(" ")
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                                    .to_lowercase();
+                                for surface in crate::text_surfaces::declared_values(
+                                    output,
+                                    &job.artifact_text_fields,
+                                )
+                                .unwrap_or_default()
+                                {
+                                    for hit in crate::commands::routing::unsupported_claims(
+                                        &surface.text.to_lowercase(),
+                                        &approved_claim_context,
+                                    ) {
+                                        issues.push(issue(
+                                            "governed_artifact_unsupported_claim",
+                                            "error",
+                                            format!("{artifact_path}#{}", surface.field_path),
+                                            format!(
+                                                "declared text field contains unsupported claim category {}",
+                                                hit["category"].as_str().unwrap_or("unknown")
+                                            ),
+                                        ));
+                                    }
+                                }
+                            }
+                            Err(error) => issues.push(issue(
+                                if error.to_string().contains("limit-exceeded") {
+                                    "governed_artifact_text_guardrail_limit_exceeded"
+                                } else {
+                                    "governed_artifact_text_guardrail_invalid"
+                                },
+                                "error",
+                                format!(
+                                    "{}#/output_contract/schema",
+                                    resolved_prompt_path.display()
+                                ),
+                                "governed-artifact text guardrails could not be evaluated",
+                            )),
+                        },
+                        None => issues.push(issue(
+                            "governed_artifact_job_undeclared",
+                            "error",
+                            format!("{artifact_path}#/job_id"),
+                            "governed artifact job_id must resolve to a declared job",
+                        )),
+                    }
                 }
             }
             None => issues.push(issue(
@@ -5346,6 +5433,30 @@ mod tests {
                 .map(str::len),
             Some(64)
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_reports_declared_text_guardrail_field_path() {
+        let root = temp_pack("governed-artifact-text-guardrail");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = governed_example(&prompt);
+        output["artifact"]["subject_options"] = json!(["A prohibited — option"]);
+
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+
+        assert!(result["issues"].as_array().unwrap().iter().any(|issue| {
+            issue["code"] == "governed_artifact_text_guardrail_hit"
+                && issue["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("#/artifact/subject_options/0"))
+        }));
         let _ = std::fs::remove_dir_all(root);
     }
 

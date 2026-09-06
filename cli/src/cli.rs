@@ -692,6 +692,18 @@ pub(crate) enum Commands {
         file: Option<PathBuf>,
         #[arg(
             long,
+            value_name = "PATH",
+            help = "Structured JSON artifact containing job-declared human-facing text fields"
+        )]
+        artifact: Option<PathBuf>,
+        #[arg(
+            long = "field",
+            value_name = "JSON_POINTER=TEXT",
+            help = "Repeatable job-declared human-facing text field"
+        )]
+        fields: Vec<String>,
+        #[arg(
+            long,
             help = "Optional subject line to check against routed subject constraints"
         )]
         subject: Option<String>,

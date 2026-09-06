@@ -3422,6 +3422,24 @@ fn profile_jobs_schema() -> Value {
                 "input_contracts": string_array(),
                 "decision_input_contracts": string_array(),
                 "product_foundation": product_foundation_binding_schema(),
+                "artifact_text_fields": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                        "type": "object",
+                        "required": ["path"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "minLength": 11,
+                                "maxLength": 256,
+                                "pattern": "^/artifact/(?:[^/~]|~[01])+(?:/(?:[^/~]|~[01])+)*$"
+                            },
+                            "legacy_input": {"enum": ["text", "subject"]}
+                        }
+                    }
+                },
                 "context_budget": {
                     "type": "object",
                     "required": ["max_entries", "max_bytes"],
