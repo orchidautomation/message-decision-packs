@@ -41,6 +41,196 @@ pub(crate) struct ResolvedJobDecisionInputs<'a> {
     pub(crate) decision_input_contracts: Vec<&'a DecisionInputContract>,
 }
 
+const JOB_PREREQUISITES_CONTRACT: &str = "mdp.job-prerequisites.v1";
+
+/// Compile the complete, provider-neutral prerequisite surface for a selected
+/// job.  This is a declaration projection: per-input states remain
+/// `unassessed` until a concrete normalized artifact is evaluated.
+fn compile_selected_job_prerequisites(
+    job_id: &str,
+    contracts: &[&DecisionInputContract],
+    model_steps: &Value,
+) -> Value {
+    let mut prerequisites = Vec::new();
+    for contract in contracts {
+        for attribute in &contract.attributes {
+            let requirement =
+                serde_json::to_value(&attribute.requirement).unwrap_or_else(|_| json!("unknown"));
+            let blocking = !matches!(attribute.requirement, DecisionInputRequirement::Optional);
+            prerequisites.push(json!({
+                "id": format!("decision-input:{}#{}", contract.id, attribute.id),
+                "kind": "decision-input",
+                "authority": contract.id,
+                "attribute_id": attribute.id,
+                "requirement": requirement,
+                "blocking": blocking,
+                "conditions": attribute.applies_when,
+                "decision_effects": attribute.decision_effects,
+                "state": "unassessed",
+                "next_action": format!("Provide or resolve the declared input {}#{}.", contract.id, attribute.id)
+            }));
+        }
+    }
+    for step in model_steps["steps"].as_array().into_iter().flatten() {
+        let step_id = step["step_id"].as_str().unwrap_or("unresolved-step");
+        for input in step["declared_inputs"].as_array().into_iter().flatten() {
+            let Some(name) = input["name"].as_str() else {
+                continue;
+            };
+            let required = input["required"] == true;
+            prerequisites.push(json!({
+                "id": format!("model-step:{step_id}/input:{name}"),
+                "kind": if name == "routed_context" { "routed-context" } else { "model-step-input" },
+                "authority": step_id,
+                "input_name": name,
+                "producer": input["producer"],
+                "requirement": if required { "required" } else { "optional" },
+                "blocking": required,
+                "conditions": [],
+                "decision_effects": [step["phase"].clone()],
+                "state": "unassessed",
+                "next_action": format!("Bind the declared {name} input before executing {step_id}.")
+            }));
+        }
+    }
+    prerequisites.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    json!({
+        "contract": JOB_PREREQUISITES_CONTRACT,
+        "job_id": job_id,
+        "status": "unassessed",
+        "prerequisites": prerequisites
+    })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PrerequisiteState {
+    True,
+    False,
+    Unknown,
+    NotApplicable,
+}
+
+impl PrerequisiteState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::True => "true",
+            Self::False => "false",
+            Self::Unknown => "unknown",
+            Self::NotApplicable => "not-applicable",
+        }
+    }
+}
+
+/// Evaluate decision-input prerequisites against one already schema-checked
+/// normalized artifact. Execution inputs remain unassessed here because their
+/// presence is owned by the run-request compiler/preflight.
+pub(crate) fn evaluate_selected_job_prerequisites(projection: &Value, normalized: &Value) -> Value {
+    let mut evaluated = Vec::new();
+    for prerequisite in projection["prerequisites"].as_array().into_iter().flatten() {
+        let mut item = prerequisite.clone();
+        let state = if prerequisite["kind"] == "decision-input" {
+            evaluate_decision_input_prerequisite(prerequisite, normalized)
+        } else {
+            PrerequisiteState::Unknown
+        };
+        item["state"] = json!(state.as_str());
+        evaluated.push(item);
+    }
+    let first_blocker = evaluated.iter().find(|item| {
+        item["kind"] == "decision-input"
+            && item["blocking"] == true
+            && matches!(item["state"].as_str(), Some("false" | "unknown"))
+    });
+    json!({
+        "contract": JOB_PREREQUISITES_CONTRACT,
+        "job_id": projection["job_id"],
+        "status": if first_blocker.is_some() { "blocked" } else { "ready" },
+        "first_blocker": first_blocker.cloned().unwrap_or(Value::Null),
+        "prerequisites": evaluated
+    })
+}
+
+fn evaluate_decision_input_prerequisite(
+    prerequisite: &Value,
+    normalized: &Value,
+) -> PrerequisiteState {
+    let conditions = prerequisite["conditions"].as_array();
+    let condition_state = conditions.map_or(PrerequisiteState::True, |conditions| {
+        conditions
+            .iter()
+            .fold(PrerequisiteState::True, |state, condition| {
+                combine_prerequisite_conditions(
+                    state,
+                    evaluate_prerequisite_condition(condition, normalized),
+                )
+            })
+    });
+    if condition_state == PrerequisiteState::False {
+        return PrerequisiteState::NotApplicable;
+    }
+    if condition_state == PrerequisiteState::Unknown {
+        return if prerequisite["blocking"] == true {
+            PrerequisiteState::Unknown
+        } else {
+            PrerequisiteState::NotApplicable
+        };
+    }
+    let Some(attribute_id) = prerequisite["attribute_id"].as_str() else {
+        return PrerequisiteState::Unknown;
+    };
+    let observed = normalized["attributes"][attribute_id]["status"] == "observed"
+        || normalized["classifications"][attribute_id]["status"] == "classified";
+    if observed {
+        PrerequisiteState::True
+    } else if prerequisite["blocking"] == true {
+        PrerequisiteState::False
+    } else {
+        PrerequisiteState::NotApplicable
+    }
+}
+
+fn evaluate_prerequisite_condition(condition: &Value, normalized: &Value) -> PrerequisiteState {
+    let Some(attribute_id) = condition["attribute"].as_str() else {
+        return PrerequisiteState::Unknown;
+    };
+    let candidate = normalized["attributes"][attribute_id]
+        .get("value")
+        .or_else(|| normalized["classifications"][attribute_id].get("value"));
+    let Some(candidate) = candidate else {
+        return PrerequisiteState::Unknown;
+    };
+    let values = condition["values"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let matches = values.iter().any(|value| *value == candidate);
+    let state = match condition["operator"].as_str().unwrap_or("exists") {
+        "exists" => true,
+        "equals" | "in" => matches,
+        "not_equals" => !matches,
+        _ => return PrerequisiteState::Unknown,
+    };
+    if state {
+        PrerequisiteState::True
+    } else {
+        PrerequisiteState::False
+    }
+}
+
+fn combine_prerequisite_conditions(
+    left: PrerequisiteState,
+    right: PrerequisiteState,
+) -> PrerequisiteState {
+    if left == PrerequisiteState::False || right == PrerequisiteState::False {
+        PrerequisiteState::False
+    } else if left == PrerequisiteState::Unknown || right == PrerequisiteState::Unknown {
+        PrerequisiteState::Unknown
+    } else {
+        PrerequisiteState::True
+    }
+}
+
 pub(crate) fn resolve_job_decision_inputs<'a>(
     manifest: &'a Manifest,
     job: &'a ProfileJob,
@@ -265,6 +455,8 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         .iter()
         .map(|contract| compile_contract(contract))
         .collect::<Vec<_>>();
+    let job_prerequisites =
+        compile_selected_job_prerequisites(job_id, &selected_contracts, &model_steps);
     let normalized_schema = normalized_envelope_schema(job_id, &selected_contracts);
     let source_attempt_schema = source_attempt_request_schema(job_id, &selected_contracts);
     let collected_results_schema = collected_attempt_results_schema(job_id, &selected_contracts);
@@ -314,6 +506,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         "profile_activation": profile_activation,
         "model_task": model_task,
         "model_steps": model_steps,
+        "job_prerequisites": job_prerequisites,
         "decision_input_contracts": compiled_contracts,
         "source_attempt_request_schema": source_attempt_schema,
         "collected_attempt_results_schema": collected_results_schema,
@@ -629,6 +822,28 @@ pub(crate) fn validate_normalized_decision_input_with_projection(
     }
 
     let mut issues = Vec::new();
+    let prerequisite_evaluation =
+        evaluate_selected_job_prerequisites(&compiled["job_prerequisites"], output);
+    if prerequisite_evaluation["status"] == "blocked" {
+        let blocker = &prerequisite_evaluation["first_blocker"];
+        let mut issue = decision_input_issue(
+            "selected_job_prerequisite_unsatisfied",
+            format!(
+                "{artifact_path}#/attributes/{}",
+                blocker["attribute_id"].as_str().unwrap_or("unknown")
+            ),
+            format!(
+                "selected job prerequisite {} is {}: {}",
+                blocker["id"].as_str().unwrap_or("unknown"),
+                blocker["state"].as_str().unwrap_or("unknown"),
+                blocker["next_action"]
+                    .as_str()
+                    .unwrap_or("resolve the declared prerequisite")
+            ),
+        );
+        issue["prerequisite_id"] = blocker["id"].clone();
+        issues.push(issue);
+    }
     let is_v3 = output["contract"] == NORMALIZED_DECISION_INPUT_CONTRACT_V3;
     // Convert once at the ingress boundary and run shared readiness/value
     // checks against the neutral representation.  Persona interpretation and
@@ -3880,6 +4095,127 @@ mod tests {
                     .to_ascii_lowercase()
                     .contains(forbidden)
             );
+        }
+    }
+
+    #[test]
+    fn selected_job_prerequisite_blocks_ready_outcome_when_active_no_draft_input_is_absent() {
+        let mut attribute = semantic_v3_fixture().0.attributes[0].clone();
+        attribute.id = "approval_state".into();
+        attribute.requirement = DecisionInputRequirement::Required;
+        attribute.decision_effects = vec![
+            DecisionInputDecisionEffect::Readiness,
+            DecisionInputDecisionEffect::NoDraft,
+        ];
+        let contract = DecisionInputContract {
+            id: "neutral.record-context".into(),
+            attributes: vec![attribute],
+            ..semantic_v3_fixture().0
+        };
+        let projection = compile_selected_job_prerequisites(
+            "record-review",
+            &[&contract],
+            &json!({"steps": []}),
+        );
+        let evaluated = evaluate_selected_job_prerequisites(
+            &projection,
+            &json!({
+                "outcome": "ready",
+                "attributes": {},
+                "classifications": {}
+            }),
+        );
+
+        assert_eq!(evaluated["status"], "blocked");
+        assert_eq!(
+            evaluated["first_blocker"]["id"],
+            "decision-input:neutral.record-context#approval_state"
+        );
+
+        let ready = evaluate_selected_job_prerequisites(
+            &projection,
+            &json!({
+                "outcome": "ready",
+                "attributes": {"approval_state": {"status": "observed", "value": "approved"}},
+                "classifications": {}
+            }),
+        );
+        assert_eq!(ready["status"], "ready");
+    }
+
+    #[test]
+    fn prerequisite_evaluation_preserves_optional_and_conditional_tristate() {
+        let base = semantic_v3_fixture().0.attributes[0].clone();
+        let optional = DecisionInputAttribute {
+            id: "supplemental_context".into(),
+            requirement: DecisionInputRequirement::Optional,
+            decision_effects: vec![DecisionInputDecisionEffect::Brief],
+            ..base.clone()
+        };
+        let conditional = DecisionInputAttribute {
+            id: "regional_context".into(),
+            requirement: DecisionInputRequirement::Conditional,
+            applies_when: vec![DecisionInputCondition {
+                attribute: "regional_route".into(),
+                operator: DecisionInputConditionOperator::Equals,
+                values: vec!["active".into()],
+            }],
+            decision_effects: vec![DecisionInputDecisionEffect::NoDraft],
+            ..base
+        };
+        let contract = DecisionInputContract {
+            id: "neutral.case-context".into(),
+            attributes: vec![optional, conditional],
+            ..semantic_v3_fixture().0
+        };
+        let projection =
+            compile_selected_job_prerequisites("case-review", &[&contract], &json!({"steps": []}));
+        let not_applicable = evaluate_selected_job_prerequisites(
+            &projection,
+            &json!({
+                "attributes": {"regional_route": {"status": "observed", "value": "inactive"}},
+                "classifications": {}
+            }),
+        );
+        assert_eq!(not_applicable["status"], "ready");
+        assert_eq!(
+            not_applicable["prerequisites"][0]["state"],
+            "not-applicable"
+        );
+        assert_eq!(
+            not_applicable["prerequisites"][1]["state"],
+            "not-applicable"
+        );
+
+        let unresolved = evaluate_selected_job_prerequisites(
+            &projection,
+            &json!({"attributes": {}, "classifications": {}}),
+        );
+        assert_eq!(unresolved["status"], "blocked");
+        assert_eq!(unresolved["first_blocker"]["state"], "unknown");
+    }
+
+    #[test]
+    fn prerequisite_compiler_is_domain_neutral_and_stable() {
+        for domain in ["gtm", "support", "recruiting", "proposal"] {
+            let mut attribute = semantic_v3_fixture().0.attributes[0].clone();
+            attribute.id = "review_state".into();
+            attribute.requirement = DecisionInputRequirement::Required;
+            attribute.decision_effects = vec![DecisionInputDecisionEffect::Readiness];
+            let contract = DecisionInputContract {
+                id: format!("{domain}.case-context"),
+                attributes: vec![attribute],
+                ..semantic_v3_fixture().0
+            };
+            let projection = compile_selected_job_prerequisites(
+                &format!("{domain}-review"),
+                &[&contract],
+                &json!({"steps": []}),
+            );
+            assert_eq!(projection["contract"], JOB_PREREQUISITES_CONTRACT);
+            assert_eq!(projection["prerequisites"][0]["kind"], "decision-input");
+            assert_eq!(projection["prerequisites"][0]["state"], "unassessed");
+            assert_eq!(projection["prerequisites"][0]["blocking"], true);
         }
     }
 
