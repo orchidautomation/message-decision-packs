@@ -9,6 +9,7 @@ use crate::pack_io::{
     read_canonical_prompt_by_id, read_card, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
+use crate::run_runtime::reference_vocabulary::validate_declared_references;
 use crate::runtime_context::validate_runtime_context;
 use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label};
 use crate::value_contracts::normalized_prospect_contract_violations;
@@ -624,6 +625,36 @@ fn validate_prompt_output_parsed(
                         artifact_path,
                         format!("governed artifact does not satisfy the prompt schema: {error}"),
                     ));
+                }
+                if let Some((context, _, _)) = routed_context {
+                    match validate_declared_references(schema, context, output) {
+                        Ok(violations) => {
+                            for violation in violations {
+                                issues.push(issue(
+                                    "governed_artifact_reference_undeclared",
+                                    "error",
+                                    format!(
+                                        "{artifact_path}{}",
+                                        violation.path.trim_start_matches('#')
+                                    ),
+                                    format!(
+                                        "reference must resolve to declared {}; observed {}",
+                                        violation.expected, violation.observed
+                                    ),
+                                ));
+                            }
+                        }
+                        Err(error) => issues.push(issue(
+                            if error.to_string().contains("limit-exceeded") {
+                                "governed_artifact_reference_vocabulary_limit_exceeded"
+                            } else {
+                                "governed_artifact_reference_vocabulary_invalid"
+                            },
+                            "error",
+                            format!("{}#/output_contract/schema", resolved_prompt_path.display()),
+                            "governed-artifact reference vocabulary could not be compiled",
+                        )),
+                    }
                 }
             }
             None => issues.push(issue(

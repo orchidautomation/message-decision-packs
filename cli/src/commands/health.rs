@@ -6481,6 +6481,14 @@ fn validate_governed_artifact_schema(
     path: &str,
     issues: &mut Vec<Value>,
 ) {
+    if crate::run_runtime::reference_vocabulary::validate_reference_annotations(schema).is_err() {
+        issues.push(issue(
+            "governed_artifact_reference_annotation_invalid",
+            "error",
+            format!("{path}#/output_contract/schema"),
+            "governed-artifact reference annotations must be bounded scalar declarations, use a supported routed-context selector, and remain outside $ref/allOf/anyOf/oneOf",
+        ));
+    }
     let source_summary = &schema["properties"]["source_summary"];
     if source_summary["type"].as_str() != Some("object")
         || source_summary["additionalProperties"].as_bool() != Some(false)

@@ -127,10 +127,17 @@ output_contract:
           accepted_claim_ids:
             items:
               type: string
+              x-mdp-reference:
+                source: routed-context
+                select: entry-id
+                card_kinds: [claims]
             type: array
           accepted_evidence_ids:
             items:
               type: string
+              x-mdp-reference:
+                source: routed-context
+                select: evidence-id
             type: array
           decision:
             enum:
@@ -181,6 +188,9 @@ output_contract:
       selected_authority:
         items:
           type: string
+          x-mdp-reference:
+            source: routed-context
+            select: qualified-entry
         type: array
       source_summary:
         additionalProperties: false

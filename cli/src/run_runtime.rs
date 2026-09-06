@@ -10,6 +10,8 @@ use crate::commands::routing::{
     fit, fit_normalized, fit_prospect_with_governed_authority, resolve_job_ingress,
 };
 use crate::commands::schemas::prompt_output_schema_for_ref;
+#[path = "reference_vocabulary.rs"]
+pub(crate) mod reference_vocabulary;
 use crate::commands::v3_normalization::{
     V3SealInputs, normalize_v3_semantic_reference_arrays, reject_host_field_injection,
     seal_v3_envelope, v3_issue_diagnostic_detail, v3_schema_error_detail,
@@ -834,12 +836,30 @@ fn prepare_native_request(
             index,
         )?;
     }
-    let mut provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
     if step.output_contract.output_kind.as_deref() == Some("governed-artifact")
         && step.output_contract.host_envelope.is_some()
     {
-        constrain_governed_selected_authority(&mut provider_output_schema, staged_inputs)?;
+        let routed_context = staged_json_value(
+            staged_inputs,
+            &["routed_context", "routed-context"],
+            "host-context-source-missing",
+        )?;
+        provider_schema_source = reference_vocabulary::compile_reference_schema(
+            &provider_schema_source,
+            &routed_context,
+        )
+        .map_err(|error| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                if error.to_string().contains("limit-exceeded") {
+                    "provider-reference-vocabulary-limit-exceeded"
+                } else {
+                    "provider-reference-vocabulary-invalid"
+                },
+            )
+        })?;
     }
+    let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
     let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
     let schema_name = format!("mdp_{}", request.operation.replace([':', '/', '-'], "_"));
     let model = request
@@ -4183,105 +4203,6 @@ fn infer_enum_type(value: &Value) -> Result<&'static str> {
     ))
 }
 
-fn constrain_governed_selected_authority(
-    provider_schema: &mut Value,
-    staged_inputs: &[StagedInput],
-) -> Result<()> {
-    let routed_context = staged_json_value(
-        staged_inputs,
-        &["routed_context", "routed-context"],
-        "host-context-source-missing",
-    )?;
-    let mut allowed = std::collections::BTreeSet::new();
-    let mut angle_ids = std::collections::BTreeSet::new();
-    let mut cta_ids = std::collections::BTreeSet::new();
-    let mut claim_ids = std::collections::BTreeSet::new();
-    let mut evidence_ids = std::collections::BTreeSet::new();
-    for entry in routed_context["entries"].as_array().into_iter().flatten() {
-        if let (Some(card_id), Some(entry_id)) =
-            (entry["card_id"].as_str(), entry["entry_id"].as_str())
-        {
-            allowed.insert(format!("{card_id}/{entry_id}"));
-            match entry["card_kind"].as_str() {
-                Some("positioning" | "hooks" | "motions") => {
-                    angle_ids.insert(entry_id.to_string());
-                }
-                Some("ctas") => {
-                    cta_ids.insert(entry_id.to_string());
-                }
-                Some("claims") => {
-                    claim_ids.insert(entry_id.to_string());
-                }
-                _ => {}
-            }
-            evidence_ids.extend(
-                entry["evidence"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string),
-            );
-        }
-    }
-    for reference in routed_context["product_foundation_load_order"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|reference| reference["reference_kind"] == "entry")
-    {
-        if let (Some(card_id), Some(entry_id)) = (
-            reference["card_id"].as_str(),
-            reference["entry_id"].as_str(),
-        ) {
-            allowed.insert(format!("{card_id}/{entry_id}"));
-        }
-    }
-    if allowed.is_empty() {
-        return Err(run_failure(
-            RunFailureKind::PolicyBlocked,
-            "provider-authority-enum-empty",
-        ));
-    }
-    let items = provider_schema
-        .pointer_mut("/properties/selected_authority/items")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| {
-            run_failure(
-                RunFailureKind::PolicyBlocked,
-                "provider-authority-schema-missing",
-            )
-        })?;
-    items.insert(
-        "enum".into(),
-        Value::Array(allowed.into_iter().map(Value::String).collect()),
-    );
-    for (pointer, values) in [
-        ("/properties/artifact/properties/angle_id", angle_ids),
-        ("/properties/artifact/properties/cta_id", cta_ids),
-        ("/properties/artifact/properties/claim_ids/items", claim_ids),
-        (
-            "/properties/artifact/properties/evidence_ids/items",
-            evidence_ids,
-        ),
-    ] {
-        let Some(field) = provider_schema
-            .pointer_mut(pointer)
-            .and_then(Value::as_object_mut)
-        else {
-            continue;
-        };
-        let mut allowed_values = values.into_iter().map(Value::String).collect::<Vec<_>>();
-        if pointer.ends_with("angle_id") || pointer.ends_with("cta_id") {
-            allowed_values.push(Value::String("N/A".into()));
-        }
-        if !allowed_values.is_empty() {
-            field.insert("enum".into(), Value::Array(allowed_values));
-        }
-    }
-    Ok(())
-}
-
 fn provider_schema_source(schema: &Value, required_top_level: &[String]) -> Result<Value> {
     let mut source = schema.clone();
     let object = source.as_object_mut().ok_or_else(|| {
@@ -6194,10 +6115,10 @@ mod tests {
     use super::read_recovery_claim;
     use super::{
         MAX_EXECUTION_ID_BYTES, MAX_OUTPUT_LEAF_BYTES, MAX_RECOVERY_CLAIM_BYTES, RunDeadline,
-        RunFailure, RunFailureKind, RunRecoveryClaim, constrain_governed_selected_authority,
-        deterministic_proposal_pursuit, execute_generative_step, execute_run_inner,
-        execute_run_inner_with_driver, governed_normalization_outcome, gtm_lineage_schema_ids,
-        gtm_success_artifacts, host_wrap_governed_output, host_wrap_v3_normalization_output,
+        RunFailure, RunFailureKind, RunRecoveryClaim, deterministic_proposal_pursuit,
+        execute_generative_step, execute_run_inner, execute_run_inner_with_driver,
+        governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
+        host_wrap_governed_output, host_wrap_v3_normalization_output,
         project_output_schema_for_openai, prompt_validation_diagnostic_detail,
         provider_max_output_tokens, provider_schema_source, provider_schema_source_for_contract,
         routed_context_shape_diagnostic, routed_context_validation_diagnostic,
@@ -6820,92 +6741,50 @@ mod tests {
     }
 
     #[test]
-    fn provider_schema_constrains_selected_authority_to_routed_refs() {
-        let root = temp_path("provider-authority-enum");
-        fs::create_dir_all(&root).unwrap();
-        let context_path = root.join("routed-context.json");
-        fs::write(
-            &context_path,
-            serde_json::to_vec(&serde_json::json!({
-                "entries": [
-                    {"card_kind": "claims", "card_id": "claims", "entry_id": "supported-claim", "evidence": ["observed-proof"]},
-                    {"card_kind": "ctas", "card_id": "ctas", "entry_id": "reply-cta"},
-                    {"card_kind": "hooks", "card_id": "hooks", "entry_id": "specific-angle"}
-                ],
-                "product_foundation_load_order": [
-                    {"reference_kind": "entry", "card_id": "positioning", "entry_id": "product-truth"}
-                ]
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        let staged = vec![super::StagedInput {
-            logical_name: "routed_context".into(),
-            authority: ArtifactAuthority {
-                logical_name: "routed_context".into(),
-                schema_id: "mdp.routed-context.v1".into(),
-                media_type: "application/json".into(),
-                byte_count: 1,
-                sha256: "c".repeat(64),
-                provenance: EvidenceProvenance::MdpObserved,
-                provenance_refs: vec![],
-            },
-            source_path: context_path.clone(),
-            staged_path: context_path,
-            initial_sha256: "c".repeat(64),
-        }];
-        let mut schema = serde_json::json!({
+    fn provider_schema_constrains_annotated_references_to_routed_refs() {
+        let context = serde_json::json!({
+            "entries": [
+                {"card_kind": "claims", "card_id": "claims", "entry_id": "supported-claim", "evidence": ["observed-proof"]},
+                {"card_kind": "ctas", "card_id": "ctas", "entry_id": "reply-cta", "evidence": []},
+                {"card_kind": "hooks", "card_id": "hooks", "entry_id": "specific-angle", "evidence": []}
+            ],
+            "product_foundation_load_order": [
+                {"reference_kind": "entry", "card_id": "positioning", "entry_id": "product-truth"}
+            ]
+        });
+        let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "selected_authority": {"type": "array", "items": {"type": "string"}},
+                "selected_authority": {"type": "array", "items": {"type": "string", "x-mdp-reference": {"source":"routed-context", "select":"qualified-entry"}}},
                 "artifact": {"type": "object", "properties": {
-                    "angle_id": {"type": "string"},
-                    "cta_id": {"type": "string"},
-                    "claim_ids": {"type": "array", "items": {"type": "string"}},
-                    "evidence_ids": {"type": "array", "items": {"type": "string"}}
+                    "angle_id": {"type": "string", "x-mdp-reference": {"source":"routed-context", "select":"entry-id", "card_kinds":["hooks"], "allow":["N/A"]}},
+                    "cta_id": {"type": "string", "x-mdp-reference": {"source":"routed-context", "select":"entry-id", "card_kinds":["ctas"], "allow":["N/A"]}},
+                    "claim_ids": {"type": "array", "items": {"type": "string", "x-mdp-reference": {"source":"routed-context", "select":"entry-id", "card_kinds":["claims"]}}},
+                    "evidence_ids": {"type": "array", "items": {"type": "string", "x-mdp-reference": {"source":"routed-context", "select":"evidence-id"}}}
                 }}
             }
         });
         let previously_accepted = serde_json::json!({
             "selected_authority": ["invented-card/invented-entry"],
-            "artifact": {
-                "angle_id": "invented-angle",
-                "cta_id": "invented-cta",
-                "claim_ids": ["invented-claim"],
-                "evidence_ids": ["invented-evidence"]
-            }
+            "artifact": {"angle_id":"invented-angle", "cta_id":"invented-cta", "claim_ids":["invented-claim"], "evidence_ids":["invented-evidence"]}
         });
         assert!(jsonschema::draft202012::validate(&schema, &previously_accepted).is_ok());
-
-        constrain_governed_selected_authority(&mut schema, &staged).unwrap();
-
+        let compiled =
+            super::reference_vocabulary::compile_reference_schema(&schema, &context).unwrap();
         assert_eq!(
-            schema["properties"]["selected_authority"]["items"]["enum"],
-            serde_json::json!([
+            compiled.pointer("/properties/selected_authority/items/enum"),
+            Some(&serde_json::json!([
                 "claims/supported-claim",
                 "ctas/reply-cta",
                 "hooks/specific-angle",
                 "positioning/product-truth"
-            ])
+            ]))
         );
         assert_eq!(
-            schema.pointer("/properties/artifact/properties/angle_id/enum"),
-            Some(&serde_json::json!(["specific-angle", "N/A"]))
+            compiled.pointer("/properties/artifact/properties/angle_id/enum"),
+            Some(&serde_json::json!(["N/A", "specific-angle"]))
         );
-        assert_eq!(
-            schema.pointer("/properties/artifact/properties/cta_id/enum"),
-            Some(&serde_json::json!(["reply-cta", "N/A"]))
-        );
-        assert_eq!(
-            schema.pointer("/properties/artifact/properties/claim_ids/items/enum"),
-            Some(&serde_json::json!(["supported-claim"]))
-        );
-        assert_eq!(
-            schema.pointer("/properties/artifact/properties/evidence_ids/items/enum"),
-            Some(&serde_json::json!(["observed-proof"]))
-        );
-        assert!(jsonschema::draft202012::validate(&schema, &previously_accepted).is_err());
-        let _ = fs::remove_dir_all(root);
+        assert!(jsonschema::draft202012::validate(&compiled, &previously_accepted).is_err());
     }
 
     fn host_semantic_output() -> serde_json::Value {

@@ -5105,7 +5105,7 @@ pub(crate) fn prompt_output_validation_v1_schema() -> Value {
 fn prompt_response_schema_contract() -> Value {
     json!({
         "type": "object",
-        "description": "JSON Schema object for the model response. Prompt authors should narrow const, enum, required, and description fields for each prompt.",
+        "description": "JSON Schema object for the model response. Prompt authors should narrow const, enum, required, and description fields for each prompt. Model-selected references use x-mdp-reference directly on scalar string nodes to declare a routed-context vocabulary; annotations in or on $ref/allOf/anyOf/oneOf are rejected so provider and local validation compile the same closed vocabulary.",
         "required": ["type", "additionalProperties", "required", "properties"],
         "properties": {
             "$schema": {"type": "string"},

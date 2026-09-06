@@ -116,7 +116,9 @@ output_contract:
           inputs_used:
             type: array
             items: {enum: [routed_context, normalized_input, supplied_material, runtime_context, prompt_receipt, invocation_receipt_sha256]}
-      selected_authority: {type: array, items: {type: string}}
+      selected_authority:
+        type: array
+        items: {type: string, x-mdp-reference: {source: routed-context, select: qualified-entry}}
       artifact:
         type: object
         additionalProperties: false
@@ -182,8 +184,12 @@ output_contract:
           missing_requirements_or_sources: {type: array, items: {type: string}}
           human_review_required: {const: true}
           next_questions: {type: array, items: {type: string}}
-          selected_claim_ids: {type: array, items: {type: string}}
-          selected_evidence_ids: {type: array, items: {type: string}}
+          selected_claim_ids:
+            type: array
+            items: {type: string, x-mdp-reference: {source: routed-context, select: entry-id, card_kinds: [claims]}}
+          selected_evidence_ids:
+            type: array
+            items: {type: string, x-mdp-reference: {source: routed-context, select: evidence-id}}
       gaps: {type: array, items: {type: string}}
       rejected_claims: {type: array, items: {type: string}}
   example:
