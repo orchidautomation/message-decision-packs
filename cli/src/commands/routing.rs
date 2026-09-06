@@ -5,7 +5,9 @@ use crate::commands::prompt_output::{
 use crate::commands::requirements::{requirements, resolve_job_decision_inputs};
 use crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT_V3;
 use crate::models::{CardKind, Manifest, QualificationGates};
-use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
+use crate::pack_io::{
+    read_card, read_cards_by_id_or_kind, read_manifest, read_prospect, resolve_pack_path,
+};
 use crate::routing::{
     RouteBudgetQuery, entry_context_scoped, entry_route_scoped, project_route_budget,
     route_budget_preflight, select_cards, selector_is_universal,
@@ -1516,11 +1518,6 @@ pub(crate) fn check_claims_artifact_scoped(
     job: Option<&str>,
     scope_selectors: &[String],
 ) -> Result<Value> {
-    if persona.is_some() && job.is_none() {
-        return Err(anyhow!(
-            "pass --job with --persona for route-scoped constraint checks"
-        ));
-    }
     let raw = match (text, file) {
         (Some(value), None) => Some(value.to_string()),
         (None, Some(path)) => {
@@ -1536,6 +1533,19 @@ pub(crate) fn check_claims_artifact_scoped(
             .iter()
             .find(|candidate| candidate.id == job_id)
     });
+    if let Some(job_id) = job
+        && selected_job.is_none()
+        && (artifact.is_some()
+            || !supplied_fields.is_empty()
+            || !legacy_job_matches_pack(root, &manifest, job_id)?)
+    {
+        return Err(anyhow!("selected job is not declared: {job_id}"));
+    }
+    if persona.is_some() != job.is_some() {
+        return Err(anyhow!(
+            "pass both --persona and --job for route-scoped constraint checks"
+        ));
+    }
     let declared_fields = selected_job
         .map(|job| job.artifact_text_fields.as_slice())
         .unwrap_or(&[]);
@@ -1611,21 +1621,67 @@ pub(crate) fn check_claims_artifact_scoped(
         .count();
     let mut portfolio_sensitive = scoped_rule_count > 0;
     let mut route_scope_blocked = false;
-    let approved_claim_context = claims_cards
-        .iter()
-        .flat_map(|card| card.entries.iter())
-        .filter(|entry| entry_compatible(entry))
-        .map(|entry| {
-            format!(
-                "{} {} {}",
-                entry.title,
-                entry.body,
-                entry.evidence.join(" ")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
+    let mut route_persona_resolution = Value::Null;
+    let mut resolved_persona_for_output: Option<String> = None;
+    let routed_context = if let (Some(persona), Some(job)) = (persona, job) {
+        let persona_resolution = resolve_persona_label(&manifest, persona);
+        let resolved_persona = routable_persona(persona, &persona_resolution);
+        resolved_persona_for_output = Some(resolved_persona.to_string());
+        let context = entry_context_scoped(root, &manifest, resolved_persona, job, true, &scope)?;
+        portfolio_sensitive |= context["portfolio_sensitive"].as_bool().unwrap_or(false);
+        route_scope_blocked = context["status"].as_str() == Some("blocked");
+        route_persona_resolution = serde_json::to_value(&persona_resolution)?;
+        Some(
+            context
+                .get("model_context")
+                .filter(|value| value.is_object())
+                .unwrap_or(&context)
+                .clone(),
+        )
+    } else {
+        None
+    };
+    let approved_claim_context =
+        if let (Some(_), Some(context)) = (selected_job, routed_context.as_ref()) {
+            context["entries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["card_kind"].as_str() == Some("claims"))
+                .map(|entry| {
+                    format!(
+                        "{} {} {}",
+                        entry["title"].as_str().unwrap_or_default(),
+                        entry["body"].as_str().unwrap_or_default(),
+                        entry["evidence"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+        } else {
+            claims_cards
+                .iter()
+                .flat_map(|card| card.entries.iter())
+                .filter(|entry| entry_compatible(entry))
+                .map(|entry| {
+                    format!(
+                        "{} {} {}",
+                        entry.title,
+                        entry.body,
+                        entry.evidence.join(" ")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+        };
     let mut matched_claims = Vec::new();
     let mut claim_gaps = Vec::new();
     let mut guardrail_hits = Vec::new();
@@ -1642,82 +1698,120 @@ pub(crate) fn check_claims_artifact_scoped(
                 })
         })
         .collect::<Vec<_>>();
-    let mut route_persona_resolution = Value::Null;
-    let mut resolved_persona_for_output: Option<String> = None;
 
-    for card in &claims_cards {
-        for surface in &text_surfaces {
-            collect_guardrail_hits(
-                &mut guardrail_hits,
-                &surface.text,
-                &surface.field_path,
-                !declared_fields.is_empty()
-                    && legacy_text_path != Some(surface.field_path.as_str()),
-                &card.id,
-                card.entries.iter().filter(|entry| entry_compatible(entry)),
-            );
-        }
-        for entry in card.entries.iter().filter(|entry| entry_compatible(entry)) {
-            let title = entry.title.to_lowercase();
-            let title_match = title.len() > 4 && lower.contains(&title);
-            let evidence_missing = entry.evidence.is_empty();
-            if title_match {
-                matched_claims.push(json!({"id": entry.id, "title": entry.title, "evidence": entry.evidence, "evidence_missing": evidence_missing}));
-                if evidence_missing {
-                    claim_gaps.push(json!({"id": entry.id, "title": entry.title, "reason": "matched claim has no evidence"}));
+    if selected_job.is_none() {
+        for card in &claims_cards {
+            for surface in &text_surfaces {
+                collect_guardrail_hits(
+                    &mut guardrail_hits,
+                    &surface.text,
+                    &surface.field_path,
+                    !declared_fields.is_empty()
+                        && legacy_text_path != Some(surface.field_path.as_str()),
+                    &card.id,
+                    card.entries.iter().filter(|entry| entry_compatible(entry)),
+                );
+            }
+            for entry in card.entries.iter().filter(|entry| entry_compatible(entry)) {
+                let title = entry.title.to_lowercase();
+                let title_match = title.len() > 4 && lower.contains(&title);
+                let evidence_missing = entry.evidence.is_empty();
+                if title_match {
+                    matched_claims.push(json!({"id": entry.id, "title": entry.title, "evidence": entry.evidence, "evidence_missing": evidence_missing}));
+                    if evidence_missing {
+                        claim_gaps.push(json!({"id": entry.id, "title": entry.title, "reason": "matched claim has no evidence"}));
+                    }
                 }
             }
         }
-    }
-    for card in &avoid_cards {
-        for surface in &text_surfaces {
-            collect_guardrail_hits(
+        for card in &avoid_cards {
+            for surface in &text_surfaces {
+                collect_guardrail_hits(
+                    &mut guardrail_hits,
+                    &surface.text,
+                    &surface.field_path,
+                    !declared_fields.is_empty()
+                        && legacy_text_path != Some(surface.field_path.as_str()),
+                    &card.id,
+                    card.entries.iter().filter(|entry| entry_compatible(entry)),
+                );
+            }
+        }
+        for card in &output_rules_cards {
+            for surface in &text_surfaces {
+                collect_guardrail_hits(
+                    &mut guardrail_hits,
+                    &surface.text,
+                    &surface.field_path,
+                    !declared_fields.is_empty()
+                        && legacy_text_path != Some(surface.field_path.as_str()),
+                    &card.id,
+                    card.entries.iter().filter(|entry| entry_compatible(entry)),
+                );
+            }
+            collect_output_structure_hits(
                 &mut guardrail_hits,
-                &surface.text,
-                &surface.field_path,
-                !declared_fields.is_empty()
-                    && legacy_text_path != Some(surface.field_path.as_str()),
+                paragraph_count,
+                &card.id,
+                card.entries.iter().filter(|entry| entry_compatible(entry)),
+            );
+            collect_output_constraint_hits(
+                &mut guardrail_hits,
+                &mut constraint_warnings,
+                &mut unchecked_constraints,
+                &raw,
+                subject,
                 &card.id,
                 card.entries.iter().filter(|entry| entry_compatible(entry)),
             );
         }
-    }
-    for card in &output_rules_cards {
-        for surface in &text_surfaces {
-            collect_guardrail_hits(
+        if let Some(context) = routed_context.as_ref() {
+            collect_context_constraint_hits(
                 &mut guardrail_hits,
-                &surface.text,
-                &surface.field_path,
-                !declared_fields.is_empty()
-                    && legacy_text_path != Some(surface.field_path.as_str()),
-                &card.id,
-                card.entries.iter().filter(|entry| entry_compatible(entry)),
+                &mut constraint_warnings,
+                &mut unchecked_constraints,
+                &raw,
+                paragraph_count,
+                subject,
+                context,
+                true,
             );
         }
-        collect_output_structure_hits(
+    } else if let Some(context) = routed_context.as_ref() {
+        collect_routed_guardrail_hits(
             &mut guardrail_hits,
-            paragraph_count,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
-        collect_output_constraint_hits(
-            &mut guardrail_hits,
-            &mut constraint_warnings,
-            &mut unchecked_constraints,
-            &raw,
-            subject,
-            &card.id,
-            card.entries.iter().filter(|entry| entry_compatible(entry)),
-        );
-    }
-    if let (Some(persona), Some(job)) = (persona, job) {
-        let persona_resolution = resolve_persona_label(&manifest, persona);
-        let resolved_persona = routable_persona(persona, &persona_resolution);
-        resolved_persona_for_output = Some(resolved_persona.to_string());
-        let context = entry_context_scoped(root, &manifest, resolved_persona, job, true, &scope)?;
-        portfolio_sensitive |= context["portfolio_sensitive"].as_bool().unwrap_or(false);
-        route_scope_blocked = context["status"].as_str() == Some("blocked");
-        route_persona_resolution = serde_json::to_value(&persona_resolution)?;
+            &text_surfaces,
+            legacy_text_path,
+            !declared_fields.is_empty(),
+            context,
+        )?;
+        for entry in context["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry["card_kind"].as_str() == Some("claims"))
+        {
+            let title = entry["title"].as_str().unwrap_or_default();
+            let title_match = title.len() > 4 && lower.contains(&title.to_lowercase());
+            let evidence_missing = entry["evidence"]
+                .as_array()
+                .is_none_or(|evidence| evidence.is_empty());
+            if title_match {
+                matched_claims.push(json!({
+                    "id": entry["entry_id"],
+                    "title": title,
+                    "evidence": entry["evidence"],
+                    "evidence_missing": evidence_missing
+                }));
+                if evidence_missing {
+                    claim_gaps.push(json!({
+                        "id": entry["entry_id"],
+                        "title": title,
+                        "reason": "matched claim has no evidence"
+                    }));
+                }
+            }
+        }
         collect_context_constraint_hits(
             &mut guardrail_hits,
             &mut constraint_warnings,
@@ -1725,15 +1819,17 @@ pub(crate) fn check_claims_artifact_scoped(
             &raw,
             paragraph_count,
             subject,
-            &context,
+            context,
+            false,
         );
     }
     let scoped_rules_unsatisfied = scoped_rule_count > 0 && compatible_scoped_rule_count == 0;
-    let scope_blocked = portfolio_sensitive
-        && (scope.selected.is_empty()
-            || !scope.is_valid()
-            || scoped_rules_unsatisfied
-            || route_scope_blocked);
+    let scope_blocked = if routed_context.is_some() {
+        route_scope_blocked
+    } else {
+        portfolio_sensitive
+            && (scope.selected.is_empty() || !scope.is_valid() || scoped_rules_unsatisfied)
+    };
     let valid = !scope_blocked
         && guardrail_hits.is_empty()
         && claim_gaps.is_empty()
@@ -1762,6 +1858,66 @@ pub(crate) fn check_claims_artifact_scoped(
         "unsupported_claims": unsupported_claims,
         "decision": if valid { "claim-safe" } else { "needs-revision" }
     }))
+}
+
+fn legacy_job_matches_pack(root: &Path, manifest: &Manifest, requested_job: &str) -> Result<bool> {
+    let requested_tokens = crate::routing::tokens(requested_job);
+    if requested_tokens.is_empty() {
+        return Ok(false);
+    }
+    for card_ref in &manifest.cards {
+        let card = read_card(&resolve_pack_path(root, &card_ref.path)?)?;
+        if card.entries.iter().any(|entry| {
+            let entry_text = format!("{} {}", entry.title, entry.body);
+            crate::routing::token_overlap(&requested_tokens, &crate::routing::tokens(&entry_text))
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn collect_routed_guardrail_hits(
+    guardrail_hits: &mut Vec<Value>,
+    surfaces: &[crate::text_surfaces::TextSurfaceValue],
+    legacy_text_path: Option<&str>,
+    has_declarations: bool,
+    context: &Value,
+) -> Result<()> {
+    if has_declarations {
+        let _ = crate::text_surfaces::avoid_terms(context)?;
+    }
+    for entry in context["entries"].as_array().into_iter().flatten() {
+        let card_id = entry["card_id"].as_str().unwrap_or("unknown");
+        let entry_id = entry["entry_id"].as_str().unwrap_or("unknown");
+        let title = entry["title"].as_str().unwrap_or("Untitled");
+        for term in entry["avoid"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            for surface in surfaces {
+                let literal =
+                    has_declarations && legacy_text_path != Some(surface.field_path.as_str());
+                let matches = if literal {
+                    crate::text_surfaces::contains_ascii_case_insensitive(&surface.text, term)
+                } else {
+                    contains_guardrail_term(&surface.text.to_lowercase(), term)
+                };
+                if matches {
+                    guardrail_hits.push(json!({
+                        "card_id": card_id,
+                        "entry_id": entry_id,
+                        "term": term,
+                        "title": title,
+                        "field_path": surface.field_path
+                    }));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn collect_guardrail_hits<'a>(
@@ -1843,12 +1999,13 @@ fn collect_context_constraint_hits(
     paragraph_count: usize,
     subject: Option<&str>,
     context: &Value,
+    skip_output_rules: bool,
 ) {
     let Some(entries) = context["entries"].as_array() else {
         return;
     };
     for entry in entries {
-        if entry["card_kind"].as_str() == Some("output-rules") {
+        if skip_output_rules && entry["card_kind"].as_str() == Some("output-rules") {
             continue;
         }
         let card_id = entry["card_id"].as_str().unwrap_or("unknown");
@@ -4450,6 +4607,7 @@ optional:
     #[test]
     fn claim_check_applies_universal_avoid_rules_to_declared_subject_path() {
         let root = temp_pack("declared-subject-guardrail");
+        let scope = vec!["product=local-cli".to_string()];
         let result = check_claims_artifact_scoped(
             &root,
             Some("A clean synthetic body."),
@@ -4459,7 +4617,7 @@ optional:
             &[],
             Some("PMM"),
             Some("outbound-copy-brief"),
-            &[],
+            &scope,
         )
         .expect("declared subject should be checked");
 
@@ -4480,7 +4638,7 @@ optional:
             &[],
             Some("PMM"),
             Some("outbound-copy-brief"),
-            &[],
+            &scope,
         )
         .expect("declared subject claims should be checked");
         assert!(
@@ -4497,9 +4655,9 @@ optional:
             None,
             None,
             &[],
-            None,
+            Some("PMM"),
             Some("outbound-copy-brief"),
-            &[],
+            &scope,
         )
         .expect("legacy body adapter should retain negation-aware checks");
         assert!(
@@ -4509,6 +4667,73 @@ optional:
                 .iter()
                 .all(|hit| hit["term"] != "send emails")
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_uses_job_routed_fit_rule_avoid_entries() {
+        let root = temp_pack("routed-fit-rule-guardrail");
+        let path = root.join(".mdp/cards/fit-rules.yaml");
+        let raw = std::fs::read_to_string(&path).expect("fit rules should be readable");
+        let mut card: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("fit rules should parse");
+        for entry in card["entries"]
+            .as_sequence_mut()
+            .expect("fit rules entries")
+        {
+            entry["avoid"] =
+                serde_yaml::to_value(vec!["no source"]).expect("synthetic avoid should serialize");
+        }
+        std::fs::write(
+            &path,
+            serde_yaml::to_string(&card).expect("fit rules should serialize"),
+        )
+        .expect("fit rules should be writable");
+
+        let result = check_claims_artifact_scoped(
+            &root,
+            Some("A safe synthetic body."),
+            None,
+            Some("No source available"),
+            None,
+            &[],
+            Some("PMM"),
+            Some("outbound-copy-brief"),
+            &["product=local-cli".to_string()],
+        )
+        .expect("routed claim check should run");
+        assert!(
+            result["guardrail_hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["term"] == "no source"
+                    && hit["field_path"] == "/artifact/subject_options")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_rejects_supplied_unknown_job() {
+        let root = temp_pack("unknown-claim-job");
+        for fields in [
+            Vec::new(),
+            vec!["/artifact/message_body=synthetic".to_string()],
+        ] {
+            let error = check_claims_artifact_scoped(
+                &root,
+                Some("synthetic"),
+                None,
+                None,
+                None,
+                &fields,
+                Some("PMM"),
+                Some("zzzxxyyq"),
+                &[],
+            )
+            .expect_err("unknown job must fail closed");
+            assert!(error.to_string().contains("selected job is not declared"));
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 
