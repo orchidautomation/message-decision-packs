@@ -273,7 +273,11 @@ pub(crate) fn capabilities() -> Value {
             "skills": "mdp.skills.v1",
             "profile_metadata_optional": true,
             "context_dimensions": "Optional profile-owned applicability dimensions such as product, capability, solution, or segment; agnostic primitives remain unchanged.",
-            "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global."
+            "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global.",
+            "job_selector_contract": "mdp.job-selectors.v1",
+            "selector_matching": "OR within a dimension, AND across dimensions; bounded intersections; explicit universal applicability.",
+            "selector_routing": "Structured selectors emit candidate/rejection inventory only; candidate resolution owns final selection and hydration.",
+            "legacy_scope_behavior": "Legacy scope/applies_to/job-token overlap remains observable compatibility-only and cannot certify production routing."
         },
         "persona_reference_integrity": {
             "authority": "manifest.personas plus manifest.target_personas and manifest.operator_roles",
@@ -928,6 +932,18 @@ mod tests {
         assert_eq!(
             result["model_step_contracts"]["phase_order"],
             json!(["normalization", "generation", "review"])
+        );
+        assert_eq!(
+            result["profile_contracts"]["job_selector_contract"],
+            "mdp.job-selectors.v1"
+        );
+        assert_eq!(
+            result["profile_contracts"]["selector_routing"],
+            "Structured selectors emit candidate/rejection inventory only; candidate resolution owns final selection and hydration."
+        );
+        assert_eq!(
+            result["profile_contracts"]["legacy_scope_behavior"],
+            "Legacy scope/applies_to/job-token overlap remains observable compatibility-only and cannot certify production routing."
         );
         assert_eq!(
             result["cold_model_conformance_contracts"]["model_execution"],

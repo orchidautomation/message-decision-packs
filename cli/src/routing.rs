@@ -12,7 +12,10 @@ use crate::product_foundation::{
 };
 use crate::run_runtime::MAX_NATIVE_DECLARED_INPUT_BYTES;
 use crate::runtime_context::current_runtime_context;
-use crate::scope::{ContextScope, ScopeResolution, match_entry_scope, resolve_runtime_scope};
+use crate::scope::{
+    ContextScope, ScopeResolution, is_explicit_universal, match_entry_scope_for_job,
+    resolve_runtime_scope_for_job, selector_contract_for_job,
+};
 use crate::utils::declared_persona_labels;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -33,6 +36,7 @@ struct EntryRouteDetails {
     scoped_decision_candidate_count: usize,
     compatible_scoped_decision_count: usize,
     allocation: Value,
+    structured_selectors: bool,
 }
 
 impl EntryRouteDetails {
@@ -215,6 +219,15 @@ fn select_cards_with_diagnostics(
     job: Option<&str>,
 ) -> CardSelection {
     let policy = PrimitiveRoutingPolicy::for_job(manifest, job);
+    let structured_selectors = job
+        .and_then(|job_id| {
+            manifest
+                .jobs
+                .iter()
+                .find(|candidate| candidate.id == job_id)
+        })
+        .and_then(|candidate| candidate.selector_contract.as_ref())
+        .is_some();
     let job_tokens = tokens(job.unwrap_or(""));
     let is_message_job = is_message_job(&job_tokens);
     let mut selected = Vec::new();
@@ -234,6 +247,28 @@ fn select_cards_with_diagnostics(
         let persona_match = persona
             .map(|requested| selector_matches_persona(&card.personas, requested))
             .unwrap_or(false);
+        if structured_selectors {
+            // Certified structured routes may use card metadata and the
+            // manifest's primitive reverse index, but never prose/token
+            // overlap in descriptions or tags to establish authority.
+            let primitive_match = policy
+                .roles_for(&card.id)
+                .is_some_and(|roles| !roles.is_empty());
+            if persona_match || primitive_match {
+                candidates.push((
+                    policy.card_priority(&card.id, &card.kind, true),
+                    index,
+                    json!({
+                        "id": card.id,
+                        "kind": card.kind,
+                        "path": format!("{DEFAULT_DIR}/{}", card.path),
+                        "reason": if primitive_match { "job primitive match" } else { "persona match" },
+                        "description": card.description
+                    }),
+                ));
+            }
+            continue;
+        }
         let job_match = !job_tokens.is_empty()
             && (token_overlap(&job_tokens, &tokens(&card.description))
                 || card
@@ -519,7 +554,6 @@ impl RouteBudgetQuery {
 }
 
 pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result<Value> {
-    let scope = ScopeResolution::default();
     let declared_personas = declared_persona_labels(manifest);
     let mut routes = Vec::new();
     let mut overflow_count = 0usize;
@@ -528,6 +562,13 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
     let mut unassessed_generation_count = 0usize;
 
     for job in &manifest.jobs {
+        let scope = job
+            .selector_contract
+            .as_ref()
+            .map(|contract| {
+                resolve_runtime_scope_for_job(manifest, Some(&job.id), contract.dimensions.clone())
+            })
+            .unwrap_or_default();
         let Some(budget) = job.context_budget.as_ref() else {
             if job.model_task.is_some() {
                 unassessed_generation_count += 1;
@@ -537,6 +578,11 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                     "persona": Value::Null,
                     "job_id": job.id,
                     "job": job.id,
+                    "scope": scope,
+                    "selector_contract": selector_contract_for_job(manifest, Some(&job.id)),
+                    "candidate_only": job.selector_contract.is_some(),
+                    "candidate_count": Value::Null,
+                    "rejection_count": Value::Null,
                     "status": "unassessed",
                     "reason": "context_budget_not_declared",
                     "generation_unassessed": job.model_task.is_some(),
@@ -568,6 +614,11 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                         "persona": persona,
                         "job_id": job.id,
                         "job": job.id,
+                        "scope": scope,
+                        "selector_contract": selector_contract_for_job(manifest, Some(&job.id)),
+                        "candidate_only": job.selector_contract.is_some(),
+                        "candidate_count": Value::Null,
+                        "rejection_count": Value::Null,
                         "status": if route_card_cap_blocked { "blocked" } else { "unassessed" },
                         "reason": "context_budget_not_declared",
                         "generation_unassessed": job.model_task.is_some(),
@@ -650,6 +701,11 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 "persona": persona,
                 "job_id": job.id,
                 "job": job.id,
+                "scope": scope,
+                "selector_contract": selector_contract_for_job(manifest, Some(&job.id)),
+                "candidate_only": route["candidate_only"],
+                "candidate_count": route["candidate_count"],
+                "rejection_count": route["rejection_count"],
                 "status": status,
                 "generation_unassessed": false,
                 "budget": {
@@ -1100,6 +1156,12 @@ pub(crate) fn entry_route_scoped(
     );
     let profile_activation_blocked = profile_activation["status"] == "blocked";
     let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
+    let selector_contract_blocked = manifest
+        .jobs
+        .iter()
+        .find(|candidate| candidate.id == job)
+        .and_then(|candidate| candidate.selector_contract.as_ref())
+        .is_some_and(|_| !scope.is_valid());
     let product_foundation_load_order = foundation_load_order(&product_foundation);
     let context_budget = manifest
         .jobs
@@ -1119,6 +1181,7 @@ pub(crate) fn entry_route_scoped(
         job,
         persona,
         scope,
+        &selector_contract_for_job(manifest, Some(job)),
         &product_foundation,
         &product_foundation_load_order,
         &details,
@@ -1134,6 +1197,7 @@ pub(crate) fn entry_route_scoped(
     )?;
     let blocked = validation_blocked
         || profile_activation_blocked
+        || selector_contract_blocked
         || !details.scope_ready(scope)
         || product_foundation.blocks_activation()
         || minimality["status"] == "blocked";
@@ -1144,6 +1208,10 @@ pub(crate) fn entry_route_scoped(
         "persona": persona,
         "job": job,
         "scope": scope,
+        "selector_contract": selector_contract_for_job(manifest, Some(job)),
+        "candidate_only": details.structured_selectors,
+        "candidate_count": details.matches.len(),
+        "rejection_count": details.excluded.len(),
         "portfolio_sensitive": details.portfolio_sensitive,
         "product_foundation": resolution_json(&product_foundation),
         "product_foundation_load_order": product_foundation_load_order,
@@ -1265,7 +1333,7 @@ pub(crate) fn validate_routed_context_value_for_job(
     let requested_scope =
         serde_json::from_value::<ContextScope>(value["scope"]["requested"].clone())
             .map_err(|_| RoutedContextValidationError::new(RoutedContextValidationKind::Scope))?;
-    let scope = resolve_runtime_scope(manifest, requested_scope);
+    let scope = resolve_runtime_scope_for_job(manifest, Some(job), requested_scope);
     if serde_json::to_value(&scope).ok().as_ref() != Some(&value["scope"]) {
         return Err(RoutedContextValidationError::new(
             RoutedContextValidationKind::Scope,
@@ -1327,7 +1395,15 @@ pub(crate) fn entry_context_with_runtime_scoped(
     );
     let profile_activation_blocked = profile_activation["status"] == "blocked";
     let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
-    let scope_blocked = !details.scope_ready(scope);
+    let selector_contract_blocked = manifest
+        .jobs
+        .iter()
+        .find(|candidate| candidate.id == job)
+        .and_then(|candidate| candidate.selector_contract.as_ref())
+        .is_some_and(|_| !scope.is_valid());
+    let candidate_only = details.structured_selectors;
+    let scope_blocked = selector_contract_blocked || !details.scope_ready(scope);
+    let hydration_blocked = candidate_only || scope_blocked;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
     let context_budget = manifest
         .jobs
@@ -1348,6 +1424,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
         job,
         persona,
         scope,
+        &selector_contract_for_job(manifest, Some(job)),
         &product_foundation,
         &product_foundation_load_order,
         &details,
@@ -1365,12 +1442,16 @@ pub(crate) fn entry_context_with_runtime_scoped(
     if validation_blocked
         || profile_activation_blocked
         || !draft_ready
-        || scope_blocked
+        || hydration_blocked
         || foundation_blocked
         || minimality_blocked
     {
         let blocked_reason = if validation_blocked {
             "pack validation failed for this job"
+        } else if selector_contract_blocked {
+            "portfolio scope is missing or invalid"
+        } else if candidate_only {
+            "structured selector candidates require resolution before hydration"
         } else if scope_blocked {
             "portfolio scope is missing or invalid"
         } else if foundation_blocked {
@@ -1393,7 +1474,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
         } else {
             "draft_status no-draft"
         };
-        let entries: Vec<Value> = if scope_blocked {
+        let entries: Vec<Value> = if scope_blocked && !candidate_only {
             details
                 .context_entries
                 .into_iter()
@@ -1416,6 +1497,10 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "persona": persona,
             "job": job,
             "scope": scope,
+            "selector_contract": selector_contract_for_job(manifest, Some(job)),
+            "candidate_only": candidate_only,
+            "candidate_count": details.matches.len(),
+            "rejection_count": details.excluded.len(),
             "portfolio_sensitive": details.portfolio_sensitive,
             "product_foundation": resolution_json(&product_foundation),
             "product_foundation_load_order": product_foundation_load_order,
@@ -1434,7 +1519,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
                 "supporting_entry_count": entry_count.saturating_sub(required_entry_count),
                 "guardrail_entry_count": guardrail_entry_count
             },
-            "policy": if scope_blocked { "Do not draft until portfolio scope is resolved. Global bounded guardrails may be inspected, but shared card paths are not scope-filtered context." } else { "Do not draft from bounded context when draft_status is no-draft. Entry metadata is advisory context only." }
+            "policy": if candidate_only { "Structured applicability produces candidate/rejection inventory only. Candidate resolution must select authority before any entry body is hydrated." } else if scope_blocked { "Do not draft until portfolio scope is resolved. Global bounded guardrails may be inspected, but shared card paths are not scope-filtered context." } else { "Do not draft from bounded context when draft_status is no-draft. Entry metadata is advisory context only." }
         }));
     }
 
@@ -1457,6 +1542,10 @@ pub(crate) fn entry_context_with_runtime_scoped(
         "persona": persona,
         "job": job,
         "scope": scope,
+        "selector_contract": selector_contract_for_job(manifest, Some(job)),
+        "candidate_only": candidate_only,
+        "candidate_count": details.matches.len(),
+        "rejection_count": details.excluded.len(),
         "portfolio_sensitive": details.portfolio_sensitive,
         "product_foundation": resolution_json(&product_foundation),
         "product_foundation_load_order": product_foundation_load_order,
@@ -1483,16 +1572,19 @@ fn routed_context_projection(
     job: &str,
     persona: &str,
     scope: &ScopeResolution,
+    selector_contract: &Value,
     product_foundation: &ProductFoundationResolution,
     product_foundation_load_order: &[Value],
     details: &EntryRouteDetails,
 ) -> (&'static str, Value) {
-    let policy = if details.portfolio_sensitive {
+    let policy = if details.structured_selectors {
+        "Structured applicability produces candidate/rejection inventory only. Candidate resolution must select authority before any entry body is hydrated."
+    } else if details.portfolio_sensitive {
         "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints."
     } else {
         "Use context.entries only. Canonical jobs must not open undeclared cards or whole-card fallbacks."
     };
-    let projection = json!({
+    let mut projection = json!({
         "contract": ROUTED_CONTEXT_CONTRACT,
         "job": job,
         "persona": persona,
@@ -1503,6 +1595,9 @@ fn routed_context_projection(
         "gaps": details.gaps,
         "policy": policy
     });
+    if details.structured_selectors {
+        projection["selector_contract"] = selector_contract.clone();
+    }
     (policy, projection)
 }
 
@@ -1870,6 +1965,12 @@ fn route_entry_details(
         .filter_map(|value| value["id"].as_str().map(str::to_string))
         .collect();
     let job_tokens = tokens(job);
+    let structured_selectors = manifest
+        .jobs
+        .iter()
+        .find(|candidate| candidate.id == job)
+        .and_then(|candidate| candidate.selector_contract.as_ref())
+        .is_some();
     let mut matches = Vec::new();
     let mut context_entries = Vec::new();
     let mut gaps = Vec::new();
@@ -1890,34 +1991,85 @@ fn route_entry_details(
         let mut selected_entry_count = 0usize;
 
         for entry in &card.entries {
+            if structured_selectors
+                && !entry.scope.is_empty()
+                && !is_explicit_universal(&entry.scope)
+            {
+                // A structured route remains scope-sensitive even when every
+                // candidate is rejected; otherwise a bad selector could look
+                // ready merely because it produced an empty inventory.
+                portfolio_sensitive = true;
+            }
             let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
             let applies = selector_matches_persona(&entry.applies_to, persona);
             let entry_tokens = tokens(&entry_text);
             let job_match = token_overlap(&job_tokens, &entry_tokens);
-            let entry_allowed =
-                entry_policy_compatible(&card.kind, manifest, &job_tokens, &entry_tokens);
-            let matched = !(matches!(card.kind, CardKind::ChannelPolicies) && !job_match)
-                && entry_allowed
-                && (applies || job_match);
+            let entry_allowed = structured_selectors
+                || entry_policy_compatible(&card.kind, manifest, &job_tokens, &entry_tokens);
             let authority = policy.roles_for(&card.id);
             let guardrail = is_context_guardrail_with_authority(&authority, &card.kind, entry);
-            let scope_match = match_entry_scope(scope, &entry.scope);
+            let scope_match = match_entry_scope_for_job(manifest, Some(job), scope, &entry.scope);
+            let structured_candidate = is_explicit_universal(&entry.scope)
+                || (!entry.scope.is_empty() && scope_match.compatible);
+            let candidate_match = if structured_selectors {
+                structured_candidate
+            } else {
+                !(matches!(card.kind, CardKind::ChannelPolicies) && !job_match)
+                    && (applies || job_match)
+            };
+            let matched = entry_allowed && candidate_match;
             if !entry_allowed {
                 excluded.push(excluded_entry(
                     &card.id,
                     &card.kind,
                     entry,
                     "policy_incompatible",
+                    &scope_match,
                 ));
+            } else if structured_selectors && !guardrail && entry.scope.is_empty() {
+                excluded.push(excluded_entry(
+                    &card.id,
+                    &card.kind,
+                    entry,
+                    "implicit_universal_ineligible",
+                    &scope_match,
+                ));
+            } else if structured_selectors
+                && !guardrail
+                && !entry.scope.is_empty()
+                && !scope_match.compatible
+            {
+                excluded.push(excluded_entry(
+                    &card.id,
+                    &card.kind,
+                    entry,
+                    "scope_incompatible",
+                    &scope_match,
+                ));
+                for issue in &scope_match.issues {
+                    gaps.push(json!({
+                        "card_id": card.id,
+                        "entry_id": entry.id,
+                        "title": entry.title,
+                        "reason": issue.code,
+                        "dimension": issue.dimension,
+                        "value": issue.value,
+                        "detail": issue.reason
+                    }));
+                }
             } else if !(matched || guardrail) {
                 excluded.push(excluded_entry(
                     &card.id,
                     &card.kind,
                     entry,
                     "not_applicable",
+                    &scope_match,
                 ));
             }
-            if (matched || guardrail) && !entry.scope.is_empty() {
+            if (matched || guardrail)
+                && !entry.scope.is_empty()
+                && !is_explicit_universal(&entry.scope)
+            {
                 portfolio_sensitive = true;
                 if scope_match.compatible {
                     compatible_scoped_entry_count += 1;
@@ -1935,6 +2087,7 @@ fn route_entry_details(
                     &card.kind,
                     entry,
                     "scope_incompatible",
+                    &scope_match,
                 ));
                 for issue in scope_match.issues {
                     gaps.push(json!({
@@ -1956,11 +2109,16 @@ fn route_entry_details(
                     &card.id,
                     &card.kind,
                     entry,
-                    match_reason(applies, job_match),
+                    if structured_selectors {
+                        "structured selector match"
+                    } else {
+                        match_reason(applies, job_match)
+                    },
                     &authority,
+                    &scope_match,
                 ));
             }
-            if include_context && (matched || guardrail) {
+            if include_context && (matched || guardrail) && !structured_selectors {
                 selected_entry_count += 1;
                 context_entries.push(entry_context_value(
                     &card.id,
@@ -1969,7 +2127,11 @@ fn route_entry_details(
                     entry,
                     if guardrail { "guardrail" } else { "matched" },
                     if matched {
-                        match_reason(applies, job_match)
+                        if structured_selectors {
+                            "structured selector match"
+                        } else {
+                            match_reason(applies, job_match)
+                        }
                     } else {
                         guardrail_reason(&card.kind)
                     },
@@ -1984,7 +2146,7 @@ fn route_entry_details(
                 "reason": "card routed, but no entry matched persona/job cleanly"
             }));
         }
-        if include_context && selected_entry_count == 0 {
+        if include_context && !structured_selectors && selected_entry_count == 0 {
             full_card_required.push(json!({
                 "card_id": card.id,
                 "card_kind": card.kind,
@@ -2010,6 +2172,7 @@ fn route_entry_details(
         scoped_decision_candidate_count,
         compatible_scoped_decision_count,
         allocation: Value::Null,
+        structured_selectors,
     })
 }
 
@@ -2019,19 +2182,23 @@ fn entry_summary(
     entry: &Entry,
     reason: &str,
     authority: &Option<BTreeSet<PrimitiveRoutingRole>>,
+    scope_match: &crate::scope::ScopeMatch,
 ) -> Value {
+    let applicability = applicability_result(&entry.scope, scope_match);
     json!({
         "card_id": card_id,
         "card_kind": card_kind,
         "entry_id": entry.id,
         "title": entry.title,
+        "lifecycle": "candidate",
         "status": entry_status_with_authority(authority, card_kind),
         "reason": reason,
         "metadata": entry.metadata,
         "evidence_count": entry.evidence.len(),
         "avoid_count": entry.avoid.len(),
         "constraints": entry.constraints,
-        "scope": entry.scope
+        "scope": entry.scope,
+        "applicability": applicability
     })
 }
 
@@ -2048,6 +2215,7 @@ fn entry_context_value(
         "guardrail" => guardrail_reason_code(card_kind),
         _ if reason == "persona applies" => "persona_applicability",
         _ if reason == "entry job match" => "job_match",
+        _ if reason == "structured selector match" => "structured_selector_match",
         _ => "persona_text_match",
     };
     json!({
@@ -2072,12 +2240,57 @@ fn entry_context_value(
     })
 }
 
-fn excluded_entry(card_id: &str, card_kind: &CardKind, entry: &Entry, reason_code: &str) -> Value {
+fn excluded_entry(
+    card_id: &str,
+    card_kind: &CardKind,
+    entry: &Entry,
+    reason_code: &str,
+    scope_match: &crate::scope::ScopeMatch,
+) -> Value {
+    let mut applicability = applicability_result(&entry.scope, scope_match);
+    if let Some(object) = applicability.as_object_mut() {
+        object.insert("status".to_string(), json!("rejected"));
+        object.insert("reason_code".to_string(), json!(reason_code));
+    }
     json!({
         "card_id": card_id,
         "card_kind": card_kind,
         "entry_id": entry.id,
-        "reason_code": reason_code
+        "lifecycle": "rejected",
+        "reason_code": reason_code,
+        "applicability": applicability
+    })
+}
+
+pub(crate) fn applicability_result(
+    entry_scope: &ContextScope,
+    scope_match: &crate::scope::ScopeMatch,
+) -> Value {
+    let (status, reason_code) = if entry_scope.is_empty() {
+        ("compatibility-universal", "legacy_compatibility")
+    } else if is_explicit_universal(entry_scope) {
+        ("candidate", "explicit_universal")
+    } else if scope_match.compatible {
+        ("candidate", "all_declared_selectors_match")
+    } else if scope_match
+        .predicates
+        .iter()
+        .any(|predicate| predicate.status == "unknown")
+    {
+        ("rejected", "selector_unknown")
+    } else if scope_match
+        .predicates
+        .iter()
+        .any(|predicate| predicate.status == "missing")
+    {
+        ("rejected", "selector_missing")
+    } else {
+        ("rejected", "selector_mismatch")
+    };
+    json!({
+        "status": status,
+        "reason_code": reason_code,
+        "predicates": scope_match.predicates
     })
 }
 
@@ -2277,7 +2490,8 @@ mod tests {
     use super::*;
     use crate::commands::init::init_pack;
     use crate::models::{
-        CardRef, Entry, LeadInputRequirements, Policy, PrimitiveMapping, ProfileJob, Provenance,
+        CardRef, Entry, JobSelectorContract, LeadInputRequirements, Policy, PrimitiveMapping,
+        ProfileJob, Provenance,
     };
     use crate::pack_io::read_manifest;
     use std::path::PathBuf;
@@ -2670,6 +2884,40 @@ mod tests {
             ids,
             vec!["personas", "avoid-rules", "output-rules", "ctas", "motions"]
         );
+    }
+
+    #[test]
+    fn structured_card_selection_does_not_use_prose_or_tag_overlap() {
+        let mut manifest = manifest(10);
+        manifest.jobs.push(ProfileJob {
+            id: "structured-job".to_string(),
+            required_primitives: vec!["actors".to_string()],
+            selector_contract: Some(JobSelectorContract {
+                contract: "mdp.job-selectors.v1".to_string(),
+                required: Vec::new(),
+                dimensions: BTreeMap::new(),
+            }),
+            ..ProfileJob::default()
+        });
+        manifest.primitive_map.insert(
+            "actors".to_string(),
+            PrimitiveMapping {
+                cards: vec!["personas".to_string()],
+                ..PrimitiveMapping::default()
+            },
+        );
+        manifest.cards.push(CardRef {
+            id: "prose-only".to_string(),
+            path: "cards/prose-only.yaml".to_string(),
+            kind: CardKind::Hooks,
+            description: "structured-job authority hidden in prose".to_string(),
+            personas: vec!["Other".to_string()],
+            tags: vec!["structured-job".to_string()],
+        });
+
+        let selected = select_cards(&manifest, Some("PMM"), Some("structured-job"));
+        assert!(!selected.iter().any(|card| card["id"] == "prose-only"));
+        assert!(selected.iter().any(|card| card["id"] == "personas"));
     }
 
     #[test]

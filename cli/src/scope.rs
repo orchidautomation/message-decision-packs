@@ -1,10 +1,17 @@
-use crate::models::{Manifest, Prospect};
+use crate::models::{JobSelectorContract, Manifest, Prospect};
 use anyhow::{Result, anyhow};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) type ContextScope = BTreeMap<String, Vec<String>>;
+
+/// Selector declarations and runtime requests are intentionally bounded.  The
+/// same limits are reflected in the exported JSON Schema so a provider cannot
+/// smuggle an unbounded selector surface past the local resolver.
+pub(crate) const MAX_SELECTOR_DIMENSIONS: usize = 32;
+pub(crate) const MAX_SELECTOR_VALUES_PER_DIMENSION: usize = 16;
+pub(crate) const MAX_REQUIRED_SELECTOR_DIMENSIONS: usize = 16;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub(crate) struct ScopeResolution {
@@ -32,6 +39,15 @@ pub(crate) struct ScopeIssue {
 pub(crate) struct ScopeMatch {
     pub(crate) compatible: bool,
     pub(crate) issues: Vec<ScopeIssue>,
+    pub(crate) predicates: Vec<ScopePredicateResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ScopePredicateResult {
+    pub(crate) dimension: String,
+    pub(crate) status: &'static str,
+    pub(crate) allowed: Vec<String>,
+    pub(crate) selected: Vec<String>,
 }
 
 pub(crate) fn parse_scope_selectors(selectors: &[String]) -> Result<ContextScope> {
@@ -52,10 +68,15 @@ pub(crate) fn parse_scope_selectors(selectors: &[String]) -> Result<ContextScope
                 "invalid --scope {selector:?}; dimension and value must both be non-empty"
             ));
         }
-        let values = parsed.entry(dimension.clone()).or_default();
-        if !values.is_empty() && !values.contains(&value) {
+        if !parsed.contains_key(&dimension) && parsed.len() >= MAX_SELECTOR_DIMENSIONS {
             return Err(anyhow!(
-                "invalid --scope: dimension {dimension} has multiple selected values; V1 accepts one value per dimension"
+                "invalid --scope: selector input exceeds the bounded limit of {MAX_SELECTOR_DIMENSIONS} dimensions"
+            ));
+        }
+        let values = parsed.entry(dimension.clone()).or_default();
+        if values.len() >= MAX_SELECTOR_VALUES_PER_DIMENSION && !values.contains(&value) {
+            return Err(anyhow!(
+                "invalid --scope: dimension {dimension} exceeds the bounded limit of {MAX_SELECTOR_VALUES_PER_DIMENSION} selected values"
             ));
         }
         values.insert(value);
@@ -75,6 +96,28 @@ pub(crate) fn resolve_runtime_scope(
     };
     let mut resolution = resolve_against_dimensions(Some(&profile.context_dimensions), requested);
     apply_dependencies(&mut resolution, &profile.context_dimension_dependencies);
+    resolution
+}
+
+/// Resolve runtime selectors and apply the optional selector contract declared
+/// by a canonical job.  Legacy jobs (and packs without a selector contract)
+/// retain the existing profile-only behavior.  A declared contract is
+/// fail-closed: malformed declarations, unknown dimensions/values, and
+/// missing required dimensions become explicit scope issues rather than being
+/// guessed from job prose.
+pub(crate) fn resolve_runtime_scope_for_job(
+    manifest: &Manifest,
+    job_id: Option<&str>,
+    requested: ContextScope,
+) -> ScopeResolution {
+    let mut resolution = resolve_runtime_scope(manifest, requested);
+    let Some(contract) = job_id
+        .and_then(|job_id| manifest.jobs.iter().find(|job| job.id == job_id))
+        .and_then(|job| job.selector_contract.as_ref())
+    else {
+        return resolution;
+    };
+    apply_selector_contract(manifest, contract, &mut resolution);
     resolution
 }
 
@@ -138,6 +181,230 @@ pub(crate) fn scope_from_prospect(manifest: &Manifest, prospect: &Prospect) -> S
     resolution
 }
 
+pub(crate) fn scope_from_prospect_for_job(
+    manifest: &Manifest,
+    prospect: &Prospect,
+    job_id: Option<&str>,
+) -> ScopeResolution {
+    let mut resolution = scope_from_prospect(manifest, prospect);
+    let Some(contract) = job_id
+        .and_then(|job_id| manifest.jobs.iter().find(|job| job.id == job_id))
+        .and_then(|job| job.selector_contract.as_ref())
+    else {
+        return resolution;
+    };
+    apply_selector_contract(manifest, contract, &mut resolution);
+    resolution
+}
+
+/// Stable machine-readable selector declaration attached to route receipts.
+/// The legacy shape is explicit so consumers can distinguish a certified
+/// structured selector contract from compatibility-only token routing.
+pub(crate) fn selector_contract_for_job(manifest: &Manifest, job_id: Option<&str>) -> Value {
+    let Some(contract) = job_id
+        .and_then(|job_id| manifest.jobs.iter().find(|job| job.id == job_id))
+        .and_then(|job| job.selector_contract.as_ref())
+    else {
+        return json!({
+            "status": "legacy-compatible",
+            "contract": Value::Null,
+            "required": [],
+            "dimensions": {}
+        });
+    };
+    json!({
+        "status": "declared",
+        "contract": contract.contract,
+        "required": contract.required,
+        "dimensions": contract.dimensions
+    })
+}
+
+fn apply_selector_contract(
+    manifest: &Manifest,
+    contract: &JobSelectorContract,
+    resolution: &mut ScopeResolution,
+) {
+    const CONTRACT: &str = "mdp.job-selectors.v1";
+    if contract.contract != CONTRACT {
+        resolution.issues.push(ScopeIssue {
+            code: "scope_job_selector_contract_invalid",
+            dimension: "job".to_string(),
+            value: Some(contract.contract.clone()),
+            reason: format!("job selector contract must declare contract {CONTRACT}"),
+        });
+    }
+    if contract.dimensions.len() > MAX_SELECTOR_DIMENSIONS {
+        resolution.issues.push(ScopeIssue {
+            code: "scope_job_selector_contract_invalid",
+            dimension: "job".to_string(),
+            value: None,
+            reason: format!(
+                "job selector contracts may declare at most {MAX_SELECTOR_DIMENSIONS} dimensions"
+            ),
+        });
+    }
+    if contract.required.len() > MAX_REQUIRED_SELECTOR_DIMENSIONS {
+        resolution.issues.push(ScopeIssue {
+            code: "scope_job_selector_contract_invalid",
+            dimension: "job".to_string(),
+            value: None,
+            reason: format!(
+                "job selector contracts may require at most {MAX_REQUIRED_SELECTOR_DIMENSIONS} dimensions"
+            ),
+        });
+    }
+
+    let profile_dimensions = manifest
+        .profile
+        .as_ref()
+        .map(|profile| &profile.context_dimensions);
+    let empty = ContextScope::new();
+    let profile_dimensions = profile_dimensions.unwrap_or(&empty);
+
+    let mut seen_dimensions = BTreeSet::new();
+    for (dimension, allowed_values) in &contract.dimensions {
+        let normalized_dimension = normalize_runtime_identifier(dimension);
+        if dimension != &normalized_dimension
+            || !valid_declared_identifier(&normalized_dimension)
+            || !seen_dimensions.insert(normalized_dimension)
+        {
+            resolution.issues.push(ScopeIssue {
+                code: "scope_job_selector_contract_invalid",
+                dimension: dimension.clone(),
+                value: None,
+                reason: "job selector dimensions must be unique normalized identifiers".to_string(),
+            });
+            continue;
+        }
+        let Some((declared_dimension, profile_values)) = profile_dimensions
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(dimension))
+        else {
+            resolution.issues.push(ScopeIssue {
+                code: "scope_job_selector_contract_invalid",
+                dimension: dimension.clone(),
+                value: None,
+                reason: format!(
+                    "job selector dimension {dimension} is not declared by profile.context_dimensions"
+                ),
+            });
+            continue;
+        };
+        if allowed_values.is_empty() {
+            resolution.issues.push(ScopeIssue {
+                code: "scope_job_selector_contract_invalid",
+                dimension: declared_dimension.clone(),
+                value: None,
+                reason: "job selector dimensions must declare at least one value".to_string(),
+            });
+        }
+        if allowed_values.len() > MAX_SELECTOR_VALUES_PER_DIMENSION {
+            resolution.issues.push(ScopeIssue {
+                code: "scope_job_selector_contract_invalid",
+                dimension: declared_dimension.clone(),
+                value: None,
+                reason: format!(
+                    "job selector dimensions may declare at most {MAX_SELECTOR_VALUES_PER_DIMENSION} values"
+                ),
+            });
+        }
+        let mut seen = BTreeSet::new();
+        for value in allowed_values {
+            let normalized = normalize_runtime_identifier(value);
+            if value != &normalized
+                || !valid_declared_identifier(&normalized)
+                || !seen.insert(normalized.clone())
+            {
+                resolution.issues.push(ScopeIssue {
+                    code: "scope_job_selector_contract_invalid",
+                    dimension: declared_dimension.clone(),
+                    value: Some(value.clone()),
+                    reason: format!(
+                        "job selector value {value} must be a unique normalized identifier"
+                    ),
+                });
+            } else if !profile_values
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(&normalized))
+            {
+                resolution.issues.push(ScopeIssue {
+                    code: "scope_job_selector_contract_invalid",
+                    dimension: declared_dimension.clone(),
+                    value: Some(value.clone()),
+                    reason: format!(
+                        "job selector value {value} is not declared for profile dimension {declared_dimension}"
+                    ),
+                });
+            }
+        }
+
+        if let Some(selected_values) = resolution.selected.get(declared_dimension) {
+            for selected in selected_values {
+                if !allowed_values
+                    .iter()
+                    .any(|allowed| allowed.eq_ignore_ascii_case(selected))
+                {
+                    resolution.issues.push(ScopeIssue {
+                        code: "scope_job_selector_value_mismatch",
+                        dimension: declared_dimension.clone(),
+                        value: Some(selected.clone()),
+                        reason: format!(
+                            "selected {declared_dimension} value {selected} is outside the job selector contract"
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    let mut required = BTreeSet::new();
+    for dimension in &contract.required {
+        let normalized = normalize_runtime_identifier(dimension);
+        if dimension != &normalized
+            || !valid_declared_identifier(&normalized)
+            || !required.insert(normalized.clone())
+        {
+            resolution.issues.push(ScopeIssue {
+                code: "scope_job_selector_contract_invalid",
+                dimension: dimension.clone(),
+                value: None,
+                reason: format!(
+                    "required job selector dimensions must be unique normalized identifiers"
+                ),
+            });
+            continue;
+        }
+        let Some((declared_dimension, _)) = contract
+            .dimensions
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(&normalized))
+        else {
+            resolution.issues.push(ScopeIssue {
+                code: "scope_job_selector_contract_invalid",
+                dimension: normalized,
+                value: None,
+                reason: "required selector dimension must be declared in dimensions".to_string(),
+            });
+            continue;
+        };
+        if !resolution
+            .selected
+            .keys()
+            .any(|selected| selected.eq_ignore_ascii_case(declared_dimension))
+        {
+            resolution.issues.push(ScopeIssue {
+                code: "scope_dimension_missing",
+                dimension: declared_dimension.clone(),
+                value: None,
+                reason: format!(
+                    "job selector contract requires a selected {declared_dimension} value"
+                ),
+            });
+        }
+    }
+}
+
 fn apply_dependencies(
     resolution: &mut ScopeResolution,
     dependencies: &BTreeMap<String, Vec<String>>,
@@ -165,20 +432,47 @@ pub(crate) fn match_entry_scope(
     resolution: &ScopeResolution,
     entry_scope: &ContextScope,
 ) -> ScopeMatch {
+    if is_explicit_universal(entry_scope) {
+        return ScopeMatch {
+            compatible: true,
+            issues: Vec::new(),
+            predicates: vec![ScopePredicateResult {
+                dimension: "universal".to_string(),
+                status: "not-applicable",
+                allowed: vec!["true".to_string()],
+                selected: Vec::new(),
+            }],
+        };
+    }
     if entry_scope.is_empty() {
         return ScopeMatch {
             compatible: true,
             issues: Vec::new(),
+            predicates: Vec::new(),
         };
     }
     if !resolution.is_valid() {
         return ScopeMatch {
             compatible: false,
             issues: resolution.issues.clone(),
+            predicates: entry_scope
+                .iter()
+                .map(|(dimension, allowed)| ScopePredicateResult {
+                    dimension: dimension.clone(),
+                    status: "unknown",
+                    allowed: allowed.clone(),
+                    selected: resolution
+                        .selected
+                        .get(dimension)
+                        .cloned()
+                        .unwrap_or_default(),
+                })
+                .collect(),
         };
     }
 
     let mut issues = Vec::new();
+    let mut predicates = Vec::new();
     for (dimension, allowed_values) in entry_scope {
         let Some(selected_values) = resolution.selected.get(dimension) else {
             issues.push(ScopeIssue {
@@ -187,13 +481,26 @@ pub(crate) fn match_entry_scope(
                 value: None,
                 reason: format!("entry requires a selected {dimension} value"),
             });
+            predicates.push(ScopePredicateResult {
+                dimension: dimension.clone(),
+                status: "missing",
+                allowed: allowed_values.clone(),
+                selected: Vec::new(),
+            });
             continue;
         };
-        if !allowed_values.iter().any(|allowed| {
+        let matches = allowed_values.iter().any(|allowed| {
             selected_values
                 .iter()
                 .any(|selected| selected.eq_ignore_ascii_case(allowed))
-        }) {
+        });
+        predicates.push(ScopePredicateResult {
+            dimension: dimension.clone(),
+            status: if matches { "match" } else { "mismatch" },
+            allowed: allowed_values.clone(),
+            selected: selected_values.clone(),
+        });
+        if !matches {
             issues.push(ScopeIssue {
                 code: "scope_value_mismatch",
                 dimension: dimension.clone(),
@@ -210,7 +517,201 @@ pub(crate) fn match_entry_scope(
     ScopeMatch {
         compatible: issues.is_empty(),
         issues,
+        predicates,
     }
+}
+
+/// Match an entry's structured applicability against the selected job's
+/// closed selector declaration.  A profile-valid dimension that the job did
+/// not declare is unconstrained (and therefore emits `not-applicable` rather
+/// than a false missing-value rejection).  Legacy jobs deliberately use the
+/// original profile-only matcher above.
+pub(crate) fn match_entry_scope_for_job(
+    manifest: &Manifest,
+    job_id: Option<&str>,
+    resolution: &ScopeResolution,
+    entry_scope: &ContextScope,
+) -> ScopeMatch {
+    let contract = job_id
+        .and_then(|job_id| manifest.jobs.iter().find(|job| job.id == job_id))
+        .and_then(|job| job.selector_contract.as_ref());
+    let Some(contract) = contract else {
+        return match_entry_scope(resolution, entry_scope);
+    };
+    if is_explicit_universal(entry_scope) {
+        return ScopeMatch {
+            compatible: true,
+            issues: Vec::new(),
+            predicates: vec![ScopePredicateResult {
+                dimension: "universal".to_string(),
+                status: "not-applicable",
+                allowed: vec!["true".to_string()],
+                selected: Vec::new(),
+            }],
+        };
+    }
+    if entry_scope.is_empty() {
+        return ScopeMatch {
+            compatible: true,
+            issues: Vec::new(),
+            predicates: Vec::new(),
+        };
+    }
+
+    let profile_dimensions = manifest
+        .profile
+        .as_ref()
+        .map(|profile| &profile.context_dimensions);
+    let empty = ContextScope::new();
+    let profile_dimensions = profile_dimensions.unwrap_or(&empty);
+    let resolution_invalid = !resolution.is_valid();
+    let mut issues = if resolution_invalid {
+        resolution.issues.clone()
+    } else {
+        Vec::new()
+    };
+    let mut predicates = Vec::new();
+
+    for (dimension, entry_values) in entry_scope {
+        let profile_dimension = profile_dimensions
+            .keys()
+            .find(|candidate| candidate.eq_ignore_ascii_case(dimension));
+        let Some(profile_dimension) = profile_dimension else {
+            issues.push(ScopeIssue {
+                code: "scope_dimension_unknown",
+                dimension: dimension.clone(),
+                value: None,
+                reason: format!(
+                    "entry scope dimension {dimension} is not declared by profile.context_dimensions"
+                ),
+            });
+            predicates.push(ScopePredicateResult {
+                dimension: dimension.clone(),
+                status: "unknown",
+                allowed: entry_values.clone(),
+                selected: selected_scope_values(resolution, dimension),
+            });
+            continue;
+        };
+
+        let Some((contract_dimension, contract_values)) = contract
+            .dimensions
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(dimension))
+        else {
+            // The profile knows this dimension, but the selected job does not
+            // declare it.  Approved v1 semantics treat that axis as
+            // unconstrained rather than inventing a missing-state rejection.
+            predicates.push(ScopePredicateResult {
+                dimension: profile_dimension.clone(),
+                status: "not-applicable",
+                allowed: entry_values.clone(),
+                selected: selected_scope_values(resolution, profile_dimension),
+            });
+            continue;
+        };
+
+        let selected = selected_scope_values(resolution, contract_dimension);
+        let mut entry_value_mismatch = false;
+        for value in entry_values {
+            if !contract_values
+                .iter()
+                .any(|allowed| allowed.eq_ignore_ascii_case(value))
+            {
+                entry_value_mismatch = true;
+                issues.push(ScopeIssue {
+                    code: "scope_job_selector_value_mismatch",
+                    dimension: contract_dimension.clone(),
+                    value: Some(value.clone()),
+                    reason: format!(
+                        "entry selector value {value} is outside the selected job selector contract"
+                    ),
+                });
+            }
+        }
+
+        if resolution_invalid {
+            predicates.push(ScopePredicateResult {
+                dimension: contract_dimension.clone(),
+                status: "unknown",
+                allowed: entry_values.clone(),
+                selected,
+            });
+            continue;
+        }
+        if selected.is_empty() {
+            issues.push(ScopeIssue {
+                code: "scope_dimension_missing",
+                dimension: contract_dimension.clone(),
+                value: None,
+                reason: format!("entry requires a selected {contract_dimension} value"),
+            });
+            predicates.push(ScopePredicateResult {
+                dimension: contract_dimension.clone(),
+                status: if entry_value_mismatch {
+                    "mismatch"
+                } else {
+                    "missing"
+                },
+                allowed: entry_values.clone(),
+                selected,
+            });
+            continue;
+        }
+
+        let matches = entry_values.iter().any(|allowed| {
+            selected
+                .iter()
+                .any(|selected| selected.eq_ignore_ascii_case(allowed))
+        });
+        predicates.push(ScopePredicateResult {
+            dimension: contract_dimension.clone(),
+            status: if entry_value_mismatch || !matches {
+                "mismatch"
+            } else {
+                "match"
+            },
+            allowed: entry_values.clone(),
+            selected: selected.clone(),
+        });
+        if !matches {
+            issues.push(ScopeIssue {
+                code: "scope_value_mismatch",
+                dimension: contract_dimension.clone(),
+                value: Some(selected.join(",")),
+                reason: format!(
+                    "selected {contract_dimension} values [{}] do not match entry values [{}]",
+                    selected.join(", "),
+                    entry_values.join(", ")
+                ),
+            });
+        }
+    }
+
+    ScopeMatch {
+        compatible: issues.is_empty(),
+        issues,
+        predicates,
+    }
+}
+
+fn selected_scope_values(resolution: &ScopeResolution, dimension: &str) -> Vec<String> {
+    resolution
+        .selected
+        .iter()
+        .find(|(selected_dimension, _)| selected_dimension.eq_ignore_ascii_case(dimension))
+        .map(|(_, values)| values.clone())
+        .unwrap_or_default()
+}
+
+/// A universal predicate is explicit rather than inferred from an empty map.
+/// It is reserved for the structured selector contract and is intentionally
+/// not a profile context dimension.
+pub(crate) fn is_explicit_universal(scope: &ContextScope) -> bool {
+    scope.len() == 1
+        && scope
+            .get("universal")
+            .is_some_and(|values| values.len() == 1 && values[0] == "true")
 }
 
 fn resolve_against_dimensions(
@@ -306,7 +807,10 @@ pub(crate) fn valid_declared_identifier(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{LeadInputRequirements, Policy, Profile, ProfileEval, Provenance};
+    use crate::models::{
+        JobSelectorContract, LeadInputRequirements, Policy, Profile, ProfileEval, ProfileJob,
+        Provenance,
+    };
 
     fn manifest() -> Manifest {
         Manifest {
@@ -400,12 +904,12 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(scope["product"], vec!["platform-a"]);
-        let err = parse_scope_selectors(&[
+        let multi = parse_scope_selectors(&[
             "product=platform-a".to_string(),
             "product=platform-b".to_string(),
         ])
-        .expect_err("multiple runtime values for one dimension should be rejected");
-        assert!(err.to_string().contains("multiple selected values"));
+        .expect("bounded multi-value selectors should be accepted");
+        assert_eq!(multi["product"], vec!["platform-a", "platform-b"]);
         assert!(
             parse_scope_selectors(&["product=platform=a".to_string()])
                 .expect_err("multiple separators should be rejected")
@@ -418,6 +922,23 @@ mod tests {
                 .to_string()
                 .contains("exactly one")
         );
+    }
+
+    #[test]
+    fn selector_input_is_bounded_by_dimensions_and_values() {
+        let dimensions = (0..=MAX_SELECTOR_DIMENSIONS)
+            .map(|index| format!("dimension-{index}=value"))
+            .collect::<Vec<_>>();
+        let error = parse_scope_selectors(&dimensions)
+            .expect_err("selector inputs must cap the number of dimensions");
+        assert!(error.to_string().contains("dimensions"));
+
+        let values = (0..=MAX_SELECTOR_VALUES_PER_DIMENSION)
+            .map(|index| format!("product=value-{index}"))
+            .collect::<Vec<_>>();
+        let error = parse_scope_selectors(&values)
+            .expect_err("selector inputs must cap values per dimension");
+        assert!(error.to_string().contains("selected values"));
     }
 
     #[test]
@@ -442,7 +963,33 @@ mod tests {
                 vec!["developer-surface".to_string()],
             ),
         ]);
-        assert!(match_entry_scope(&resolution, &entry_scope).compatible);
+        let matched = match_entry_scope(&resolution, &entry_scope);
+        assert!(matched.compatible);
+        assert_eq!(matched.predicates.len(), 2);
+        assert!(
+            matched
+                .predicates
+                .iter()
+                .all(|predicate| predicate.status == "match")
+        );
+    }
+
+    #[test]
+    fn multi_value_runtime_scope_matches_by_intersection() {
+        let resolution = resolve_runtime_scope(
+            &manifest(),
+            BTreeMap::from([(
+                "product".to_string(),
+                vec!["platform-a".to_string(), "platform-b".to_string()],
+            )]),
+        );
+        let entry_scope = BTreeMap::from([("product".to_string(), vec!["platform-b".to_string()])]);
+        let matched = match_entry_scope(&resolution, &entry_scope);
+        assert!(matched.compatible);
+        assert_eq!(
+            matched.predicates[0].selected,
+            vec!["platform-a", "platform-b"]
+        );
     }
 
     #[test]
@@ -527,5 +1074,155 @@ mod tests {
         assert!(!valid_declared_identifier("Developer-Surface"));
         assert!(!valid_declared_identifier("developer_surface"));
         assert!(!valid_declared_identifier("developer--surface"));
+    }
+
+    #[test]
+    fn job_selector_contract_requires_declared_dimensions_and_values() {
+        let mut manifest = manifest();
+        manifest.jobs.push(ProfileJob {
+            id: "scoped-job".to_string(),
+            selector_contract: Some(JobSelectorContract {
+                contract: "mdp.job-selectors.v1".to_string(),
+                required: vec!["product".to_string()],
+                dimensions: BTreeMap::from([(
+                    "product".to_string(),
+                    vec!["platform-a".to_string()],
+                )]),
+            }),
+            ..ProfileJob::default()
+        });
+
+        let missing =
+            resolve_runtime_scope_for_job(&manifest, Some("scoped-job"), ContextScope::new());
+        assert!(missing.issues.iter().any(|issue| {
+            issue.code == "scope_dimension_missing" && issue.dimension == "product"
+        }));
+
+        let outside = resolve_runtime_scope_for_job(
+            &manifest,
+            Some("scoped-job"),
+            BTreeMap::from([("product".to_string(), vec!["platform-b".to_string()])]),
+        );
+        assert!(
+            outside
+                .issues
+                .iter()
+                .any(|issue| issue.code == "scope_job_selector_value_mismatch")
+        );
+    }
+
+    #[test]
+    fn undeclared_profile_dimension_is_not_applicable_for_the_selected_job() {
+        let mut manifest = manifest();
+        manifest.jobs.push(ProfileJob {
+            id: "scoped-job".to_string(),
+            selector_contract: Some(JobSelectorContract {
+                contract: "mdp.job-selectors.v1".to_string(),
+                required: vec!["product".to_string()],
+                dimensions: BTreeMap::from([(
+                    "product".to_string(),
+                    vec!["platform-a".to_string()],
+                )]),
+            }),
+            ..ProfileJob::default()
+        });
+        let resolution = resolve_runtime_scope_for_job(
+            &manifest,
+            Some("scoped-job"),
+            BTreeMap::from([("product".to_string(), vec!["platform-a".to_string()])]),
+        );
+        let matched = match_entry_scope_for_job(
+            &manifest,
+            Some("scoped-job"),
+            &resolution,
+            &BTreeMap::from([(
+                "capability".to_string(),
+                vec!["developer-surface".to_string()],
+            )]),
+        );
+        assert!(matched.compatible);
+        assert_eq!(matched.predicates[0].status, "not-applicable");
+    }
+
+    #[test]
+    fn structured_dimensions_require_and_match_across_the_contract() {
+        let mut manifest = manifest();
+        manifest.jobs.push(ProfileJob {
+            id: "scoped-job".to_string(),
+            selector_contract: Some(JobSelectorContract {
+                contract: "mdp.job-selectors.v1".to_string(),
+                required: vec!["product".to_string(), "segment".to_string()],
+                dimensions: BTreeMap::from([
+                    (
+                        "product".to_string(),
+                        vec!["platform-a".to_string(), "platform-b".to_string()],
+                    ),
+                    ("segment".to_string(), vec!["enterprise".to_string()]),
+                ]),
+            }),
+            ..ProfileJob::default()
+        });
+        let resolution = resolve_runtime_scope_for_job(
+            &manifest,
+            Some("scoped-job"),
+            BTreeMap::from([
+                ("product".to_string(), vec!["platform-b".to_string()]),
+                ("segment".to_string(), vec!["enterprise".to_string()]),
+            ]),
+        );
+        let matched = match_entry_scope_for_job(
+            &manifest,
+            Some("scoped-job"),
+            &resolution,
+            &BTreeMap::from([
+                ("product".to_string(), vec!["platform-b".to_string()]),
+                ("segment".to_string(), vec!["enterprise".to_string()]),
+            ]),
+        );
+        assert!(matched.compatible);
+
+        let mismatch = match_entry_scope_for_job(
+            &manifest,
+            Some("scoped-job"),
+            &resolution,
+            &BTreeMap::from([
+                ("product".to_string(), vec!["platform-a".to_string()]),
+                ("segment".to_string(), vec!["mid-market".to_string()]),
+            ]),
+        );
+        assert!(!mismatch.compatible);
+        assert!(mismatch
+            .predicates
+            .iter()
+            .any(|predicate| predicate.dimension == "segment" && predicate.status == "mismatch"));
+    }
+
+    #[test]
+    fn legacy_job_without_selector_contract_remains_profile_compatible() {
+        let resolution = resolve_runtime_scope_for_job(
+            &manifest(),
+            Some("legacy-job"),
+            BTreeMap::from([("product".to_string(), vec!["platform-a".to_string()])]),
+        );
+        assert!(resolution.is_valid());
+    }
+
+    #[test]
+    fn explicit_universal_predicate_is_not_inferred_from_empty_scope() {
+        let resolution = resolve_runtime_scope(&manifest(), ContextScope::new());
+        let implicit = match_entry_scope(&resolution, &ContextScope::new());
+        assert!(implicit.compatible);
+        assert!(implicit.predicates.is_empty());
+
+        let explicit = match_entry_scope(
+            &resolution,
+            &BTreeMap::from([("universal".to_string(), vec!["true".to_string()])]),
+        );
+        assert!(explicit.compatible);
+        assert!(is_explicit_universal(&BTreeMap::from([(
+            "universal".to_string(),
+            vec!["true".to_string()],
+        )])));
+        assert_eq!(explicit.predicates[0].status, "not-applicable");
     }
 }

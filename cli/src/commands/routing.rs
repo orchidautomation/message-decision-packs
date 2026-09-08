@@ -15,7 +15,8 @@ use crate::routing::{
     route_budget_preflight, select_cards, selector_is_universal,
 };
 use crate::scope::{
-    match_entry_scope, parse_scope_selectors, resolve_runtime_scope, scope_from_prospect,
+    is_explicit_universal, match_entry_scope_for_job, parse_scope_selectors,
+    resolve_runtime_scope_for_job, scope_from_prospect_for_job, selector_contract_for_job,
 };
 use crate::utils::slugify;
 use crate::utils::{
@@ -124,7 +125,11 @@ pub(crate) fn route_scoped(
     let manifest = read_manifest(root)?;
     let persona_resolution = resolve_persona_label(&manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
-    let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
+    let scope = resolve_runtime_scope_for_job(
+        &manifest,
+        Some(job),
+        parse_scope_selectors(scope_selectors)?,
+    );
     let selected = select_cards(&manifest, Some(resolved_persona), Some(job));
     let load_order: Vec<String> = selected
         .iter()
@@ -134,18 +139,27 @@ pub(crate) fn route_scoped(
     let portfolio_sensitive = routed_entries["portfolio_sensitive"]
         .as_bool()
         .unwrap_or(false);
+    let structured_selectors = routed_entries["candidate_only"] == true;
     let mut payload = json!({
         "persona": resolved_persona,
         "requested_persona": persona,
         "persona_resolution": persona_resolution,
         "job": job,
         "scope": scope,
+        "selector_contract": selector_contract_for_job(&manifest, Some(job)),
+        "candidate_only": routed_entries["candidate_only"],
+        "candidate_count": routed_entries["candidate_count"],
+        "rejection_count": routed_entries["rejection_count"],
         "route": selected,
         "decision_trace": [
             "manifest loaded",
             "persona resolved through pack-owned mappings when available",
             "resolved persona matched against card metadata",
-            "job keywords matched against card descriptions and tags",
+            if structured_selectors {
+                "structured card metadata and primitive authority selected; prose overlap disabled"
+            } else {
+                "job keywords matched against card descriptions and tags"
+            },
             "base policy cards included for guardrails"
         ],
         "load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
@@ -156,7 +170,11 @@ pub(crate) fn route_scoped(
         "route_card_cap": routed_entries["route_card_cap"].clone(),
         "draft_status": if routed_entries["status"] == "blocked" { "blocked" } else { "ready" }
     });
-    if include_entries || include_eval_fixture || portfolio_sensitive {
+    if include_entries
+        || include_eval_fixture
+        || portfolio_sensitive
+        || payload["candidate_only"] == true
+    {
         if include_eval_fixture {
             payload["eval_fixture"] = eval_fixture(
                 persona,
@@ -167,7 +185,7 @@ pub(crate) fn route_scoped(
                 &routed_entries,
             );
         }
-        if include_entries || portfolio_sensitive {
+        if include_entries || portfolio_sensitive || structured_selectors {
             payload["entry_route"] = json!(routed_entries);
         }
     }
@@ -311,7 +329,13 @@ pub(crate) fn fit_normalized(
     if let Some(projected_prospect_sha256) = projected_prospect_sha256 {
         authority["projected_prospect_sha256"] = json!(projected_prospect_sha256);
     }
-    let mut result = fit_prospect_with_signal_authority(root, prospect, Some(authority), true)?;
+    let mut result = fit_prospect_with_signal_authority_for_job(
+        root,
+        prospect,
+        Some(authority),
+        true,
+        Some(job_id),
+    )?;
     if is_v3 {
         result["classifications"] = normalized["classifications"].clone();
     }
@@ -435,7 +459,8 @@ pub(crate) fn fit_prospect_for_job(
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let ingress = resolve_job_ingress(&manifest, requested_job)?;
-    let result = fit_prospect_with_signal_authority(root, prospect, None, false)?;
+    let result =
+        fit_prospect_with_signal_authority_for_job(root, prospect, None, false, requested_job)?;
     Ok(match ingress {
         Some(ingress) if ingress.is_governed() => block_detached_governed_fit(result, &ingress),
         Some(ingress) => attach_legacy_job_ingress(result, &ingress),
@@ -462,7 +487,13 @@ pub(crate) fn fit_prospect_with_governed_authority(
     authority["trust_boundary"] = json!(
         "validated normalized-input lineage; does not attest host authenticity or source truth"
     );
-    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority), false)?;
+    let result = fit_prospect_with_signal_authority_for_job(
+        root,
+        prospect,
+        Some(authority),
+        false,
+        Some(job_id),
+    )?;
     Ok(attach_accepted_job_ingress(result, job_id, None))
 }
 
@@ -600,9 +631,25 @@ fn attach_legacy_job_ingress(mut result: Value, ingress: &JobIngress) -> Value {
 
 fn fit_prospect_with_signal_authority(
     root: &Path,
+    prospect: crate::models::Prospect,
+    signal_authority: Option<Value>,
+    use_lineage_validated_signal_observations: bool,
+) -> Result<Value> {
+    fit_prospect_with_signal_authority_for_job(
+        root,
+        prospect,
+        signal_authority,
+        use_lineage_validated_signal_observations,
+        None,
+    )
+}
+
+fn fit_prospect_with_signal_authority_for_job(
+    root: &Path,
     mut prospect: crate::models::Prospect,
     signal_authority: Option<Value>,
     use_lineage_validated_signal_observations: bool,
+    requested_job: Option<&str>,
 ) -> Result<Value> {
     // GTM qualification owns the typed prospect-to-neutral conversion.  The
     // remainder of this function may retain the v0 Prospect renderer, but it
@@ -612,7 +659,12 @@ fn fit_prospect_with_signal_authority(
     let manifest = read_manifest(root)?;
     let company_domain_normalization = normalize_company_domain_for_fit(&mut prospect);
     let fit_cards = read_cards_by_id_or_kind(root, "fit-rules", CardKind::FitRules)?;
+    let structured_selectors = requested_job
+        .and_then(|job_id| manifest.jobs.iter().find(|job| job.id == job_id))
+        .and_then(|job| job.selector_contract.as_ref())
+        .is_some();
     let mut matches = Vec::new();
+    let mut rejections = Vec::new();
     let mut disqualifiers = Vec::new();
     let persona_resolution = resolve_persona(&manifest, &prospect);
     let resolved_persona_for_fit = persona_resolution
@@ -627,7 +679,7 @@ fn fit_prospect_with_signal_authority(
         signal_authority.as_ref(),
         use_lineage_validated_signal_observations,
     );
-    let scope = scope_from_prospect(&manifest, &prospect);
+    let scope = scope_from_prospect_for_job(&manifest, &prospect, requested_job);
     let contact_policy = prospect
         .attributes
         .get("contact_policy")
@@ -650,11 +702,27 @@ fn fit_prospect_with_signal_authority(
 
     for fit_card in &fit_cards {
         for entry in &fit_card.entries {
-            if !entry.scope.is_empty() {
+            if structured_selectors
+                && !entry.scope.is_empty()
+                && !is_explicit_universal(&entry.scope)
+            {
                 portfolio_sensitive = true;
             }
-            let scope_match = match_entry_scope(&scope, &entry.scope);
-            if !scope_match.compatible {
+            let scope_match =
+                match_entry_scope_for_job(&manifest, requested_job, &scope, &entry.scope);
+            if structured_selectors && !entry.scope.is_empty() && !scope_match.compatible {
+                if entry.avoid.is_empty() {
+                    let mut rejection = json!({
+                        "id": entry.id,
+                        "title": entry.title,
+                        "reason_code": "selector_incompatible",
+                        "applicability": crate::routing::applicability_result(&entry.scope, &scope_match)
+                    });
+                    if let Some(object) = rejection["applicability"].as_object_mut() {
+                        object.insert("status".to_string(), json!("rejected"));
+                    }
+                    rejections.push(rejection);
+                }
                 continue;
             }
             if !entry.scope.is_empty() {
@@ -674,8 +742,25 @@ fn fit_prospect_with_signal_authority(
                 .split(|c: char| !c.is_ascii_alphanumeric())
                 .filter(|token| token.len() >= 5)
                 .any(|token| haystack.contains(token));
-            if entry.avoid.is_empty() && (applies || keyword_match) {
-                matches.push(json!({"id": entry.id, "title": entry.title, "reason": if applies { "segment/persona match" } else { "keyword match" }}));
+            let candidate_match = if structured_selectors {
+                is_explicit_universal(&entry.scope)
+                    || (!entry.scope.is_empty() && scope_match.compatible)
+            } else {
+                applies || keyword_match
+            };
+            if entry.avoid.is_empty() && candidate_match {
+                matches.push(json!({"id": entry.id, "title": entry.title, "reason": if structured_selectors { "structured selector match" } else if applies { "segment/persona match" } else { "keyword match" }, "applicability": crate::routing::applicability_result(&entry.scope, &scope_match)}));
+            } else if structured_selectors && entry.avoid.is_empty() {
+                rejections.push(json!({
+                    "id": entry.id,
+                    "title": entry.title,
+                    "reason_code": "implicit_universal_ineligible",
+                    "applicability": {
+                        "status": "rejected",
+                        "reason_code": "implicit_universal",
+                        "predicates": scope_match.predicates
+                    }
+                }));
             }
             for avoid in &entry.avoid {
                 if contains_guardrail_term(&haystack, avoid) {
@@ -686,8 +771,12 @@ fn fit_prospect_with_signal_authority(
         }
     }
 
-    let scope_ready = !portfolio_sensitive
-        || (!scope.selected.is_empty() && scope.is_valid() && compatible_scoped_entry_count > 0);
+    let selector_contract_blocked = structured_selectors && !scope.is_valid();
+    let scope_ready = !selector_contract_blocked
+        && (!portfolio_sensitive
+            || (!scope.selected.is_empty()
+                && scope.is_valid()
+                && compatible_scoped_entry_count > 0));
     context["scope_ready"] = json!(scope_ready);
     context["scope"] = json!(&scope);
     context["portfolio_sensitive"] = json!(portfolio_sensitive);
@@ -725,6 +814,10 @@ fn fit_prospect_with_signal_authority(
         "valid": true,
         "prospect": prospect,
         "scope": scope,
+        "selector_contract": selector_contract_for_job(&manifest, requested_job),
+        "candidate_only": structured_selectors,
+        "candidate_count": matches.len(),
+        "rejections": rejections,
         "portfolio_sensitive": portfolio_sensitive,
         "persona_resolution": persona_resolution,
         "status": status,
@@ -1698,13 +1791,15 @@ fn check_claims_artifact_scoped_with_job_policy(
     let subject = subject.or(derived_subject);
     let paragraph_count = count_paragraphs(&raw);
     let lower = raw.to_lowercase();
-    let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
+    let scope =
+        resolve_runtime_scope_for_job(&manifest, job, parse_scope_selectors(scope_selectors)?);
     let claims_cards = read_cards_by_id_or_kind(root, "claims", CardKind::Claims)?;
     let avoid_cards = read_cards_by_id_or_kind(root, "avoid-rules", CardKind::AvoidRules)?;
     let output_rules_cards =
         read_cards_by_id_or_kind(root, "output-rules", CardKind::OutputRules).unwrap_or_default();
-    let entry_compatible =
-        |entry: &crate::models::Entry| match_entry_scope(&scope, &entry.scope).compatible;
+    let entry_compatible = |entry: &crate::models::Entry| {
+        match_entry_scope_for_job(&manifest, job, &scope, &entry.scope).compatible
+    };
     let scoped_rule_count = claims_cards
         .iter()
         .chain(avoid_cards.iter())
@@ -1924,11 +2019,15 @@ fn check_claims_artifact_scoped_with_job_policy(
         );
     }
     let scoped_rules_unsatisfied = scoped_rule_count > 0 && compatible_scoped_rule_count == 0;
+    let selector_contract_blocked = selected_job
+        .and_then(|job| job.selector_contract.as_ref())
+        .is_some_and(|_| !scope.is_valid());
     let scope_blocked = if routed_context.is_some() {
-        route_scope_blocked
+        route_scope_blocked || selector_contract_blocked
     } else {
-        portfolio_sensitive
-            && (scope.selected.is_empty() || !scope.is_valid() || scoped_rules_unsatisfied)
+        selector_contract_blocked
+            || (portfolio_sensitive
+                && (scope.selected.is_empty() || !scope.is_valid() || scoped_rules_unsatisfied))
     };
     let valid = !scope_blocked
         && guardrail_hits.is_empty()
@@ -1938,6 +2037,7 @@ fn check_claims_artifact_scoped_with_job_policy(
         "contract": "mdp.claim-check.v0",
         "valid": valid,
         "scope": scope,
+        "selector_contract": selector_contract_for_job(&manifest, job),
         "portfolio_sensitive": portfolio_sensitive,
         "scope_blocked": scope_blocked,
         "checked": {

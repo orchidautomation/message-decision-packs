@@ -2,7 +2,10 @@ use crate::models::{Manifest, Prospect};
 use crate::pack_io::{read_manifest, read_prospect};
 use crate::routing::{entry_context_with_runtime_scoped, select_cards};
 use crate::runtime_context::current_runtime_context;
-use crate::scope::{parse_scope_selectors, resolve_runtime_scope, scope_from_prospect};
+use crate::scope::{
+    parse_scope_selectors, resolve_runtime_scope_for_job, scope_from_prospect_for_job,
+    selector_contract_for_job,
+};
 use crate::utils::{resolve_persona, resolve_persona_label, routable_persona};
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -29,9 +32,14 @@ pub(crate) fn emit_brief_scoped(
     let manifest = read_manifest(root)?;
     let runtime_context = current_runtime_context()?;
     let job_text = brief_job(&manifest, job, "unspecified GTM decision task");
+    let selector_job = selector_job_for(&manifest, job);
     let persona_resolution = resolve_persona_label(&manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
-    let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
+    let scope = resolve_runtime_scope_for_job(
+        &manifest,
+        selector_job,
+        parse_scope_selectors(scope_selectors)?,
+    );
     let selected = select_cards(&manifest, Some(resolved_persona), Some(&job_text));
     let load_order: Vec<String> = selected
         .iter()
@@ -55,6 +63,8 @@ pub(crate) fn emit_brief_scoped(
         "requested_persona": persona,
         "persona_resolution": persona_resolution,
         "scope": scope,
+        "selector_contract": selector_contract_for_job(&manifest, selector_job),
+        "candidate_only": context["candidate_only"],
         "portfolio_sensitive": portfolio_sensitive,
         "draft_status": context["status"],
         "route_card_cap": context["route_card_cap"].clone(),
@@ -112,7 +122,10 @@ pub(crate) fn prospect_brief_from_value_with_context(
     job: Option<&str>,
     include_context: bool,
 ) -> Result<Value> {
-    let fit_result = crate::commands::routing::fit_prospect_for_job(root, prospect.clone(), job)?;
+    let manifest = read_manifest(root)?;
+    let selector_job = selector_job_for(&manifest, job);
+    let fit_result =
+        crate::commands::routing::fit_prospect_for_job(root, prospect.clone(), selector_job)?;
     prospect_brief_from_fit_with_context(root, prospect, fit_result, channel, job, include_context)
 }
 
@@ -127,7 +140,8 @@ pub(crate) fn prospect_brief_from_fit_with_context(
     let manifest = read_manifest(root)?;
     let runtime_context = current_runtime_context()?;
     let persona_resolution = resolve_persona(&manifest, &prospect);
-    let scope = scope_from_prospect(&manifest, &prospect);
+    let selector_job = selector_job_for(&manifest, job);
+    let scope = scope_from_prospect_for_job(&manifest, &prospect, selector_job);
     let fit_status = fit_result["status"]
         .as_str()
         .unwrap_or("insufficient-context");
@@ -139,7 +153,8 @@ pub(crate) fn prospect_brief_from_fit_with_context(
     let prospect_is_synthetic = prospect.synthetic;
     let job_text = brief_job(&manifest, job, &format!("write {channel} outbound message"));
     let routing_task = brief_routing_task(job, &job_text, channel);
-    let route = select_cards(&manifest, Some(&persona), Some(&routing_task));
+    let context_job = selector_job.unwrap_or(routing_task.as_str());
+    let route = select_cards(&manifest, Some(&persona), Some(context_job));
     let load_order: Vec<String> = route
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
@@ -150,7 +165,7 @@ pub(crate) fn prospect_brief_from_fit_with_context(
         root,
         &manifest,
         &persona,
-        &routing_task,
+        context_job,
         fit_draft_ready,
         &runtime_context,
         &scope,
@@ -160,7 +175,7 @@ pub(crate) fn prospect_brief_from_fit_with_context(
             root,
             &manifest,
             &persona,
-            &job_text,
+            context_job,
             fit_draft_ready,
             &runtime_context,
             &scope,
@@ -215,6 +230,8 @@ pub(crate) fn prospect_brief_from_fit_with_context(
         "persona": persona,
         "persona_resolution": persona_resolution,
         "scope": scope,
+        "selector_contract": selector_contract_for_job(&manifest, selector_job),
+        "candidate_only": fit_result["candidate_only"],
         "portfolio_sensitive": portfolio_sensitive,
         "fit": fit_result,
         "draft_status": draft_status,
@@ -258,6 +275,20 @@ fn brief_job(manifest: &Manifest, explicit_job: Option<&str>, legacy_default: &s
                 .then(|| "outbound-copy-brief".to_string())
         })
         .unwrap_or_else(|| legacy_default.to_string())
+}
+
+/// Use the canonical default job whenever the pack declares it.  Legacy jobs
+/// still resolve through the existing compatibility matcher; a selector
+/// contract on that same job opts the route into structured candidate mode.
+fn selector_job_for<'a>(manifest: &'a Manifest, explicit_job: Option<&'a str>) -> Option<&'a str> {
+    if explicit_job.is_some() {
+        return explicit_job;
+    }
+    manifest
+        .jobs
+        .iter()
+        .find(|job| job.id == "outbound-copy-brief")
+        .map(|job| job.id.as_str())
 }
 
 fn brief_routing_task(explicit_job: Option<&str>, foundation_job: &str, channel: &str) -> String {
