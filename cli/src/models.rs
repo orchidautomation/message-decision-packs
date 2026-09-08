@@ -192,10 +192,29 @@ pub(crate) struct ProfileJob {
     pub(crate) model_task: Option<JobModelTask>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) context_budget: Option<JobContextBudget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) selector_contract: Option<JobSelectorContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) artifact_text_fields: Vec<ArtifactTextField>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) post_generation_validators: Vec<PostGenerationValidator>,
+}
+
+/// A versioned, closed-vocabulary selector declaration for one job.
+///
+/// `required` is an explicit list of dimensions that must be resolved at
+/// runtime.  `dimensions` declares the values this job can consume; values are
+/// OR-ed within a dimension and dimensions are AND-ed across the contract.
+/// The declaration is intentionally data-only so routing never delegates
+/// applicability decisions to model prose.
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct JobSelectorContract {
+    #[serde(default)]
+    pub(crate) contract: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) required: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) dimensions: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -1100,7 +1119,12 @@ pub(crate) struct Entry {
     pub(crate) body: String,
     #[serde(default)]
     pub(crate) applies_to: Vec<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        alias = "applies_when",
+        deserialize_with = "deserialize_context_scope",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
     pub(crate) scope: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub(crate) evidence: Vec<String>,
@@ -1112,6 +1136,27 @@ pub(crate) struct Entry {
     pub(crate) constraints: EntryConstraints,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) metadata: BTreeMap<String, serde_json::Value>,
+}
+
+fn deserialize_context_scope<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Bool(true) => Ok(BTreeMap::from([(
+            "universal".to_string(),
+            vec!["true".to_string()],
+        )])),
+        serde_json::Value::Object(_) => {
+            serde_json::from_value(value).map_err(serde::de::Error::custom)
+        }
+        _ => Err(serde::de::Error::custom(
+            "applicability must be a selector map or the explicit boolean true",
+        )),
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]

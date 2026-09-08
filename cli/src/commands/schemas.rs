@@ -40,6 +40,9 @@ use crate::run_contracts::{
 };
 use crate::run_request_compiler::RUN_REQUEST_COMPILE_V1;
 use crate::runtime_context::runtime_context_schema;
+use crate::scope::{
+    MAX_REQUIRED_SELECTOR_DIMENSIONS, MAX_SELECTOR_DIMENSIONS, MAX_SELECTOR_VALUES_PER_DIMENSION,
+};
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
@@ -87,6 +90,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                                 "body": {"type": "string"},
                                 "applies_to": {"type": "array", "items": {"type": "string"}},
                                 "scope": scope_map_schema(),
+                                "applies_when": {"oneOf": [scope_map_schema(), {"const": true}]},
                                 "evidence": {"type": "array", "items": {"type": "string"}},
                                 "avoid": {"type": "array", "items": {"type": "string"}},
                                 "exact_paragraphs": {"type": "integer", "minimum": 1},
@@ -3438,6 +3442,7 @@ fn profile_jobs_schema() -> Value {
                 "input_contracts": string_array(),
                 "decision_input_contracts": string_array(),
                 "product_foundation": product_foundation_binding_schema(),
+                "selector_contract": job_selector_contract_schema(),
                 "artifact_text_fields": {
                     "type": "array",
                     "maxItems": 64,
@@ -3498,6 +3503,24 @@ fn profile_jobs_schema() -> Value {
                     }
                 }
             }
+        }
+    })
+}
+
+fn job_selector_contract_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["contract", "dimensions"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": "mdp.job-selectors.v1"},
+            "required": {
+                "type": "array",
+                "maxItems": MAX_REQUIRED_SELECTOR_DIMENSIONS,
+                "uniqueItems": true,
+                "items": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}
+            },
+            "dimensions": bounded_scope_map_schema()
         }
     })
 }
@@ -3755,8 +3778,8 @@ fn canonical_skill_id_array_schema() -> Value {
 
 fn brief_schema() -> Value {
     json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Brief Contracts v0", "oneOf": [
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "route_card_cap", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "route_card_cap": route_card_cap_schema(), "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "route_card_cap", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "valid": {"type": "boolean"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"], "properties": {"valid": {"type": "boolean"}, "job_id": {"type": "string"}, "ingress": job_ingress_schema(), "signal_authority": {"type": "object", "required": ["contract", "authority_class", "eligible_signal_count", "roles", "accepted", "rejected"], "properties": {"contract": {"const": "mdp.signal-qualification-authority.v1"}, "authority_class": {"enum": ["lineage-validated", "legacy", "unassessed"]}, "eligible_signal_count": {"type": "integer", "minimum": 0}, "roles": {"type": "object"}, "accepted": {"type": "array"}, "rejected": {"type": "array"}}}}}, "draft_status": {"enum": ["ready", "no-draft"]}, "route_card_cap": route_card_cap_schema(), "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "route_card_cap", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "selector_contract": selector_contract_result_schema(), "candidate_only": {"type": "boolean"}, "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "route_card_cap": route_card_cap_schema(), "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "route_card_cap", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "valid": {"type": "boolean"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "selector_contract": selector_contract_result_schema(), "candidate_only": {"type": "boolean"}, "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"], "properties": {"valid": {"type": "boolean"}, "job_id": {"type": "string"}, "ingress": job_ingress_schema(), "candidate_only": {"type": "boolean"}, "candidate_count": {"type": "integer", "minimum": 0}, "rejections": {"type": "array", "items": {"type": "object"}}, "selector_contract": selector_contract_result_schema(), "signal_authority": {"type": "object", "required": ["contract", "authority_class", "eligible_signal_count", "roles", "accepted", "rejected"], "properties": {"contract": {"const": "mdp.signal-qualification-authority.v1"}, "authority_class": {"enum": ["lineage-validated", "legacy", "unassessed"]}, "eligible_signal_count": {"type": "integer", "minimum": 0}, "roles": {"type": "object"}, "accepted": {"type": "array"}, "rejected": {"type": "array"}}}}}, "draft_status": {"enum": ["ready", "no-draft"]}, "route_card_cap": route_card_cap_schema(), "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
     ]})
 }
 
@@ -3846,7 +3869,7 @@ fn human_brief_schema() -> Value {
 }
 
 fn context_schema_base() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "profile_activation", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "profile_activation": profile_activation_decision_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": context_entries_schema(), "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "profile_activation", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "selector_contract": selector_contract_result_schema(), "candidate_only": {"type": "boolean"}, "candidate_count": {"type": "integer", "minimum": 0}, "rejection_count": {"type": "integer", "minimum": 0}, "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "profile_activation": profile_activation_decision_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": context_entries_schema(), "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
 }
 
 fn context_entries_schema() -> Value {
@@ -3881,7 +3904,47 @@ fn context_entries_schema_with_authority(require_selection_authority: bool) -> V
             .expect("context entry required fields should be an array")
             .extend([json!("selection_class"), json!("reason_codes")]);
     }
-    json!({"type": "array", "items": {"type": "object", "required": required, "additionalProperties": false, "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}, "selection_class": {"enum": ["product_foundation_requirement", "gap_requirement", "persona_or_job_match", "evidence_dependency", "output_requirement", "universal_guardrail"]}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["product_foundation_requirement", "gap_requirement", "persona_applicability", "job_match", "persona_text_match", "evidence_dependency", "output_requirement", "fit_guardrail", "output_rule_guardrail", "avoid_rule_guardrail"]}}}}})
+    json!({"type": "array", "items": {"type": "object", "required": required, "additionalProperties": false, "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "applicability": applicability_result_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}, "selection_class": {"enum": ["product_foundation_requirement", "gap_requirement", "persona_or_job_match", "evidence_dependency", "output_requirement", "universal_guardrail"]}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["product_foundation_requirement", "gap_requirement", "persona_applicability", "job_match", "persona_text_match", "structured_selector_match", "evidence_dependency", "output_requirement", "fit_guardrail", "output_rule_guardrail", "avoid_rule_guardrail"]}}}}})
+}
+
+fn selector_contract_result_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["status", "contract", "required", "dimensions"],
+        "additionalProperties": false,
+        "properties": {
+            "status": {"enum": ["declared", "legacy-compatible"]},
+            "contract": {"type": ["string", "null"]},
+            "required": {"type": "array", "maxItems": MAX_REQUIRED_SELECTOR_DIMENSIONS, "uniqueItems": true, "items": {"type": "string"}},
+            "dimensions": bounded_scope_map_schema()
+        }
+    })
+}
+
+fn applicability_result_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["status", "predicates"],
+        "additionalProperties": false,
+        "properties": {
+            "status": {"enum": ["candidate", "rejected", "compatibility-universal"]},
+            "reason_code": {"type": "string", "minLength": 1},
+            "predicates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["dimension", "status", "allowed", "selected"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "dimension": {"type": "string"},
+                        "status": {"enum": ["match", "mismatch", "missing", "unknown", "not-applicable"]},
+                        "allowed": string_array(),
+                        "selected": string_array()
+                    }
+                }
+            }
+        }
+    })
 }
 
 fn context_schema() -> Value {
@@ -3944,7 +4007,9 @@ fn context_schema() -> Value {
                 "properties": {
                     "card_id": {"type": "string"}, "card_kind": {"type": "string"},
                     "entry_id": {"type": "string"},
-                    "reason_code": {"enum": ["policy_incompatible", "not_applicable", "scope_incompatible", "optional_kind_quota_exceeded"]}
+                    "lifecycle": {"const": "rejected"},
+                    "reason_code": {"enum": ["policy_incompatible", "not_applicable", "implicit_universal_ineligible", "scope_incompatible", "optional_kind_quota_exceeded"]},
+                    "applicability": applicability_result_schema()
                 }
             }},
             "largest_contributing_cards": {"type": "array", "items": {
@@ -4212,6 +4277,11 @@ fn route_budget_schema() -> Value {
                         "persona": {"type": ["string", "null"], "minLength": 1},
                         "job_id": {"type": "string", "minLength": 1},
                         "job": {"type": "string", "minLength": 1, "description": "Deprecated v0 alias; must equal job_id."},
+                        "scope": scope_resolution_schema(),
+                        "selector_contract": selector_contract_result_schema(),
+                        "candidate_only": {"type": "boolean"},
+                        "candidate_count": {"type": ["integer", "null"], "minimum": 0},
+                        "rejection_count": {"type": ["integer", "null"], "minimum": 0},
                         "status": {"enum": ["ready", "blocked", "unassessed"]},
                         "reason": {"type": "string", "minLength": 1},
                         "generation_unassessed": {"type": "boolean"},
@@ -4336,6 +4406,7 @@ pub(crate) fn routed_context_schema() -> Value {
             "job": {"type": "string", "minLength": 1},
             "persona": {"type": "string", "minLength": 1},
             "scope": scope_resolution_schema(),
+            "selector_contract": selector_contract_result_schema(),
             "product_foundation": product_foundation_resolution_schema(),
             "product_foundation_load_order": product_foundation_load_order_schema(),
             "entries": routed_context_entries_schema(),
@@ -4463,13 +4534,28 @@ fn scope_map_schema() -> Value {
     })
 }
 
+fn bounded_scope_map_schema() -> Value {
+    json!({
+        "type": "object",
+        "maxProperties": MAX_SELECTOR_DIMENSIONS,
+        "propertyNames": {"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": MAX_SELECTOR_VALUES_PER_DIMENSION,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}
+        }
+    })
+}
+
 fn scope_resolution_schema() -> Value {
     json!({
         "type": "object",
         "required": ["requested", "selected", "issues"],
         "properties": {
-            "requested": scope_map_schema(),
-            "selected": scope_map_schema(),
+            "requested": bounded_scope_map_schema(),
+            "selected": bounded_scope_map_schema(),
             "issues": {
                 "type": "array",
                 "items": {
@@ -4477,7 +4563,7 @@ fn scope_resolution_schema() -> Value {
                     "additionalProperties": false,
                     "required": ["code", "dimension", "reason"],
                     "properties": {
-                        "code": {"enum": ["scope_dimension_unknown", "scope_value_unknown", "scope_attribute_empty", "scope_attribute_type_invalid", "scope_segment_conflict", "scope_dependency_missing", "scope_dimension_missing", "scope_value_mismatch"]},
+                        "code": {"enum": ["scope_dimension_unknown", "scope_value_unknown", "scope_attribute_empty", "scope_attribute_type_invalid", "scope_segment_conflict", "scope_dependency_missing", "scope_dimension_missing", "scope_value_mismatch", "scope_job_selector_contract_invalid", "scope_job_selector_value_mismatch"]},
                         "dimension": {"type": "string"},
                         "value": {"type": ["string", "null"]},
                         "reason": {"type": "string"}

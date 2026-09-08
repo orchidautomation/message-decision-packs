@@ -73,6 +73,31 @@ Dependencies are generic.
 The example says any capability- or solution-scoped entry must also name a product, and a caller selecting capability or solution must select product too.
 This prevents a capability from one product being blended with a different selected product.
 
+Jobs may opt into a closed, versioned selector contract when a route must be
+bound to explicit runtime dimensions rather than inferred from prose:
+
+```yaml
+jobs:
+  - id: outbound-copy-brief
+    selector_contract:
+      contract: mdp.job-selectors.v1
+      required:
+        - product
+        - segment
+      dimensions:
+        product:
+          - core-platform
+          - developer-platform
+        segment:
+          - enterprise
+```
+
+The declaration is profile-neutral: it names only profile-owned dimensions
+and values, and does not add GTM-specific primitives. Dimensions and values
+are bounded (at most 32 dimensions and 16 values per dimension); required
+dimensions are bounded at 16. A job that does not declare the contract keeps
+the legacy compatibility behavior described below.
+
 ## Entry Contract
 
 Add optional `scope` beside `applies_to`:
@@ -92,6 +117,12 @@ Add optional `scope` beside `applies_to`:
     - reviewed-product-source
   avoid: []
 ```
+
+`applies_when` is accepted as a compatibility alias for `scope`. It may also
+be the explicit boolean `true`, which is normalized to
+`universal: ["true"]`. Empty scope remains the legacy/unscoped form; structured
+routes should use the explicit universal predicate when they intend a
+candidate that is independent of every declared dimension.
 
 `applies_to` still means actor or persona applicability.
 `scope` is enforced portfolio applicability.
@@ -133,8 +164,12 @@ This entry matches either named product, but only for the enterprise segment.
 Runtime context may be narrower than an entry.
 An entry scoped only to `product: core-platform` still matches when runtime also selects a compatible capability and segment.
 
-V1 accepts one runtime value per dimension.
-Repeat `--scope` to select different dimensions, not to blend two products into one drafting route.
+V1 accepts bounded multi-value runtime selectors. Repeat `--scope` for
+additional dimensions or values; values within a dimension are OR-ed and
+dimensions are AND-ed. Duplicate selectors are normalized and deduplicated,
+with a maximum of 32 dimensions and 16 selected values per dimension. This
+allows a deliberately bounded intersection (for example, two approved
+products) without opening an unbounded query language.
 
 Missing, unknown, or incompatible scope fails closed for scoped entries:
 
@@ -147,6 +182,28 @@ Missing, unknown, or incompatible scope fails closed for scoped entries:
 
 Global entries may still appear as bounded guardrails, but missing or invalid scope blocks a portfolio-sensitive draft.
 Partial or unrelated scope also blocks when no compatible scoped decision survives; selecting a valid segment does not satisfy a product-scoped route.
+
+### Job-bound structured routing
+
+For a job with `selector_contract: mdp.job-selectors.v1`, the CLI treats entry
+`scope`/`applies_when` as structured applicability predicates. It reports a
+candidate or rejection inventory with per-dimension `match`, `mismatch`,
+`missing`, `unknown`, or `not-applicable` statuses. A profile dimension that
+the job did not declare is explicitly `not-applicable`; undeclared or invalid
+runtime values remain fail-closed.
+
+Structured routing never uses English token overlap in card descriptions,
+tags, titles, or bodies to establish authority. It may use declared card
+metadata and primitive routing authority to find candidate cards, but the
+result is candidate-only: route, fit, brief, check-claims, and route-budget
+receipts carry the selector declaration, selected values, predicates, and
+candidate/rejection counts, while provider-visible entry bodies remain
+unhydrated. Legacy scope/applies-to/job-token overlap remains observable for
+compatibility, but it is not certifiable structured routing.
+
+Candidate resolution and final hydration are intentionally a later governed
+phase (MDP-398); a structured route must not silently choose a candidate or
+fall back to a full card.
 
 ## Direct CLI Routing
 

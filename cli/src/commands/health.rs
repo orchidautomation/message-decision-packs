@@ -26,7 +26,10 @@ use crate::product_foundation::{
     resolve_product_foundation,
 };
 use crate::routing::select_cards;
-use crate::scope::valid_declared_identifier;
+use crate::scope::{
+    MAX_REQUIRED_SELECTOR_DIMENSIONS, MAX_SELECTOR_DIMENSIONS, MAX_SELECTOR_VALUES_PER_DIMENSION,
+    valid_declared_identifier,
+};
 use crate::skill_catalog::{is_packaged_skill, job_owner, route_spec};
 use crate::value_contracts::PROSPECT_CONTRACT_FIELDS;
 use anyhow::Result;
@@ -383,6 +386,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     validate_lead_input_requirements(&manifest, &mut issues);
     validate_qualification_gates(manifest.qualification_gates.as_ref(), &mut issues);
     validate_profile(manifest.profile.as_ref(), &mut issues);
+    validate_job_selector_contracts(&manifest, &mut issues);
     for (card_index, card_ref) in manifest.cards.iter().enumerate() {
         if !card_ids.insert(card_ref.id.clone()) {
             issues.push(issue(
@@ -1601,6 +1605,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "product_foundation",
             "model_task",
             "context_budget",
+            "selector_contract",
             "artifact_text_fields",
             "post_generation_validators",
         ],
@@ -1618,6 +1623,22 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
                 "manifest_profile_job_model_task_unknown_field",
                 issues,
             );
+            validate_object_keys(
+                yaml_get(job, "selector_contract").unwrap_or(&YamlValue::Null),
+                &["contract", "required", "dimensions"],
+                &format!(".mdp/manifest.yaml#/jobs/{index}/selector_contract"),
+                "manifest_profile_job_selector_contract_unknown_field",
+                issues,
+            );
+            if let Some(selector_contract) = yaml_get(job, "selector_contract") {
+                validate_required_object_keys(
+                    selector_contract,
+                    &["contract", "dimensions"],
+                    &format!(".mdp/manifest.yaml#/jobs/{index}/selector_contract"),
+                    "manifest_profile_job_selector_contract_required_field_missing",
+                    issues,
+                );
+            }
             let budget = yaml_get(job, "context_budget").unwrap_or(&YamlValue::Null);
             validate_object_keys(
                 budget,
@@ -2342,6 +2363,167 @@ fn validate_profile(profile: Option<&Profile>, issues: &mut Vec<Value>) {
                     "error",
                     format!("{path}/{index}"),
                     format!("duplicate context dependency {dependency}"),
+                ));
+            }
+        }
+    }
+}
+
+fn validate_job_selector_contracts(manifest: &Manifest, issues: &mut Vec<Value>) {
+    let profile_dimensions = manifest
+        .profile
+        .as_ref()
+        .map(|profile| &profile.context_dimensions);
+    let empty = BTreeMap::new();
+    let profile_dimensions = profile_dimensions.unwrap_or(&empty);
+
+    for (job_index, job) in manifest.jobs.iter().enumerate() {
+        let Some(contract) = job.selector_contract.as_ref() else {
+            continue;
+        };
+        let path = format!(".mdp/manifest.yaml#/jobs/{job_index}/selector_contract");
+        if contract.contract != "mdp.job-selectors.v1" {
+            issues.push(issue(
+                "job_selector_contract_version_unknown",
+                "error",
+                format!("{path}/contract"),
+                "selector contracts must declare mdp.job-selectors.v1",
+            ));
+        }
+        if contract.dimensions.len() > MAX_SELECTOR_DIMENSIONS {
+            issues.push(issue(
+                "job_selector_dimensions_exceeded",
+                "error",
+                format!("{path}/dimensions"),
+                format!(
+                    "selector contracts may declare at most {MAX_SELECTOR_DIMENSIONS} dimensions"
+                ),
+            ));
+        }
+        if contract.required.len() > MAX_REQUIRED_SELECTOR_DIMENSIONS {
+            issues.push(issue(
+                "job_selector_required_dimensions_exceeded",
+                "error",
+                format!("{path}/required"),
+                format!(
+                    "selector contracts may require at most {MAX_REQUIRED_SELECTOR_DIMENSIONS} dimensions"
+                ),
+            ));
+        }
+        let mut dimension_seen = BTreeSet::new();
+        for (dimension, values) in &contract.dimensions {
+            let dimension_path = format!("{path}/dimensions/{dimension}");
+            if !valid_declared_identifier(dimension) {
+                issues.push(issue(
+                    "job_selector_dimension_invalid",
+                    "error",
+                    &dimension_path,
+                    "selector dimensions must use lowercase kebab-case",
+                ));
+                continue;
+            }
+            if !dimension_seen.insert(dimension.to_ascii_lowercase()) {
+                issues.push(issue(
+                    "job_selector_dimension_duplicate",
+                    "error",
+                    &dimension_path,
+                    format!("duplicate selector dimension {dimension}"),
+                ));
+                continue;
+            }
+            let Some((declared_dimension, profile_values)) = profile_dimensions
+                .iter()
+                .find(|(candidate, _)| candidate.eq_ignore_ascii_case(dimension))
+            else {
+                issues.push(issue(
+                    "job_selector_dimension_unknown",
+                    "error",
+                    &dimension_path,
+                    format!("selector dimension {dimension} is not declared by the profile"),
+                ));
+                continue;
+            };
+            if values.is_empty() {
+                issues.push(issue(
+                    "job_selector_values_empty",
+                    "error",
+                    &dimension_path,
+                    "selector dimensions must declare at least one value",
+                ));
+            }
+            if values.len() > MAX_SELECTOR_VALUES_PER_DIMENSION {
+                issues.push(issue(
+                    "job_selector_values_exceeded",
+                    "error",
+                    &dimension_path,
+                    format!(
+                        "selector dimensions may declare at most {MAX_SELECTOR_VALUES_PER_DIMENSION} values"
+                    ),
+                ));
+            }
+            let mut seen = BTreeSet::new();
+            for (value_index, value) in values.iter().enumerate() {
+                let value_path = format!("{dimension_path}/{value_index}");
+                if !valid_declared_identifier(value) {
+                    issues.push(issue(
+                        "job_selector_value_invalid",
+                        "error",
+                        value_path,
+                        "selector values must use lowercase kebab-case",
+                    ));
+                } else if !seen.insert(value.to_ascii_lowercase()) {
+                    issues.push(issue(
+                        "job_selector_value_duplicate",
+                        "error",
+                        value_path,
+                        format!("duplicate selector value {value}"),
+                    ));
+                } else if !profile_values
+                    .iter()
+                    .any(|candidate| candidate.eq_ignore_ascii_case(value))
+                {
+                    issues.push(issue(
+                        "job_selector_value_unknown",
+                        "error",
+                        value_path,
+                        format!(
+                            "selector value {value} is not declared for profile dimension {declared_dimension}"
+                        ),
+                    ));
+                }
+            }
+        }
+
+        let mut required_seen = BTreeSet::new();
+        for (required_index, dimension) in contract.required.iter().enumerate() {
+            let required_path = format!("{path}/required/{required_index}");
+            if !valid_declared_identifier(dimension) {
+                issues.push(issue(
+                    "job_selector_required_dimension_invalid",
+                    "error",
+                    &required_path,
+                    "required selector dimensions must use lowercase kebab-case",
+                ));
+                continue;
+            }
+            if !required_seen.insert(dimension.to_ascii_lowercase()) {
+                issues.push(issue(
+                    "job_selector_required_dimension_duplicate",
+                    "error",
+                    &required_path,
+                    format!("duplicate required selector dimension {dimension}"),
+                ));
+            }
+            if !contract
+                .dimensions
+                .keys()
+                .any(|candidate| candidate.eq_ignore_ascii_case(dimension))
+            {
+                issues.push(issue(
+                    "job_selector_required_dimension_undeclared",
+                    "error",
+                    &required_path,
+                    format!("required selector dimension {dimension} is not in dimensions"),
                 ));
             }
         }
@@ -5064,8 +5246,27 @@ fn validate_card_entry_scopes(
     issues: &mut Vec<Value>,
 ) {
     for (entry_index, entry) in card.entries.iter().enumerate() {
+        if entry.scope.contains_key("universal") && entry.scope.len() != 1 {
+            issues.push(issue(
+                "card_entry_universal_predicate_invalid",
+                "error",
+                format!("{display_path}#/entries/{entry_index}/scope"),
+                "explicit universal applicability cannot be combined with other dimensions",
+            ));
+        }
         for (dimension, values) in &entry.scope {
             let path = format!("{display_path}#/entries/{entry_index}/scope/{dimension}");
+            if dimension == "universal" {
+                if values.len() != 1 || values[0] != "true" {
+                    issues.push(issue(
+                        "card_entry_universal_predicate_invalid",
+                        "error",
+                        &path,
+                        "explicit universal applicability must be universal: [\"true\"]",
+                    ));
+                }
+                continue;
+            }
             let Some(allowed_values) =
                 profile.and_then(|profile| profile.context_dimensions.get(dimension))
             else {
@@ -5164,6 +5365,7 @@ fn validate_card_shape(path: &Path, display_path: &str, issues: &mut Vec<Value>)
                 "body",
                 "applies_to",
                 "scope",
+                "applies_when",
                 "evidence",
                 "avoid",
                 "exact_paragraphs",
@@ -9430,6 +9632,63 @@ expect_load_order_contains:
         assert!(codes.contains(&"profile_job_skill_unknown"));
         assert!(codes.contains(&"profile_job_route_incompatible"));
         assert!(codes.contains(&"profile_job_route_unknown"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_malformed_job_selector_contract() {
+        let root = temp_pack("job-selector-contract");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][1]["selector_contract"] = serde_yaml::from_str(
+            r#"
+contract: mdp.job-selectors.v2
+required:
+- product
+- product
+- missing-dimension
+dimensions:
+  product:
+  - local-cli
+  - local-cli
+  - unknown-product
+  - invalid_value
+  unknown-dimension:
+  - local-cli
+"#,
+        )
+        .expect("selector contract should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(result["valid"], false);
+        for code in [
+            "job_selector_contract_version_unknown",
+            "job_selector_dimension_unknown",
+            "job_selector_value_duplicate",
+            "job_selector_value_unknown",
+            "job_selector_value_invalid",
+            "job_selector_required_dimension_duplicate",
+            "job_selector_required_dimension_undeclared",
+        ] {
+            assert!(
+                codes.contains(code),
+                "missing selector contract issue {code}"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(root);
     }
